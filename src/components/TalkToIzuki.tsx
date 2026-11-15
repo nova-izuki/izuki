@@ -207,12 +207,12 @@ export function TalkToIzuki() {
         )}
         {settings.island_enabled && (
           <Row label="Glass opacity" hint="How solid the Island's glass is. Lower lets more of your desktop through; the text stays readable.">
-            <Slider value={settings.island_opacity ?? 94} min={50} max={100} onChange={(v) => patch({ island_opacity: v })} suffix="%" />
+            <Slider label="Glass opacity" value={settings.island_opacity ?? 94} min={50} max={100} onChange={(v) => patch({ island_opacity: v })} suffix="%" />
           </Row>
         )}
         {settings.island_enabled && (
           <Row label="Glass blur" hint="0 is the low-power default. A little blur softens the desktop behind the Island; it costs more on integrated graphics.">
-            <Slider value={settings.island_blur ?? 0} min={0} max={24} onChange={(v) => patch({ island_blur: v })} suffix=" px" />
+            <Slider label="Glass blur" value={settings.island_blur ?? 0} min={0} max={24} onChange={(v) => patch({ island_blur: v })} suffix=" px" />
           </Row>
         )}
         {settings.island_enabled && (
@@ -234,17 +234,17 @@ export function TalkToIzuki() {
         )}
         {settings.island_enabled && (
           <Row label="Expand while a task runs" hint="Off: the compact notch shows live progress while you keep working. On: it opens into the live task panel when a task starts, with Stop and Take Over ready.">
-            <Toggle checked={!!settings.island_auto_expand} onChange={(v) => patch({ island_auto_expand: v })} />
+            <Toggle label="Expand while a task runs" checked={!!settings.island_auto_expand} onChange={(v) => patch({ island_auto_expand: v })} />
           </Row>
         )}
         {settings.island_enabled && (
           <Row label="Shadow" hint="A soft drop shadow lifts the Island off the desktop. Off is flatter and cheaper to draw.">
-            <Toggle checked={settings.island_shadow ?? true} onChange={(v) => patch({ island_shadow: v })} />
+            <Toggle label="Shadow" checked={settings.island_shadow ?? true} onChange={(v) => patch({ island_shadow: v })} />
           </Row>
         )}
         {settings.island_enabled && (
           <Row label="Calm motion" hint="Turn off the springy expansion and decorative drift for a still, low-power Island. Reduced-motion settings always win.">
-            <Toggle checked={!(settings.island_motion ?? true)} onChange={(v) => patch({ island_motion: !v })} />
+            <Toggle label="Calm motion" checked={!(settings.island_motion ?? true)} onChange={(v) => patch({ island_motion: !v })} />
           </Row>
         )}
         {settings.island_enabled && (

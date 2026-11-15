@@ -920,7 +920,9 @@ export function ChatTab() {
         }
       }
       const hasChatContext = msgs.some((m) => m.role === "user" && m.content.trim() && !clarificationFor(m.content, false)) || images.length > 0 || attached.length > 0;
-      const ask = !note && !here ? clarificationFor(t, hasChatContext) : null;
+      // "answer" / "answer this" is already a complete request: don't stop a
+      // first turn at "Which question do you mean?" before the answer branch.
+      const ask = !note && !here && !answersOnScreenQuestion(t) ? clarificationFor(t, hasChatContext) : null;
       if (ask) {
         setMsgs((m) => [...m, { role: "user", content: t }, { role: "assistant", content: ask }]);
         return;
@@ -1044,6 +1046,10 @@ export function ChatTab() {
         // bubble: calling sendChatCommand() here would speak the answer while
         // leaving this chat stuck on "Reading…" forever.
         setLast({ content: "Reading the question on your screen… 👀", status: undefined });
+        // Stop calls finish.current before clearing the stream, so this can
+        // replace the placeholder even though the late native result is ignored.
+        const finishReading = (why: string) => setLast({ content: why || "Stopped.", status: undefined });
+        finish.current = finishReading;
         try {
           const plan = await api.submitVoiceCommand(answerOnScreenPrompt(t), history);
           if (streamId.current !== id) return;
@@ -1052,6 +1058,7 @@ export function ChatTab() {
           if (streamId.current !== id) return;
           setLast({ content: `I couldn't read the question — ${String(e)}`, failed: true, retry: true, status: undefined });
         } finally {
+          if (finish.current === finishReading) finish.current = null;
           if (streamId.current === id) { streamId.current = null; setBusy(false); }
         }
         return;

@@ -252,12 +252,20 @@ export function Island({
   const pill = useRef<HTMLDivElement>(null);
   const openRef = useRef(false);
   openRef.current = open;
+  // Opened by a task rather than by hovering: don't let the hover close timer
+  // take it away while that task is still running. A deliberate close clears
+  // this, so the person stays in charge.
+  const taskOpened = useRef(false);
   // Held open while you're asking about the page or reading the answer —
   // moving the mouse away mustn't throw the answer away.
   // Each thing holding it (the Ask box, the quick note) counts on its own.
   const holders = useRef(new Set<string>());
   const holdRef = useRef(false);
   const wantRef = useRef(false);
+  const closeIsland = useCallback(() => {
+    taskOpened.current = false;
+    setOpen(false);
+  }, []);
   const hold = useCallback((on: boolean, who = "ask") => {
     if (on) holders.current.add(who);
     else holders.current.delete(who);
@@ -266,7 +274,7 @@ export function Island({
     holdRef.current = any;
     if (!any) {
       window.setTimeout(() => {
-        if (!wantRef.current && !holdRef.current) setOpen(false);
+        if (!wantRef.current && !holdRef.current && !taskOpened.current) setOpen(false);
       }, CLOSE_AFTER_MS);
     }
   }, []);
@@ -415,7 +423,7 @@ export function Island({
             // Look again before closing: the pointer may be back, or a note
             // may be being jotted, and neither sends a pointer update that
             // would have cancelled this.
-            if (!wantRef.current && !holdRef.current) setOpen(false);
+            if (!wantRef.current && !holdRef.current && !taskOpened.current) setOpen(false);
           }, CLOSE_AFTER_MS);
         }
       } else if (closeTimer) {
@@ -637,7 +645,11 @@ export function Island({
   const taskActive = live.kind === "working" || live.kind === "approval";
   const wasTaskActive = useRef(false);
   useEffect(() => {
-    if (autoExpand && taskActive && !wasTaskActive.current && !openRef.current) setOpen(true);
+    if (autoExpand && taskActive && !wasTaskActive.current && !openRef.current) {
+      taskOpened.current = true;
+      setOpen(true);
+    }
+    if (!taskActive) taskOpened.current = false;
     wasTaskActive.current = taskActive;
   }, [autoExpand, taskActive]);
 
@@ -714,7 +726,7 @@ export function Island({
         // Esc closes it from anywhere inside (not just the Ask box).
         onKeyDown={(e) => {
           if (e.key === "Escape" && menu) setMenu(null);
-          else if (e.key === "Escape" && open) setOpen(false);
+          else if (e.key === "Escape" && open) closeIsland();
         }}
         // Right-click: the Island's own quick menu.
         onContextMenu={(e) => {
@@ -728,7 +740,7 @@ export function Island({
           const t = e.target as HTMLElement;
           if (!open || !t.closest("[data-island-top]") || t.closest("button, input, textarea, a, [role=tab]")) return;
           void emit(EV.airCall);
-          setOpen(false);
+          closeIsland();
         }}
       >
         {look === "notch" && (
@@ -743,11 +755,11 @@ export function Island({
             onClose={() => setMenu(null)}
             onTalk={() => {
               void emit(EV.airCall);
-              setOpen(false);
+              closeIsland();
             }}
             onQuiet={() => {
               setQuietUntil(Date.now() + 60 * 60_000);
-              setOpen(false);
+              closeIsland();
             }}
             quiet={quiet}
             onWake={() => {
@@ -774,6 +786,7 @@ export function Island({
                 page={status.page ?? null}
                 onHold={hold}
                 wave={wave}
+                calm={calm}
                 next={next}
                 coming={coming}
                 onCancelReminder={cancelReminder}
@@ -786,7 +799,7 @@ export function Island({
                 onVisualize={onVisualize}
                 onMoveStart={beginMove}
                 onMoveKey={moveByKeyboard}
-                onDone={() => setOpen(false)}
+                onDone={closeIsland}
                 onClearError={() => setFailure(null)}
                 onSeenSite={(url) => setSiteSeen(url)}
                 due={due}
@@ -1051,7 +1064,7 @@ function IslandMenu({ at, onClose, onTalk, onQuiet, quiet, onWake }: { at: { x: 
     <div
       role="menu"
       aria-label="Island menu"
-      className="absolute z-30 w-[188px] rounded-[12px] border border-white/15 bg-[#0d1018]/95 p-1 shadow-[0_12px_32px_rgba(0,0,0,0.5)] backdrop-blur-md"
+      className="izk-island-menu absolute z-30 w-[188px] rounded-[12px] border border-white/15 bg-[#0d1018]/95 p-1 shadow-[0_12px_32px_rgba(0,0,0,0.5)] backdrop-blur-md"
       // Inside the Island: opens above the pointer when there's no room below.
       style={{ left: Math.min(at.x, 372 - 196), top: at.y + 260 > (typeof window === "undefined" ? 9999 : window.innerHeight) ? Math.max(4, at.y - 250) : at.y }}
       onClick={(e) => e.stopPropagation()}
@@ -1272,6 +1285,7 @@ function Expanded({
   page = null,
   onHold,
   wave = "auto",
+  calm = false,
   scale = 1,
 }: {
   /** The running task's to-do list. */
@@ -1279,6 +1293,8 @@ function Expanded({
   /** The Island's size scale: the panel's height limit allows for it. */
   scale?: number;
   wave?: string;
+  /** Calm motion: draw the waveform once instead of animating the canvas. */
+  calm?: boolean;
   page?: string | null;
   onHold?: (on: boolean, who?: string) => void;
   weather?: [string, number, string] | null;
@@ -1467,7 +1483,7 @@ function Expanded({
               })()}
             </div>
             <div className="mt-1 h-6">
-              <Waveform playing={playing} width={120} height={24} style={waveFor(wave, media.title)} />
+              <Waveform playing={playing} width={120} height={24} style={waveFor(wave, media.title)} frozen={calm} />
             </div>
           </div>
           <div className="flex items-center gap-1">

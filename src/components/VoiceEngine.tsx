@@ -953,7 +953,10 @@ export function VoiceEngine() {
     // them. Matching commands against `t` once turned the Study log off when
     // someone asked "what's the answer" (the built instruction says "Notes").
     const own = expandShortWords(text.trim());
-    const t = answerOnScreen(own);
+    // While dictating, every word is content for the focused box — never a
+    // request to look at the screen. Expanding "answer question 5" here would
+    // type the whole instruction into their document.
+    const t = dictating ? own : answerOnScreen(own);
     if (!t) return;
     // "What are you doing?" — the real answer, from the task actually
     // running (never made up). Asked mid-task, it doesn't stop the task.
