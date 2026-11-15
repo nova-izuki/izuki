@@ -618,6 +618,7 @@
       <p id="native-controls-status" class="note">Checking Android control…</p>
       <div class="row" style="margin-top:8px"><button class="btn" id="open-android-controls" type="button">Enable Android controls</button></div>
       <p class="note">Optional and visible: Android opens its own Accessibility settings. When enabled, Izuki can do the phone navigation you directly ask for: Home, Back, recent apps, notifications, Quick Settings, lock, screenshots, taps, swipes, typing and scrolling. Autopilot runs a short routine one visible step at a time, and never sends, pays or deletes. It never acts in the background by itself.</p>
+      <p class="note">The floating glass orb also uses Android Accessibility, so it does <b>not</b> need the “Appear on top” permission and Izuki is deliberately not listed there. If the orb is off, turn Android control on here.</p>
       <p class="note">New: swipe down twice and add <b>Ask Izuki</b> to Android Quick Settings for a one-tap wake from any app.</p>
     </section>
 
@@ -3267,9 +3268,9 @@
     if (known(st.overlay)) checks.push({
       id: "overlay", title: "Floating glass orb",
       ok: !!st.overlay,
-      good: "The orb can float above your other apps.",
-      bad: "Allow Izuki to draw over other apps for the floating orb.",
-      fix: "Allow",
+      good: "The orb floats above other apps through Android Accessibility — no “Appear on top” permission needed.",
+      bad: "Turn on Android control to float the orb over other apps. “Appear on top” is not used.",
+      fix: "Open",
     });
     if (known(st.mic)) checks.push({
       id: "mic", title: "Microphone",
@@ -3398,7 +3399,9 @@
       if (id === "control") {
         await n.openAndroidControlSettings?.();
       } else if (id === "overlay") {
-        if (!await n.openOverlaySettings?.()) await n.openAppSettings?.();
+        // The orb is an accessibility overlay, not SYSTEM_ALERT_WINDOW:
+        // sending the person to “Appear on top” was the wrong screen.
+        if (!await n.openAndroidControlSettings?.()) await n.openAppSettings?.();
       } else if (id === "battery") {
         if (!await n.openBatterySettings?.()) await n.openAppSettings?.();
       } else if (id === "mic") {
