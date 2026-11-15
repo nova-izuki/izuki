@@ -154,7 +154,19 @@ public class IzukiWakeService extends Service implements RecognitionListener {
 
   static void start(Context context) {
     IzukiWakeService s = self;
-    if (s != null && !s.stopping) { s.main.post(s::startAgain); return; }
+    if (s != null && !s.stopping) {
+      Context app = context.getApplicationContext();
+      // Checked again when it runs: a stop may have come first.
+      s.main.post(() -> {
+        if (self == s && !s.stopping) s.startAgain();
+        else startThroughAndroid(app);
+      });
+      return;
+    }
+    startThroughAndroid(context);
+  }
+
+  private static void startThroughAndroid(Context context) {
     Intent intent = new Intent(context, IzukiWakeService.class).setAction(ACTION_START);
     if (Build.VERSION.SDK_INT >= 26) context.startForegroundService(intent);
     else context.startService(intent);

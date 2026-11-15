@@ -443,6 +443,7 @@
     // Out of steps: say what it got to rather than nothing.
     messages.push({ role: "user", content: 'Out of steps — reply now with what you found or did, as {"reply": …}.' });
     const raw = await complete(messages);
+    if (stopped()) return { text: "Stopped.", links, stopped: true };
     const step = parseStep(raw);
     const text = (step && typeof step.reply === "string" ? step.reply : String(raw || "")).trim().replace(/`/g, "");
     if (readApp) snapPut(readApp, text);

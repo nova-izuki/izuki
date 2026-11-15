@@ -4949,7 +4949,14 @@ fn submit_task(
             || why.starts_with("disabled:") || why.starts_with("typed_mismatch:"));
         // Every failure goes in the stop report (not only the kinds that
         // keep the next try quiet).
-        if let Some(why) = snag.as_deref() {
+        if let Some(why) = snag.as_deref().filter(|why| {
+            // A person's own step, a pause or a wait isn't a failed attempt.
+            !why.starts_with(crate::practical::YOUR_TURN_DONE)
+                && *why != crate::practical::YOUR_TURN_IDLE
+                && !why.starts_with("paused:")
+                && *why != USER_WAIT_OVER
+                && *why != TAB_WAIT_OVER
+        }) {
             snags_seen.push(why.to_string());
         }
         if snag.as_deref() == Some(USER_WAIT_OVER) {

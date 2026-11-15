@@ -71,7 +71,9 @@ public class ControlStateTest {
   @Test public void onlySearchBoxesGetEnter() {
     assertTrue(ControlState.searchy("Search YouTube com.google.android.youtube:id/search_edit_text"));
     assertTrue(ControlState.searchy("com.android.chrome:id/url_bar"));
-    assertFalse("a chat composer never gets Enter", ControlState.searchy("Message com.whatsapp:id/entry android.widget.EditText"));
+    assertFalse("a chat composer never gets Enter", ControlState.searchy("Message entry android.widget.EditText"));
+    assertFalse("whole words only", ControlState.searchy("Research notes research_body"));
+    assertTrue(ControlState.searchy("search_src_text android.widget.AutoCompleteTextView"));
   }
 
   @Test public void riskyControlsNeedTheirNameInTheRequest() {

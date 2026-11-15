@@ -304,6 +304,11 @@ public class IzukiAccessibilityService extends AccessibilityService {
       if (!node.isEnabled()) it.put("disabled", true);
       String id = node.getViewIdResourceName();
       if (id != null && !id.isEmpty()) it.put("id", id.substring(id.indexOf('/') + 1));
+      // A box's hint is what it's for ("Search YouTube"), even with a draft in it.
+      if (node.isEditable() && Build.VERSION.SDK_INT >= 26 && node.getHintText() != null) {
+        String hint = node.getHintText().toString().replaceAll("\\s+", " ").trim();
+        if (!hint.isEmpty()) it.put("hint", hint.length() > 80 ? hint.substring(0, 80) : hint);
+      }
       items.put(it);
       listed.add(AccessibilityNodeInfo.obtain(node));
     }
@@ -352,7 +357,7 @@ public class IzukiAccessibilityService extends AccessibilityService {
    * twice could toggle a switch back or press the next screen's button.
    */
   private static void press(AccessibilityNodeInfo node, String matched, boolean preferTouch, Consumer<JSONObject> done) {
-    node.refresh();
+    if (!node.refresh()) { done.accept(result(false, null, "stale")); return; }
     if (!node.isVisibleToUser()) { done.accept(result(false, null, "hidden")); return; }
     boolean revealed = false;
     try { revealed = node.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_SHOW_ON_SCREEN.getId()); } catch (Exception ignored) { }
@@ -360,7 +365,7 @@ public class IzukiAccessibilityService extends AccessibilityService {
       // It may have scrolled: let it settle, then read the node again — a
       // node's bounds are a snapshot, and a stale one taps the wrong thing.
       try { Thread.sleep(250); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
-      node.refresh();
+      if (!node.refresh()) { done.accept(result(false, null, "stale")); return; }
       if (!node.isVisibleToUser()) { done.accept(result(false, null, "hidden")); return; }
     }
     AccessibilityNodeInfo target = pressable(node);
@@ -388,9 +393,12 @@ public class IzukiAccessibilityService extends AccessibilityService {
     // the real control and bubbles to its row. Fall back to the parent only
     // when the label has no usable bounds.
     Rect b = new Rect();
-    node.refresh();
+    if (!node.refresh()) { JSONObject r = result(false, null, "stale"); put(r, "matched", matched); done.accept(r); return; }
     node.getBoundsInScreen(b);
-    if (b.isEmpty()) { used.refresh(); used.getBoundsInScreen(b); }
+    if (b.isEmpty() && used != node) {
+      if (!used.refresh()) { JSONObject r = result(false, null, "stale"); put(r, "matched", matched); done.accept(r); return; }
+      used.getBoundsInScreen(b);
+    }
     if (b.isEmpty()) { JSONObject r = result(false, null, "no-bounds"); put(r, "matched", matched); done.accept(r); return; }
     gesture("tap", b.exactCenterX(), b.exactCenterY(), 0, 0, 60, (touch) -> {
       put(touch, "matched", matched);
@@ -617,19 +625,19 @@ public class IzukiAccessibilityService extends AccessibilityService {
     done.accept(result(false, null, "no-search-control"));
   }
 
-  /** A search or address box: its hint, id, description or a near parent says so. */
+  /**
+   * A search or address box, by its own words only (hint, id without the
+   * app's package, description, class) — a parent's label is no evidence
+   * of what this box's Enter does.
+   */
   private static boolean looksLikeSearch(AccessibilityNodeInfo box) {
-    AccessibilityNodeInfo n = box;
-    for (int i = 0; i < 4 && n != null; i++) {
-      StringBuilder words = new StringBuilder();
-      if (Build.VERSION.SDK_INT >= 26 && n.getHintText() != null) words.append(n.getHintText()).append(' ');
-      if (n.getViewIdResourceName() != null) words.append(n.getViewIdResourceName()).append(' ');
-      if (n.getContentDescription() != null) words.append(n.getContentDescription()).append(' ');
-      if (n.getClassName() != null) words.append(n.getClassName()).append(' ');
-      if (ControlState.searchy(words.toString())) return true;
-      n = n.getParent();
-    }
-    return false;
+    StringBuilder words = new StringBuilder();
+    if (Build.VERSION.SDK_INT >= 26 && box.getHintText() != null) words.append(box.getHintText()).append(' ');
+    String id = box.getViewIdResourceName();
+    if (id != null) words.append(id.substring(id.indexOf('/') + 1)).append(' ');
+    if (box.getContentDescription() != null) words.append(box.getContentDescription()).append(' ');
+    if (box.getClassName() != null) words.append(box.getClassName()).append(' ');
+    return ControlState.searchy(words.toString());
   }
 
   // ---- a picture of the screen ------------------------------------------------

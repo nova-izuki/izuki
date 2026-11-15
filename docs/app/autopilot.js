@@ -144,9 +144,14 @@
   const boxIn = (screen) => screen?.items?.find((item) => item.kind === "box" && item.focused)
     || screen?.items?.find((item) => item.kind === "box") || null;
   /** A box that says it's for searching (its words or its id): never a message box. */
-  const SEARCHY = /\b(search|find|query|url|address)\b|search|url_bar|omnibox/i;
+  const SEARCHY = /(^|[^a-z])(search|find|query|url|address|omnibox|urlbar|searchbar|searchbox)([^a-z]|$)/i;
   const searchBoxIn = (screen) => {
-    const boxes = (screen?.items || []).filter((item) => item.kind === "box" && (SEARCHY.test(String(item.text || "")) || SEARCHY.test(String(item.id || ""))));
+    // What the box is for (its hint and id), not what's typed in it: a
+    // draft can say anything. A box that only exposes its text counts when
+    // that text reads like a search placeholder.
+    const forSearch = (item) => SEARCHY.test(String(item.hint || "")) || SEARCHY.test(String(item.id || ""))
+      || (!item.hint && /^\s*(search|find)\b/i.test(String(item.text || "")));
+    const boxes = (screen?.items || []).filter((item) => item.kind === "box" && forSearch(item));
     return boxes.find((item) => item.focused) || boxes[0] || null;
   };
   /** A control that opens search — never "Voice search" or the microphone. */

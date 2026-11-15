@@ -121,10 +121,19 @@ final class ControlState {
     return true;
   }
 
-  private static final Pattern SEARCHY = Pattern.compile("search|find|query|url|address|omnibox|location bar|go to");
+  private static final java.util.Set<String> SEARCH_WORDS = new java.util.HashSet<>(java.util.Arrays.asList(
+      "search", "find", "query", "url", "address", "omnibox", "urlbar", "searchbar", "searchbox",
+      "searchview", "searchautocomplete"));
 
-  /** Words around a text box that say it's for searching or an address. */
+  /**
+   * A text box's own words (hint, id without its package, description,
+   * class) that say it's for searching or an address. Whole words only:
+   * "research" or "com.research.app" isn't a search box.
+   */
   static boolean searchy(String words) {
-    return SEARCHY.matcher(norm(words)).find();
+    for (String token : norm(words).split("[^\\p{L}\\p{N}]+")) {
+      if (SEARCH_WORDS.contains(token)) return true;
+    }
+    return false;
   }
 }
