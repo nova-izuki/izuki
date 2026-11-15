@@ -237,6 +237,23 @@ let server,browser,profile,ws;
   assert.deepEqual(pasteRaces.appended,{ok:false,why:'draft'});
   assert.equal(pasteRaces.appendDraft,'Original question my addition','a matching prefix does not authorize sending user edits');
   assert.deepEqual(pasteRaces.replaced,{ok:false,why:'changed-page'},'a replaced composer cannot be written or sent');
+  // Same-origin navigation can keep the composer mounted. The question must
+  // not be pasted or sent into the new conversation.
+  const urlChange = await run(`(async () => {
+    const { typeIntoComposer } = await import('/extension/providers.js');
+    const host=document.createElement('div');host.style.cssText='position:fixed;top:0;left:0;width:300px;height:100px;z-index:9999';
+    const box=document.createElement('div');box.contentEditable='true';box.style.cssText='width:280px;height:40px';
+    const send=document.createElement('button');send.textContent='Send';send.setAttribute('data-url-send','');
+    let sent=0;send.onclick=()=>sent++;
+    const before=location.href;
+    box.addEventListener('paste',e=>{e.preventDefault();box.textContent=e.clipboardData.getData('text/plain');setTimeout(()=>history.pushState({},'',before+'?other-chat'),10);});
+    host.append(box,send);document.body.append(host);globalThis.__izukiTyped='';
+    const out=await typeIntoComposer('Private question',['div[contenteditable="true"]'],['button[data-url-send]'],true,location.origin);
+    const after=location.href;host.remove();history.replaceState({},'',before);
+    return {out,sent,after,before};
+  })()`);
+  assert.deepEqual(urlChange.out,{ok:false,why:'changed-page'},'a same-origin conversation change invalidates the send');
+  assert.equal(urlChange.sent,0,'no Send in the new conversation');
   const paragraphs = await run(`(async () => {
     const { typeIntoComposer } = await import('/extension/providers.js');
     const host=document.createElement('div');host.style.cssText='position:fixed;top:0;left:0;width:300px;height:200px;z-index:9999';

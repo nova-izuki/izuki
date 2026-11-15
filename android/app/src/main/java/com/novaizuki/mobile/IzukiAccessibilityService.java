@@ -305,6 +305,12 @@ public class IzukiAccessibilityService extends AccessibilityService {
       String id = node.getViewIdResourceName();
       if (id != null && !id.isEmpty()) it.put("id", id.substring(id.indexOf('/') + 1));
       // A box's hint is what it's for ("Search YouTube"), even with a draft in it.
+      // Keep the content description as separate search metadata: some apps
+      // expose only that, and a draft in the box must never authorize search.
+      if (node.isEditable() && node.getContentDescription() != null) {
+        String desc = node.getContentDescription().toString().replaceAll("\\s+", " ").trim();
+        if (!desc.isEmpty()) it.put("desc", desc.length() > 80 ? desc.substring(0, 80) : desc);
+      }
       if (node.isEditable() && Build.VERSION.SDK_INT >= 26 && node.getHintText() != null) {
         String hint = node.getHintText().toString().replaceAll("\\s+", " ").trim();
         if (!hint.isEmpty()) it.put("hint", hint.length() > 80 ? hint.substring(0, 80) : hint);

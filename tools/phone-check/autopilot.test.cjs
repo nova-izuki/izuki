@@ -159,6 +159,18 @@ const A = window.IzukiAutopilot;
   calls.length = 0;
   assert.equal(await fast.run("search kittens"), true, "an address field works without a separate Search button");
   assert.deepEqual(calls, ["click", "type", "submit"]);
+  // Some apps expose their search purpose only as a content description;
+  // the field's visible text is not evidence that it is a search box.
+  screen = { app: "Browser", items: [{ n: 1, kind: "box", text: "Search", desc: "Search", focused: true }, { n: 2, kind: "button", text: "Go" }] };
+  window.IzukiNative.act = async (args) => {
+    calls.push(args.op);
+    if (args.op === "type") screen.items[0].text = args.text;
+    if (args.op === "submit") screen = { app: "Browser", items: [{ kind: "text", text: "Results" }] };
+    return { done: true };
+  };
+  calls.length = 0;
+  assert.equal(await fast.run("search otters"), true, "a description-only search field works");
+  assert.deepEqual(calls, ["click", "type", "submit"]);
   screen = { app: "Messages", items: [{ n: 1, kind: "box", hint: "Search", focused: true }, { n: 2, kind: "button", text: "Search" }] };
   window.IzukiNative.act = async (args) => {
     calls.push(args.op);

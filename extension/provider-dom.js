@@ -1,6 +1,10 @@
 (function(root) {
 async function typeIntoComposer(text, composerSelectors, sendSelectors, autoSend, expectedOrigin = "", requestId = "", deadline = 0) {
   if (expectedOrigin && location.origin !== expectedOrigin) return { ok: false, why: "changed-page" };
+  // A same-origin conversation change (new chat, switched thread) keeps the
+  // composer mounted but makes the question belong to a different page.
+  const currentUrl = () => (typeof location !== "undefined" ? location.href : "");
+  const initialUrl = currentUrl();
   // The relay stopped waiting for this call (it took too long, or Stop):
   // checked here and after every wait, before the box is touched again.
   const gone = () => (deadline && Date.now() > deadline) || Boolean(requestId && globalThis.__izukiStoppedRelay?.has(requestId));
@@ -31,6 +35,7 @@ async function typeIntoComposer(text, composerSelectors, sendSelectors, autoSend
   const draft = inBox();
   const mine = squash(globalThis.__izukiTyped);
   const current = () => (!expectedOrigin || location.origin === expectedOrigin)
+    && (!initialUrl || currentUrl() === initialUrl)
     && box.isConnected && visible(box) && !box.disabled && !box.readOnly
     && box.getAttribute("aria-disabled") !== "true"
     && box.getAttribute("type") !== "password"

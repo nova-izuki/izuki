@@ -146,7 +146,9 @@
   /** A box that says it's for searching (its words or its id): never a message box. */
   const SEARCHY = /(^|[^a-z])(search|find|query|url|address|omnibox|urlbar|searchbar|searchbox)([^a-z]|$)/i;
   // A field's purpose comes from its metadata, never a person's draft.
-  const forSearch = (item) => SEARCHY.test(String(item?.hint || "")) || SEARCHY.test(String(item?.id || ""));
+  const forSearch = (item) => SEARCHY.test(String(item?.hint || ""))
+    || SEARCHY.test(String(item?.id || ""))
+    || SEARCHY.test(String(item?.desc || ""));
   const searchBoxIn = (screen) => {
     const boxes = (screen?.items || []).filter((item) => item.kind === "box" && forSearch(item));
     return boxes.find((item) => item.focused) || boxes[0] || null;
