@@ -95,5 +95,21 @@ const A = window.IzukiAutopilot;
   assert.deepEqual(calls, ["act:home"], "a locked phone waits and then runs the same step once");
   assert.match(A.state.log.map((x) => x.text).join(" "), /Phone is locked.*Unlocked/);
 
+  // A search icon with no visible box: open it, then type into the field it
+  // reveals instead of failing with a generic "open a search box" message.
+  screen = { app: "YouTube", items: [{ n: 1, text: "Search", kind: "button" }] };
+  const actBefore = window.IzukiNative.act;
+  window.IzukiNative.act = async (args) => {
+    calls.push(`act:${args.op}${args.text ? `:${args.text}` : ""}${args.n ? `:${args.n}` : ""}`);
+    if (args.op === "click" && args.n === 1) {
+      screen = { app: "YouTube", items: [{ n: 1, text: "Search", kind: "button" }, { n: 2, text: "Search YouTube", kind: "box" }] };
+    }
+    return { done: true };
+  };
+  calls.length = 0;
+  assert.equal(await A.run("search hello"), true);
+  assert.deepEqual(calls, ["act:click:1", "act:click:2", "act:type:hello:2", "act:submit"], "the search icon opens the field first");
+  window.IzukiNative.act = actBefore;
+
   console.log("Autopilot: visible steps, field targeting, safety refusals, repeats and lock resume pass.");
 })().catch((error) => { console.error(error); process.exitCode = 1; });

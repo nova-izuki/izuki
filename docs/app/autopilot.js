@@ -117,16 +117,34 @@
     // Find a text field on this screen, focus it, then set the words. If the
     // app uses the already-focused field, n = 0 still works.
     let screen = await readScreen();
-    let box = screen.items?.find((item) => item.kind === "box" && item.focused)
+    const findBox = () => screen.items?.find((item) => item.kind === "box" && item.focused)
       || screen.items?.find((item) => item.kind === "box");
+    let box = findBox();
     if (!box) {
       await sleep(500);
       screen = await readScreen();
-      box = screen.items?.find((item) => item.kind === "box");
+      box = findBox();
     }
-    if (box) await n.act({ op: "click", n: box.n });
-    const result = await n.act({ op: "type", text, n: box?.n || 0 });
-    if (!result?.done) throw new Error("I couldn't type into this screen. Open a search box first.");
+    // A search icon can be the way in: open it, then look for the field it
+    // just revealed. The old code gave up and typed at nothing.
+    if (!box) {
+      const opener = screen.items?.find((item) => item.kind !== "box" && /\b(search|find)\b/i.test(String(item.text || "")));
+      if (opener) {
+        const opened = await n.act({ op: "click", n: opener.n });
+        if (opened?.done) {
+          await sleep(600);
+          screen = await readScreen();
+          box = findBox();
+        }
+      }
+    }
+    if (!box) throw new Error("I can't see a text box on this screen. Open the search field first, then say the request again.");
+    await n.act({ op: "click", n: box.n });
+    const result = await n.act({ op: "type", text, n: box.n });
+    if (!result?.done) {
+      const why = result?.reason === "password" ? "that field is a password box" : result?.reason || "Android gave no reason";
+      throw new Error(`I found the text box but couldn't type in it (${why}).`);
+    }
     add(`Typed “${text}”.`, "done");
     await sleep(250);
   }
