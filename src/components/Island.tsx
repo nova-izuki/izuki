@@ -642,7 +642,10 @@ export function Island({
 
   // A task can open the panel once, when it starts. Turning the setting off
   // keeps the compact progress notch; closing it by hand stays closed.
-  const taskActive = live.kind === "working" || live.kind === "approval";
+  // Missions own the visible status while they run, so a mission task can
+  // be `live.kind === "missions"` and never show as "working". `busy` is the
+  // actual running signal in that case.
+  const taskActive = live.kind === "working" || live.kind === "approval" || (live.kind === "missions" && busy);
   const wasTaskActive = useRef(false);
   useEffect(() => {
     if (autoExpand && taskActive && !wasTaskActive.current && !openRef.current) {
@@ -824,7 +827,7 @@ export function Island({
             </motion.div>
           ) : (
             <motion.div key={live.kind} {...fade} className={`flex h-[34px] items-center gap-2.5 pl-1.5 pr-3${look === "notch" ? " izk-notch-content" : ""}`}>
-              <Compact live={live} dancing={dancing} wave={wave} />
+              <Compact live={live} dancing={dancing} wave={wave} calm={calm} />
             </motion.div>
           )}
         </AnimatePresence>
@@ -887,7 +890,7 @@ function LiveBars({ color }: { color: string }) {
   );
 }
 
-function Compact({ live, dancing, wave = "auto" }: { live: Live; dancing: boolean; wave?: string }) {
+function Compact({ live, dancing, wave = "auto", calm = false }: { live: Live; dancing: boolean; wave?: string; calm?: boolean }) {
   switch (live.kind) {
     case "listening":
       return (
@@ -1049,7 +1052,7 @@ function Compact({ live, dancing, wave = "auto" }: { live: Live; dancing: boolea
         </>
       );
     default:
-      return <Face size={24} mood={dancing ? "dancing" : "idle"} />;
+      return <Face size={24} mood={dancing && !calm ? "dancing" : "idle"} />;
   }
 }
 
@@ -1361,7 +1364,7 @@ function Expanded({
         <GripHorizontal size={16} />
       </div>
       <div data-island-top title="Double-click to talk to Nova" className="flex items-center gap-3">
-        <Face size={40} mood={busy ? "busy" : live.kind === "finished" ? "happy" : dancing ? "dancing" : "idle"} pokeable />
+        <Face size={40} mood={busy ? "busy" : live.kind === "finished" ? "happy" : dancing && !calm ? "dancing" : "idle"} pokeable calm={calm} />
         <div className="min-w-0 flex-1">
           <div className="text-[15px] font-semibold leading-tight">{busy ? "On it" : greeting(now)}</div>
           <div className="truncate text-[12.5px] text-white/60">
@@ -1919,7 +1922,7 @@ type Mood = "idle" | "busy" | "happy" | "dancing";
  * the DOM — no re-render per cursor move), blink now and then, squish into
  * "> <" when poked, and spin dizzy after a few pokes in a row.
  */
-function Face({ size, mood, pokeable }: { size: number; mood: Mood; pokeable?: boolean }) {
+function Face({ size, mood, pokeable, calm = false }: { size: number; mood: Mood; pokeable?: boolean; calm?: boolean }) {
   const eyes = useRef<HTMLDivElement>(null);
   const [poke, setPoke] = useState<"none" | "squish" | "dizzy">("none");
   const pokes = useRef<number[]>([]);
@@ -1960,10 +1963,10 @@ function Face({ size, mood, pokeable }: { size: number; mood: Mood; pokeable?: b
       ? { scaleX: [1, 1.18, 0.95, 1], scaleY: [1, 0.8, 1.05, 1] }
       : mood === "happy"
         ? { y: [0, -size * 0.18, 0, -size * 0.08, 0] }
-        : mood === "dancing"
+        : mood === "dancing" && !calm
           ? { y: [0, -size * 0.07, 0], rotate: [0, -6, 0, 6, 0] }
           : { y: 0, rotate: 0, scaleX: 1, scaleY: 1 };
-  const bobRepeat = mood === "dancing" && poke === "none" ? Infinity : 0;
+  const bobRepeat = mood === "dancing" && poke === "none" && !calm ? Infinity : 0;
 
   return (
     <motion.div

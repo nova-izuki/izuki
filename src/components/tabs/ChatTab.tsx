@@ -20,6 +20,7 @@ import { attachmentContext, CHAT_FILE_TYPES, keepDocumentText, readChatFile, typ
 import { rememberPrompt } from "../../lib/recentPrompts";
 import { chatTitle, orderSessions, pinSession, rememberSession, removeSession, renameSession, searchSessions, startingMessages, timeAgo, type ChatSession, type LiveCopy } from "../../lib/chatHistory";
 import { clarificationFor, friendlyProviderError, providerRefusal, PROVIDER_REFUSAL_NOTE } from "../../lib/chatIntent";
+import { isNoteStudyPrompt } from "../../lib/notes";
 import { answerOnScreenPrompt, answersOnScreenQuestion, forgetHistory, looksLikeDirections, needsApps, opensAnApp, recentHistory, shareHistory } from "../../lib/conversation";
 
 /**
@@ -1040,7 +1041,7 @@ export function ChatTab() {
       // question on screen. This used to fall through to the Study-log
       // fallback and reply "Study log off. What's already saved stays in
       // Notes." instead of answering.
-      if (!note && !here && !images.length && !attached.length && answersOnScreenQuestion(t)) {
+      if (!note && !here && !images.length && !attached.length && !isNoteStudyPrompt(t) && answersOnScreenQuestion(t)) {
         // The user turn and its reply bubble were already added above. Ask the
         // same screen agent the voice path uses, then put its answer in this
         // bubble: calling sendChatCommand() here would speak the answer while
