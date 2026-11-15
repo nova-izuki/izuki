@@ -14,6 +14,8 @@ import { api, EV, emit, on } from "./ipc";
 export interface Turn {
   role: "user" | "assistant";
   content: string;
+  /** The saved chat it came from (Chat tab), so deleting that chat removes it. */
+  chat?: string;
 }
 
 const history: Turn[] = [];
@@ -62,10 +64,10 @@ const MAX_TURNS = 16;
  * the orb hears another, and a reply spoken at one of them must never drop what
  * the other just said. Duplicates are skipped, newest wins the order.
  */
-export function shareHistory(turns: Turn[]): void {
+export function shareHistory(turns: Turn[], chat?: string): void {
   const incoming = turns
     .slice(-MAX_TURNS)
-    .map((t) => ({ role: t.role, content: (t.content ?? "").trim() }))
+    .map((t) => ({ role: t.role, content: (t.content ?? "").trim(), chat }))
     .filter((t) => t.content && (t.role === "user" || t.role === "assistant"));
   if (!incoming.length) return;
   const seen = new Set(history.map((t) => `${t.role}\u0000${t.content}`));
@@ -83,17 +85,17 @@ export function shareHistory(turns: Turn[]): void {
 }
 
 /**
- * A chat was deleted: its lines leave the shared conversation too, so it
- * can't come back as context for the next request (voice, typed or the
- * phone). `null`: every line — Clear all.
+ * A chat was deleted: every line it shared leaves the shared conversation too
+ * (the partial ones shared while a reply streamed included), so it can't come
+ * back as context for the next request (voice, typed or the phone). `null`:
+ * every line — Clear all.
  */
-export function forgetHistory(turns: ReadonlyArray<{ role: string; content?: string }> | null): void {
-  if (!turns) {
+export function forgetHistory(chat: string | null): void {
+  if (chat === null) {
     history.length = 0;
   } else {
-    const gone = new Set(turns.map((t) => `${t.role}\u0000${(t.content ?? "").trim()}`));
     for (let i = history.length - 1; i >= 0; i--) {
-      if (gone.has(`${history[i].role}\u0000${history[i].content}`)) history.splice(i, 1);
+      if (history[i].chat === chat) history.splice(i, 1);
     }
   }
   publish();

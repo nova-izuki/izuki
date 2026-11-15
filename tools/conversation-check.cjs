@@ -117,13 +117,13 @@ is("and they are the newest", last(), "turn 59");
 
 console.log("a deleted chat leaves the shared conversation:");
 fresh();
-mem.shareHistory([
-  { role: "user", content: "my bank pin is 1234" },
-  { role: "assistant", content: "Noted." },
-  { role: "user", content: "play lofi" },
-]);
-mem.forgetHistory([{ role: "user", content: "my bank pin is 1234" }, { role: "assistant", content: "Noted." }]);
-is("only that chat's lines go", shape(), ["user:play lofi"]);
+mem.shareHistory([{ role: "user", content: "my bank pin is 1234" }, { role: "assistant", content: "No" }], "chat-a");
+// A reply streaming in is shared again as it grows.
+mem.shareHistory([{ role: "user", content: "my bank pin is 1234" }, { role: "assistant", content: "Noted, I won't" }], "chat-a");
+mem.shareHistory([{ role: "user", content: "play lofi" }], "chat-b");
+mem.remember("user", "spoken to the orb");
+mem.forgetHistory("chat-a");
+is("every line that chat shared goes, partial ones too", shape(), ["user:play lofi", "user:spoken to the orb"]);
 mem.forgetHistory(null);
 is("Clear all empties it", count(), 0);
 
