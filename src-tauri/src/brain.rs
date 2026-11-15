@@ -2801,7 +2801,7 @@ fn your_turn(app: &AppHandle, step: &ActionStep, what: &str, i: usize, total: us
 /// Run `steps` on this thread. `true` if every step ran (not stopped and
 /// no step failed).
 fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep], alive: &dyn Fn() -> bool) -> (bool, usize, Vec<String>) {
-            if !crate::execution::allowed() { return (false, 0); }
+            if !crate::execution::allowed() { return (false, 0, Vec::new()); }
             let _active = TaskActive::begin();
             STEP_SNAG.lock().take();
             take_step_replan();
