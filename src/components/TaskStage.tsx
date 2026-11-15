@@ -248,7 +248,7 @@ export function TaskStage({ onActiveChange }: { onActiveChange?: (active: boolea
 
   if (!active) return null;
 
-  const done = complete ? total : step ? Math.max(0, step.before ? step.current - 1 : step.current) : 0;
+  const done = complete ? total : step ? Math.max(0, step.before || step.waiting ? step.current - 1 : step.current) : 0;
   const percent = complete ? 100 : Math.max(0, Math.min(100, Math.round((done / total) * 100)));
   const currentLabel = finished
     ? complete
@@ -257,7 +257,9 @@ export function TaskStage({ onActiveChange }: { onActiveChange?: (active: boolea
     : step
       ? step.before
         ? `Ready for step ${step.current}`
-        : `Step ${step.current}`
+        : step.waiting
+          ? `Waiting for step ${step.current}`
+          : `Step ${step.current}`
       : "Preparing the first step";
   // Before the first action the step is "ready" but not done, so the count
   // and the bar agree at zero. After it, the step number is complete.

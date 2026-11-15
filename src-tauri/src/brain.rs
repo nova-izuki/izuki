@@ -2457,7 +2457,7 @@ where F: FnOnce() + Send + 'static,
         .name("izuki-act".into())
         .spawn(move || {
             let _execution = crate::execution::attach(execution_context);
-            let (finished, _) = run_steps_blocking(&app, &store, &steps, &|| task_alive(task));
+            let (finished, _, _) = run_steps_blocking(&app, &store, &steps, &|| task_alive(task));
             // A replay has no brain to take a fresh look: when it stopped
             // part-way (paused and resumed, a covered or greyed-out button),
             // it says so rather than going quiet or clicking stale spots.
@@ -2800,12 +2800,15 @@ fn your_turn(app: &AppHandle, step: &ActionStep, what: &str, i: usize, total: us
 
 /// Run `steps` on this thread. `true` if every step ran (not stopped and
 /// no step failed).
-fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep], alive: &dyn Fn() -> bool) -> (bool, usize) {
+fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep], alive: &dyn Fn() -> bool) -> (bool, usize, Vec<String>) {
             if !crate::execution::allowed() { return (false, 0); }
             let _active = TaskActive::begin();
             STEP_SNAG.lock().take();
             take_step_replan();
             let executed = std::cell::Cell::new(0usize);
+            // Person-completed steps are real progress but are not automated
+            // clicks: keep them out of `executed` (and last_click replay).
+            let people = std::cell::RefCell::new(Vec::new());
             let settings = store.settings();
             let move_ms = settings.move_duration_ms;
             // Let the Task Stage appear before the first click. Without this
@@ -2905,9 +2908,9 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
                             }
                             crate::practical::Turn::Done => {
                                 crate::practical::record(crate::practical::Hands::Person, &what);
-                                // The person's step is real progress too:
-                                // include it in the completed/evidence count.
-                                executed.set(i + 1);
+                                // The person's step is progress, but not an
+                                // automated click: last_click must never replay it.
+                                people.borrow_mut().push(format!("step {} of {}: {what}", i + 1, steps.len()));
                                 *STEP_SNAG.lock() = Some(format!("{} step {} of {}: {what}", crate::practical::YOUR_TURN_DONE, i + 1, steps.len()));
                                 return false;
                             }
@@ -3061,6 +3064,21 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
                         && !asked_for_window(&WORK_TASK.lock().1, "minimise"))
                     .then(uia::front_raw)
                     .flatten();
+                    // A keyboard shortcut is sent to whatever window is in
+                    // front. After a hand-back, the person may also have
+                    // switched windows: never send it into the wrong one.
+                    if step.action == Intent::Key {
+                        if let Some(planned) = uia::held_window() {
+                            if uia::front_raw().is_some_and(|front| front != planned) {
+                                *STEP_SNAG.lock() = Some(
+                                    "target_changed: the window in front is not the one this shortcut was planned for — take a fresh look before pressing it"
+                                        .into(),
+                                );
+                                request_step_replan();
+                                return false;
+                            }
+                        }
+                    }
                     match automation::execute(step, move_ms, settings.magnetic_hand, settings.dry_run)
                     {
                         Ok(detail) => {
@@ -3220,7 +3238,7 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
                 true
             };
 
-            (run(), executed.get())
+            (run(), executed.get(), people.into_inner())
 }
 
 /// The control a click was meant for, pressed another way: 1) inside the
@@ -3656,7 +3674,7 @@ pub fn run_named_click(app: &AppHandle, store: &Arc<Store>, said: &str) -> Optio
     step.grounding = c.identity.clone();
     eprintln!("[named] \"{said}\" → clicking \"{}\" directly", c.name);
     let working = Working::on(said);
-    let (worked, _) = run_steps_blocking(app, store, std::slice::from_ref(&step), &alive);
+    let (worked, _, _) = run_steps_blocking(app, store, std::slice::from_ref(&step), &alive);
     let stop = working.stopped();
     drop(working);
     if let Some(stop) = stop {
@@ -4062,6 +4080,9 @@ fn submit_task(
     // place acted on so far, so "already been done" has something to mean.
     let mut going_in_circles = 0u32;
     let mut places_seen: Vec<(usize, ActionProgress)> = Vec::new();
+    // Person-led steps are progress too, without entering last_click.
+    let mut people_seen = 0usize;
+    let mut people_mark = 0usize;
     let mut screen_epoch = 0usize;
     // What the user showed or told Izuki when it asked, for the next look.
     // What the user drew, kept for the whole task: its clicks belong there.
@@ -4830,7 +4851,7 @@ fn submit_task(
         // The window being worked in, so a step that minimises it by mistake
         // ("clear what's in the way" gone wrong) is caught and undone.
         let working_in = uia::target_window();
-        let (finished, executed) = run_steps_blocking(app, store, &steps, &alive);
+        let (finished, executed, people) = run_steps_blocking(app, store, &steps, &alive);
         let replan = take_step_replan();
         last_click = steps
             .iter()
@@ -4860,6 +4881,8 @@ fn submit_task(
         going_in_circles = if only_repeats(&places_now, &places_seen) { going_in_circles + 1 } else { 0 };
         places_seen.extend(places_now);
         done_so_far.extend(steps.iter().take(executed).map(describe_step));
+        done_so_far.extend(people.iter().cloned());
+        people_seen += people.len();
         if going_in_circles >= CIRCLES_BEFORE_STOPPING {
             eprintln!("[agent] {going_in_circles} rounds doing only things already done — stopping");
             crate::lessons::note(
@@ -5008,8 +5031,9 @@ fn submit_task(
             // Steps done in this window that hadn't been done before it —
             // repeating old ones used to count, so a loop looked productive.
             let (before, window) = places_seen.split_at(progress_mark.min(places_seen.len()));
-            let fresh = new_among(window, before);
+            let fresh = new_among(window, before) + people_seen.saturating_sub(people_mark);
             progress_mark = places_seen.len();
+            people_mark = people_seen;
             if fresh < 3 {
                 eprintln!("[agent] little progress in the last {PROGRESS_EVERY} rounds — pausing");
                 crate::lessons::note(&uia::foreground_app(), "a task here stalled before: check the instructions on screen, scroll to find what's missing, and say what's in the way instead of retrying");

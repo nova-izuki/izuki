@@ -77,6 +77,12 @@ export async function setUpWorkspace({windowId,getSource,getConnection,readTab,o
   function drawPlan() {
     const list=$("lab-steps");list.replaceChildren();$("lab-board").hidden=false;
     text("lab-title",plan.title);
+    // A new plan replaces the previous lab's checklist too.
+    const requirements=$("lab-requirements");requirements.replaceChildren();
+    for(const requirement of plan.requirements||[]){const line=document.createElement("li");line.textContent=`○ ${requirement}`;requirements.append(line);}
+    const files=$("lab-deliverables");files.replaceChildren();
+    for(const item of plan.deliverables||[]){const line=document.createElement("li");line.textContent=`○ ${item.name} — checked at step ${item.step}`;files.append(line);}
+    text("lab-coverage",`0/${(plan.requirements||[]).length} requirements verified · 0/${(plan.deliverables||[]).length} deliverables verified`);
     for(const [i,step] of plan.steps.entries()){
       const row=document.createElement("details");row.dataset.labStep=step.id;row.open=i===0;
       const summary=document.createElement("summary");summary.textContent=`${i+1}. ${step.title}${step.final?" · upload / submit":""}`;

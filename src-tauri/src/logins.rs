@@ -253,8 +253,12 @@ pub fn parse_linux(log: &str, year: i32) -> Vec<Logon> {
                 // one following failure; several password attempts are still
                 // several attempts and must be counted.
                 let counted = invalid && {
+                    let now = seconds(&at);
+                    // Only the last ten seconds can explain this record:
+                    // don't scan the whole log's probe history for each try.
+                    probes.retain(|(_, _, t, _)| (now - *t).abs() <= 10);
                     let probe = probes.iter_mut().find(|(u, f, t, used)| {
-                        !*used && u == user && f == from && (seconds(&at) - *t).abs() <= 10
+                        !*used && u == user && f == from && (now - *t).abs() <= 10
                     });
                     if let Some((_, _, _, used)) = probe { *used = true; true } else { false }
                 };
