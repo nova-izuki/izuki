@@ -188,13 +188,13 @@ fn linux_time(line: &str, year: i32) -> Option<(String, &str)> {
             .unwrap_or_else(|_| {
                 chrono::NaiveDateTime::parse_from_str(&first[..19], "%Y-%m-%dT%H:%M:%S")
                     .map(|n| chrono::Utc.from_utc_datetime(&n).format("%Y-%m-%dT%H:%M:%S").to_string())
-                    .unwrap_or_else(|| first[..19].to_string())
+                    .unwrap_or_else(|_| first[..19].to_string())
             });
         return Some((at, rest));
     }
     let mut parts = line.splitn(5, ' ').filter(|p| !p.is_empty());
     let (mon, day, time) = (parts.next()?, parts.next()?, parts.next()?);
-    let m = MONTHS.iter().position(|x| *x == mon)? + 1;
+    let m = (MONTHS.iter().position(|x| *x == mon)? + 1) as u32;
     let day: u32 = day.parse().ok()?;
     if time.len() != 8 {
         return None;
