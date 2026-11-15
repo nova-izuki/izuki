@@ -42,5 +42,15 @@ Android APK compilation and JUnit execution are left to the mobile PR workflow.
 No Rust sources changed; the integration coordinator owns the full native gate.
 No installed app, private profile or owner settings were opened or changed.
 
-CodeRabbit's local review and the PR workflow results are recorded separately
-before integration. This branch does not bump versions, merge or release.
+CodeRabbit's local review completed with one major and one minor finding.
+Both were confirmed with failing regressions before repair: multiline text
+rendered as paragraphs was incorrectly called a draft, and one sign-in fallback
+swallowed cancellation. Composer ownership and exact matching now share the
+same rendered plain-text representation; apps return a stopped result from the
+sign-in fallback. The real Edge paragraph/ownership/send regression passes and
+apps checks pass 49/0. The ZIP was rebuilt again after this repair.
+
+PR #110's first revision passed Android APK/JUnit, iPhone project integrity and
+both web checks; the branch Windows test run also passed. The latest revision
+still needs its PR review and CI before integration. This branch does not bump
+versions, merge or release.

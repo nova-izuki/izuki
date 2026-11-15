@@ -23,7 +23,12 @@ async function typeIntoComposer(text, composerSelectors, sendSelectors, autoSend
   // earlier try (its Send failed or was swallowed) is Izuki's: it's replaced,
   // instead of every later question failing on "your tab has a draft".
   const squash = (s) => String(s || "").replace(/\s+/g, " ").trim();
-  const draft = squash(box.value || box.textContent);
+  const native = box.tagName === "TEXTAREA" || box.tagName === "INPUT";
+  // innerText preserves rendered paragraph/<br> boundaries. textContent
+  // would join <p>First</p><p>Second</p> into "FirstSecond" and reject an
+  // otherwise exact multiline paste (or mistake our leftover for a draft).
+  const inBox = () => squash(native ? box.value : (box.innerText ?? box.textContent));
+  const draft = inBox();
   const mine = squash(globalThis.__izukiTyped);
   const current = () => (!expectedOrigin || location.origin === expectedOrigin)
     && box.isConnected && visible(box) && !box.disabled && !box.readOnly
@@ -36,7 +41,6 @@ async function typeIntoComposer(text, composerSelectors, sendSelectors, autoSend
 
   box.focus();
   if (!current()) return { ok: false, why: "changed-page" };
-  const native = box.tagName === "TEXTAREA" || box.tagName === "INPUT";
   // React tracks the value on the element; set it through the prototype
   // setter so its own onChange fires instead of being skipped.
   const setValue = (value) => {
@@ -68,7 +72,7 @@ async function typeIntoComposer(text, composerSelectors, sendSelectors, autoSend
       if (gone()) return { ok: false, why: "stopped" };
       if (!current()) return { ok: false, why: "changed-page" };
     }
-    if (squash(box.value || box.textContent)) return { ok: false, why: "draft" };
+    if (inBox()) return { ok: false, why: "draft" };
   }
   if (!native) {
     // A contenteditable editor: paste, which Lexical and ProseMirror both
@@ -87,12 +91,6 @@ async function typeIntoComposer(text, composerSelectors, sendSelectors, autoSend
   // frequently discarded on the next render. Pressing Send after that sends
   // an empty message — the panel would say "handed over" while nothing was
   // asked, which is the worst possible answer.
-  // Whichever the editor keeps its text in: a textarea's value, or the
-  // contenteditable's text. Some editors expose a stale `value` beside a
-  // filled editor, so an empty one is never taken over a full one.
-  const inBox = () =>
-    String(box.value ?? "").replace(/\s+/g, " ").trim() ||
-    String(box.textContent ?? "").replace(/\s+/g, " ").trim();
   const expected = squash(text);
   const landed = () => Boolean(expected) && inBox() === expected;
   if (!current()) return { ok: false, why: "changed-page" };

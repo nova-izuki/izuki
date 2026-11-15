@@ -125,7 +125,7 @@ async function integration() {
   is("clarification is allowed without fabricating account data", answer.text, "Work or personal Gmail?");
   // Stop can arrive while a missing/expired session is being resolved.
   // Run the actual router via ask(), including the 404 execute retry.
-  for (const phase of ["discovery", "execute-retry", "search-retry", "link-retry"]) {
+  for (const phase of ["discovery", "execute-retry", "search-retry", "link-retry", "reply-link-retry"]) {
     A.saveKey("ak_example_test_only");
     let cancelled = false, sessions = 0, postsAfterStop = 0, rounds = 0;
     sandbox.fetch = async (url) => {
@@ -137,15 +137,16 @@ async function integration() {
       }
       if ((phase === "execute-retry" && url.endsWith("/execute"))
         || (phase === "search-retry" && url.endsWith("/search") && rounds > 0)
-        || (phase === "link-retry" && url.endsWith("/link"))) {
+        || (phase.endsWith("link-retry") && url.endsWith("/link"))) {
         return { ok: false, status: 404, json: async () => ({ message: "expired" }) };
       }
-      return { ok: true, json: async () => ({ results: [] }) };
+      return { ok: true, json: async () => ({ results: [], toolkit_connection_statuses: phase === "reply-link-retry" ? [{ toolkit: "gmail", has_active_connection: false }] : [] }) };
     };
     const result = await A.ask([{ role: "user", text: "Check my apps" }], async () => {
       rounds++;
       return JSON.stringify(phase === "search-retry" ? { search: "Gmail" }
-        : phase === "link-retry" ? { connect: "gmail" } : { run: { tool: "GMAIL_FETCH_EMAILS", arguments: {} } });
+        : phase === "link-retry" ? { connect: "gmail" } : phase === "reply-link-retry" ? { reply: "Your email" }
+        : { run: { tool: "GMAIL_FETCH_EMAILS", arguments: {} } });
     }, () => cancelled);
     is(phase + ": no POST starts after Stop during session resolution", postsAfterStop, 0);
     is(phase + ": the request ends stopped", result.stopped, true);

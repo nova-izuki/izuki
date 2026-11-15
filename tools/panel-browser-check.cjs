@@ -237,6 +237,24 @@ let server,browser,profile,ws;
   assert.deepEqual(pasteRaces.appended,{ok:false,why:'draft'});
   assert.equal(pasteRaces.appendDraft,'Original question my addition','a matching prefix does not authorize sending user edits');
   assert.deepEqual(pasteRaces.replaced,{ok:false,why:'changed-page'},'a replaced composer cannot be written or sent');
+  const paragraphs = await run(`(async () => {
+    const { typeIntoComposer } = await import('/extension/providers.js');
+    const host=document.createElement('div');host.style.cssText='position:fixed;top:0;left:0;width:300px;height:200px;z-index:9999';
+    const box=document.createElement('div');box.contentEditable='true';box.style.cssText='width:280px;min-height:40px';
+    const send=document.createElement('button');send.setAttribute('data-paragraph-send','');send.textContent='Send';let clicks=0;
+    send.onclick=()=>clicks++;
+    box.addEventListener('paste',e=>{e.preventDefault();box.replaceChildren();
+      for(const line of e.clipboardData.getData('text/plain').split('\\n')) {const p=document.createElement('p');p.textContent=line;box.append(p);}
+    });
+    host.append(box,send);document.body.append(host);globalThis.__izukiTyped='';
+    const first=await typeIntoComposer('First line\\nSecond line',['div[contenteditable="true"]'],[],false,location.origin);
+    const second=await typeIntoComposer('New first line\\nNew second line',['div[contenteditable="true"]'],['button[data-paragraph-send]'],true,location.origin);
+    const visible=box.innerText;host.remove();return {first,second,clicks,visible};
+  })()`);
+  assert.deepEqual(paragraphs.first,{ok:true,sent:false},'paragraph boundaries count as whitespace in exact text checks');
+  assert.deepEqual(paragraphs.second,{ok:true,sent:true},'the same plain-text representation recognizes and replaces an owned multiline draft');
+  assert.equal(paragraphs.clicks,1,'the complete multiline question reaches Send');
+  assert.equal(paragraphs.visible.replace(/\s+/g,' ').trim(),'New first line New second line');
   // Esc has to end a desktop task from anywhere in the panel, as it promises.
   await run('document.getElementById("q").value="Summarise the page into my notes";document.getElementById("task-open").click();document.getElementById("task-run").click();');
   await wait('panelTest.tasks.filter((t)=>t.route==="run").length===2');

@@ -393,6 +393,7 @@
           try {
             links.push([pretty(app), await link(app, stopped)]);
           } catch {}
+          if (stopped()) return { text: "Stopped.", links: [], stopped: true };
           return {
             text: `I couldn't actually open your ${pretty(app)} just now, so I don't want to guess at what's in there. Sign in with the link (just once), then ask me again.`,
             links,
@@ -419,6 +420,7 @@
             links,
           };
         } catch (e) {
+          if (stopped()) return { text: "Stopped.", links: [], stopped: true };
           seen = `Couldn't make a sign-in link: ${e.message}`;
         }
       } else if (step.run && typeof step.run === "object") {
