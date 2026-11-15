@@ -163,13 +163,20 @@ pub fn emergency(app: &AppHandle) {
 /// Explicit restore only. A hide never recreates the window it just removed.
 /// Rebuilding discards the broken renderer; the normal settings are retained.
 pub fn restore(app: &AppHandle) -> String {
+    restore_at(app, crate::overlay::rescue_epoch())
+}
+
+/// Restore using the rescue epoch captured when the request was accepted.
+/// A request can wait behind other blocking work; capturing the epoch when
+/// the worker starts would let a stop that happened while it waited be
+/// mistaken for an older one and undone.
+pub fn restore_at(app: &AppHandle, epoch: usize) -> String {
     if RESTORING
         .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
         .is_err()
     {
         return "Windows is still finishing the previous overlay restore. Emergency hiding remains available with Esc three times or Ctrl+Shift+Q.".into();
     }
-    let epoch = crate::overlay::rescue_epoch();
     let (send, receive) = std::sync::mpsc::channel();
     let worker_app = app.clone();
     if std::thread::Builder::new()
