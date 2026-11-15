@@ -20,6 +20,7 @@
   let labelHits = 0;
   let longHits = 0;
   let longTimer = null;
+  let lastScreenApp = "";
 
   /** The accessibility tree's copy of a test target. Pure and testable. */
   function findTarget(screen, needle, widest = false) {
@@ -278,6 +279,7 @@
     el?.scrollIntoView?.({ block: "center" });
     await sleep(450);
     const screen = await bridge.screen?.();
+    lastScreenApp = screen?.app || "";
     return findTarget(screen, needle, widest);
   }
 
@@ -299,6 +301,7 @@
     const point = center(item);
     if (!point) return { ok: false, text: "The tap target was not listed by the screen reader. Unlock the phone and keep Izuki in front, then run it again." };
     const map = screenMap($("pl-gesture-target")?.getBoundingClientRect?.(), item);
+    if (map) map.app = lastScreenApp;
     const result = await bridge.gesture({ op: "tap", x: point.x, y: point.y });
     await sleep(650);
     return tapHits > 0
@@ -326,6 +329,10 @@
     // Chromium may not name a scroll strip. The page knows where it is, and the
     // tap target gave the page-to-screen mapping: use that instead.
     if (!item && map) {
+      // Only while Izuki's own page is in front: a swipe at these
+      // coordinates must never land in another app.
+      const front = await bridge.screen?.().catch?.(() => null);
+      if (!front || front.app !== map.app) return { ok: false, text: "Izuki isn't in front any more, so the swipe test stopped." };
       const r = zone.getBoundingClientRect();
       item = { x: Math.round(map.x + r.left * map.scale), y: Math.round(map.y + r.top * map.scale), w: Math.round(r.width * map.scale), h: Math.round(r.height * map.scale) };
       where = "the page's own position";

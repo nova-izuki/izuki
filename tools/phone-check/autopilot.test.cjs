@@ -60,8 +60,9 @@ const A = window.IzukiAutopilot;
   screen = { app: "Messages", items: [{ n: 1, text: "Message", kind: "box" }] };
   calls.length = 0;
   assert.equal(await A.run("search hello"), false);
-  assert.deepEqual(calls, ["act:click:1", "act:type:hello:1"], "it types, but never presses Enter without a Search control");
-  assert.match(A.state.log.at(-1).text, /didn't press Enter/);
+  // A message box is never taken for a search box: nothing is typed or sent.
+  assert.deepEqual(calls, [], "a search never types into a chat message box");
+  assert.match(A.state.log.at(-1).text, /search box/);
 
   screen = { app: "Home", items: [] };
   calls.length = 0;

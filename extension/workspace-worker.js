@@ -163,7 +163,7 @@
     if(op==="relayStatus")return {ok:true,running:root.IzukiProviderRelay.status()};
     if(op==="cancelRelayTab"){
       if(!Number.isSafeInteger(message.tabId))throw Error("Which AI tab should stop?");
-      return {ok:true,stopped:root.IzukiProviderRelay.cancelTab(message.tabId,typeof message.requestId==="string"?message.requestId:"")};
+      return {ok:true,stopped:await root.IzukiProviderRelay.cancelTab(message.tabId,typeof message.requestId==="string"?message.requestId:"")};
     }
     if(op==="float")return float(windowId);
     if(op==="dock"){

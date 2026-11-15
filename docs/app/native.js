@@ -528,9 +528,11 @@
         if (!app?.name) return null;
         // Opening is only "opened" once Android shows that app in front.
         const shown = await window.IzukiNative.waitForApp?.(app.id, 6000);
-        return shown === false
-          ? `I asked Android to open ${app.name}, but it hasn't come to the front yet.`
-          : `Opened ${app.name}. Tap the orb to come back to me.`;
+        return shown === true
+          ? `Opened ${app.name}. Tap the orb to come back to me.`
+          : shown === false
+            ? `I asked Android to open ${app.name}, but it hasn't come to the front yet.`
+            : `I asked Android to open ${app.name} (I couldn't check that it opened).`;
       }
       const tap = text.match(/^(?:tap|press|click) (.+)$/);
       if (tap) {

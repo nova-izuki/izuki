@@ -1,6 +1,8 @@
 (function(root) {
-async function typeIntoComposer(text, composerSelectors, sendSelectors, autoSend, expectedOrigin = "", requestId = "") {
+async function typeIntoComposer(text, composerSelectors, sendSelectors, autoSend, expectedOrigin = "", requestId = "", deadline = 0) {
   if (expectedOrigin && location.origin !== expectedOrigin) return { ok: false, why: "changed-page" };
+  // The relay stopped waiting for this call (it took too long): do nothing.
+  if (deadline && Date.now() > deadline) return { ok: false, why: "stopped" };
   const visible = (el) => {
     if (!el) return false;
     const box = el.getBoundingClientRect();
@@ -104,6 +106,7 @@ async function typeIntoComposer(text, composerSelectors, sendSelectors, autoSend
   }
   if (button) {
     if (requestId && globalThis.__izukiStoppedRelay?.has(requestId)) return {ok:false,why:"stopped"};
+    if (deadline && Date.now() > deadline) return { ok: false, why: "stopped" };
     button.click();
     // Sent: whatever is in the box from now on is the person's.
     globalThis.__izukiTyped = "";

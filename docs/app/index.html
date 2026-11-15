@@ -1935,7 +1935,8 @@
       const r = await fetch(base + "talk", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: said }), signal: controller.signal });
       if (!r.ok) throw new Error("pc");
       pcAway = 0;
-      return r.json();
+      // Awaited here, so the deadline and Stop still cover reading the answer.
+      return await r.json();
     } catch (e) {
       // Never reached it at all (blocked, or no answer): not the PC's fault.
       // Stopped by the person or the deadline: that isn't the PC being away.
@@ -2299,8 +2300,11 @@
         finishRequest();
         busy = false; refreshSend(); setOrb(""); setStatus(""); if (talking && requestEnd !== "cancelled") listen(); return;
       }
+      const stoppedHearing = !!requestEnd;
       finishRequest();
       busy = false; refreshSend(); setStatus("");
+      // Stopped (or out of time) while hearing: a late transcript starts nothing.
+      if (stoppedHearing) { setOrb(""); return; }
       if (!said) { setOrb(""); if (talking) listen(); return; }
       liveHeard(said);
       return ask(said);
@@ -2366,7 +2370,8 @@
         history.push({ role: "user", text: said });
         if (useApps) {
           // Same protocol the PC uses, run by this phone's own brain.
-          const a = await window.izukiApps.ask(history, (msgs) => think(contentsFor(msgs), null, systemFor(msgs)));
+          // Stop ends the apps lane between rounds: no more model calls or tool runs.
+          const a = await window.izukiApps.ask(history, (msgs) => think(contentsFor(msgs), null, systemFor(msgs)), () => !!requestEnd);
           if (requestEnd) throw new Error("stopped");
           reply = a.text || "Done.";
           const chips = (a.links || []).map(([name, url]) => {

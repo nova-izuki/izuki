@@ -4947,10 +4947,10 @@ fn submit_task(
         retrying = snag.as_deref().is_some_and(|why| why.starts_with("target_changed:")
             || why.starts_with(crate::ext::UNCONFIRMED) || why.starts_with("covered:")
             || why.starts_with("disabled:") || why.starts_with("typed_mismatch:"));
-        if retrying {
-            if let Some(why) = snag.as_deref() {
-                snags_seen.push(why.to_string());
-            }
+        // Every failure goes in the stop report (not only the kinds that
+        // keep the next try quiet).
+        if let Some(why) = snag.as_deref() {
+            snags_seen.push(why.to_string());
         }
         if snag.as_deref() == Some(USER_WAIT_OVER) {
             set_unfinished((prompt.clone(), done_so_far.clone()));
@@ -7463,6 +7463,7 @@ mod stop_report_tests {
             model: "20S1SA4W03".into(),
             family: "ThinkPad T14 Gen 1".into(),
             apps: vec![("Lenovo Commercial Vantage".into(), "E046963F.LenovoSettingsforEnterprise_k1h2ywk1493x8".into())],
+            apps_known: true,
         };
         let said = stop_report(&snags, "Settings", Some(&thinkpad));
         assert!(said.starts_with("I stopped after 4 attempts that didn't work"), "{said}");

@@ -116,7 +116,8 @@
     const shown = opened.id && n.waitForApp ? await n.waitForApp(opened.id, 9000) : null;
     assertRunning();
     if (shown === false) throw new Error(`I asked Android to open ${opened.name}, but it didn't come to the front.`);
-    add(`Opened ${opened.name}.`, "done");
+    if (shown) add(`Opened ${opened.name}.`, "done");
+    else add(`Asked Android to open ${opened.name} (I couldn't check that it came to the front).`, "warn");
     await sleep(shown ? 500 : 1200);
     return opened;
   }
@@ -142,6 +143,12 @@
   /** A text box on this screen: the focused one, else the first. */
   const boxIn = (screen) => screen?.items?.find((item) => item.kind === "box" && item.focused)
     || screen?.items?.find((item) => item.kind === "box") || null;
+  /** A box that says it's for searching (its words or its id): never a message box. */
+  const SEARCHY = /\b(search|find|query|url|address)\b|search|url_bar|omnibox/i;
+  const searchBoxIn = (screen) => {
+    const boxes = (screen?.items || []).filter((item) => item.kind === "box" && (SEARCHY.test(String(item.text || "")) || SEARCHY.test(String(item.id || ""))));
+    return boxes.find((item) => item.focused) || boxes[0] || null;
+  };
   /** A control that opens search — never "Voice search" or the microphone. */
   const searchOpener = (screen) => {
     // Both the label and the view id: an unlabelled "voice_search" icon is still the microphone.
@@ -153,11 +160,14 @@
       || null;
   };
 
-  async function typeText(text) {
+  async function typeText(text, { search = false } = {}) {
     const n = needBridge();
-    // Find a text field on this screen, focus it, then set the words.
+    // Find a text field on this screen, focus it, then set the words. A
+    // search only ever types into a search box: a chat's message box is
+    // never mistaken for one.
+    const pick = search ? searchBoxIn : boxIn;
     let screen = await readScreen();
-    let box = boxIn(screen);
+    let box = pick(screen);
     if (!box) {
       // A search icon is often the way in: open it, then wait for the field
       // it reveals. The old code typed at nothing ("open a search box first").
@@ -172,7 +182,7 @@
         if (!(await sleep(400))) throw new Error("Stopped.");
         screen = await readScreen().catch(() => screen);
         assertRunning();
-        box = boxIn(screen);
+        box = pick(screen);
       }
     }
     assertRunning();
@@ -182,6 +192,8 @@
       await n.act({ op: "click", n: box.n });
       assertRunning();
     }
+    // n = 0 types into whatever box is focused, so a search never does that.
+    if (!box && search) throw new Error("I couldn't find this app's search box. Open its search, then say the request again.");
     const result = await n.act({ op: "type", text, n: box ? box.n : 0 });
     if (!box && result?.reason === "no-box") {
       throw new Error("I can't see a text box on this screen, and no Search button opened one. Open the search field, then say the request again.");
@@ -272,7 +284,7 @@
         steps: [
           { label: `Open ${app}`, run: () => openApp(app) },
           // typeText opens the app's search field itself (never Voice search).
-          { label: `Search for ${query}`, run: async () => { await typeText(query); await submit(); } },
+          { label: `Search for ${query}`, run: async () => { await typeText(query, { search: true }); await submit(); } },
         ],
       };
     }
@@ -282,7 +294,7 @@
     }
     if ((m = goal.match(/^(?:search|look up|google)\s+(?:for\s+)?(.+)$/i))) {
       const query = m[1].trim();
-      return { title: `Search for ${query}`, steps: [{ label: `Search for ${query}`, run: async () => { await typeText(query); await submit(); } }] };
+      return { title: `Search for ${query}`, steps: [{ label: `Search for ${query}`, run: async () => { await typeText(query, { search: true }); await submit(); } }] };
     }
     if ((m = goal.match(/^(?:tap|press|click)\s+(.+)$/i))) {
       return { title: `Tap ${m[1].trim()}`, steps: [safeTap(m[1].trim())] };

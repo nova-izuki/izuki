@@ -26,6 +26,8 @@ pub struct Device {
     pub family: String,
     /// The maker apps installed for this user: (display name, package family name).
     pub apps: Vec<(String, String)>,
+    /// False when the app list couldn't be read: then nothing is "not installed".
+    pub apps_known: bool,
 }
 
 impl Device {
@@ -82,7 +84,8 @@ const MAKER_APPS: &[(&str, &str)] = &[
     ("DellInc.DellOptimizer", "Dell Optimizer"),
     ("AD2F1837.HPPowerManager", "HP Power Manager"),
     ("AD2F1837.myHP", "myHP"),
-    ("Microsoft.SurfaceApp", "Surface"),
+    // The Surface app's package has kept its old name.
+    ("Microsoft.SurfaceHub", "Surface"),
     ("SAMSUNGELECTRONICSCoLtd.SamsungSettings", "Samsung Settings"),
     ("9426MICRO-STARINTERNATION.MSICenter", "MSI Center"),
     ("AcerIncorporated.AcerCareCenterS", "Acer Care Center"),
@@ -127,21 +130,18 @@ pub fn parse_packages(out: &str) -> Vec<(String, String)> {
     found
 }
 
+/// A registry key's listing, or None when `reg` couldn't run or failed.
 #[cfg(windows)]
-fn reg_query(key: &str) -> String {
+fn reg_query(key: &str) -> Option<String> {
     use std::os::windows::process::CommandExt;
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    std::process::Command::new("reg")
-        .args(["query", key])
-        .creation_flags(CREATE_NO_WINDOW)
-        .output()
-        .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
-        .unwrap_or_default()
+    let out = std::process::Command::new("reg").args(["query", key]).creation_flags(CREATE_NO_WINDOW).output().ok()?;
+    out.status.success().then(|| String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
 #[cfg(not(windows))]
-fn reg_query(_key: &str) -> String {
-    String::new()
+fn reg_query(_key: &str) -> Option<String> {
+    None
 }
 
 /// The package's full name in the listing, from its family name (Name_PublisherId).
@@ -187,17 +187,19 @@ const PACKAGES_KEY: &str = r"HKCU\Software\Classes\Local Settings\Software\Micro
 
 /// The maker apps installed now: (display name, "Family!AppId"). The app id
 /// is the package key's own subkey ("App" almost always).
-fn installed_maker_apps() -> Vec<(String, String)> {
-    let listing = reg_query(PACKAGES_KEY);
-    parse_packages(&listing)
-        .into_iter()
-        .map(|(name, family)| {
-            let id = full_name(&listing, &family)
-                .and_then(|full| app_id(&reg_query(&format!(r"{PACKAGES_KEY}\{full}"))))
-                .unwrap_or_else(|| "App".to_string());
-            (name, format!("{family}!{id}"))
-        })
-        .collect()
+fn installed_maker_apps() -> Option<Vec<(String, String)>> {
+    let listing = reg_query(PACKAGES_KEY)?;
+    Some(
+        parse_packages(&listing)
+            .into_iter()
+            .map(|(name, family)| {
+                let id = full_name(&listing, &family)
+                    .and_then(|full| reg_query(&format!(r"{PACKAGES_KEY}\{full}")).and_then(|l| app_id(&l)))
+                    .unwrap_or_else(|| "App".to_string());
+                (name, format!("{family}!{id}"))
+            })
+            .collect(),
+    )
 }
 
 /// This PC. The maker and model never change, so they're read once; the
@@ -207,20 +209,26 @@ pub fn device() -> Device {
     static IDENTITY: OnceLock<(String, String, String)> = OnceLock::new();
     static APPS: std::sync::Mutex<Option<(std::time::Instant, Vec<(String, String)>)>> = std::sync::Mutex::new(None);
     let (maker, model, family) = IDENTITY
-        .get_or_init(|| parse_bios(&reg_query(r"HKLM\HARDWARE\DESCRIPTION\System\BIOS")))
+        .get_or_init(|| parse_bios(&reg_query(r"HKLM\HARDWARE\DESCRIPTION\System\BIOS").unwrap_or_default()))
         .clone();
-    let apps = {
+    let (apps, apps_known) = {
         let mut cached = APPS.lock().unwrap_or_else(|e| e.into_inner());
         match cached.as_ref() {
-            Some((at, apps)) if at.elapsed() < std::time::Duration::from_secs(300) => apps.clone(),
-            _ => {
-                let fresh = installed_maker_apps();
-                *cached = Some((std::time::Instant::now(), fresh.clone()));
-                fresh
-            }
+            Some((at, apps)) if at.elapsed() < std::time::Duration::from_secs(300) => (apps.clone(), true),
+            _ => match installed_maker_apps() {
+                Some(fresh) => {
+                    *cached = Some((std::time::Instant::now(), fresh.clone()));
+                    (fresh, true)
+                }
+                // The read failed: keep the last good list if there is one.
+                None => match cached.as_ref() {
+                    Some((_, apps)) => (apps.clone(), true),
+                    None => (Vec::new(), false),
+                },
+            },
         }
     };
-    let d = Device { maker, model, family, apps };
+    let d = Device { maker, model, family, apps, apps_known };
     eprintln!("[hardware] {} · maker apps: {}", d.name(), if d.apps.is_empty() { "none".into() } else { d.apps.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>().join(", ") });
     d
 }
@@ -295,7 +303,13 @@ pub fn block_for(d: &Device, prompt: &str) -> String {
     let mut out = String::from("\n\nTHIS PC (read from Windows, not guessed): ");
     out += if name.is_empty() { "the maker and model aren't reported" } else { name.as_str() };
     out += ". Maker apps installed: ";
-    out += &if d.apps.is_empty() { "none found".to_string() } else { d.apps.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>().join(", ") };
+    out += &if !d.apps_known {
+        "couldn't be checked".to_string()
+    } else if d.apps.is_empty() {
+        "none found".to_string()
+    } else {
+        d.apps.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>().join(", ")
+    };
     out += ". Check what exists before operating it: a hardware setting the screen doesn't show may simply not be on this page or this PC — say so instead of scrolling or clicking around for it.";
     if about_charge_limit(prompt) {
         out += "\nBATTERY CHARGE LIMIT: Windows Settings (System → Power & battery) has no charge-limit control on this PC — don't look for one there.";
@@ -305,6 +319,13 @@ pub fn block_for(d: &Device, prompt: &str) -> String {
                 match installed {
                     Some(app) => {
                         out += &format!(" It's set in {app} (installed): {}. Open {app} (search it in Start), go there, and use that control.", route.path);
+                    }
+                    None if !d.apps_known => {
+                        out += &format!(
+                            " On this maker's laptops it's set in {}: {}. Izuki couldn't check which apps are installed: look for it in Start before saying it's missing.",
+                            route.apps.join(" or "),
+                            route.path
+                        );
                     }
                     None => {
                         out += &format!(
@@ -331,7 +352,7 @@ mod tests {
 
     fn thinkpad() -> Device {
         let (maker, model, family) = parse_bios(BIOS);
-        Device { maker, model, family, apps: parse_packages(PACKAGES) }
+        Device { maker, model, family, apps: parse_packages(PACKAGES), apps_known: true }
     }
 
     #[test]
@@ -343,6 +364,12 @@ mod tests {
             full_name(PACKAGES, "E046963F.LenovoSettingsforEnterprise_k1h2ywk1493x8").as_deref(),
             Some("E046963F.LenovoSettingsforEnterprise_20.2608.13.0_x64__k1h2ywk1493x8")
         );
+    }
+
+    #[test]
+    fn the_surface_app_is_found_by_its_real_package() {
+        let listing = "HKEY_CURRENT_USER\\Software\\Classes\\Local Settings\\Software\\Microsoft\\Windows\\CurrentVersion\\AppModel\\Repository\\Packages\\Microsoft.SurfaceHub_100.2.3.0_x64__8wekyb3d8bbwe\r\n";
+        assert_eq!(parse_packages(listing), vec![("Surface".to_string(), "Microsoft.SurfaceHub_8wekyb3d8bbwe".to_string())]);
     }
 
     #[test]
@@ -365,11 +392,14 @@ mod tests {
 
     #[test]
     fn a_missing_maker_app_is_said_not_invented() {
-        let d = Device { maker: "ASUSTeK COMPUTER INC.".into(), model: "UX425".into(), family: "ZenBook".into(), apps: vec![] };
+        let d = Device { maker: "ASUSTeK COMPUTER INC.".into(), model: "UX425".into(), family: "ZenBook".into(), apps: vec![], apps_known: true };
         let block = block_for(&d, "cap my battery at 80%");
         assert!(block.contains("MyASUS"));
         assert!(block.contains("isn't installed here"));
-        let unknown = Device { maker: "Framework".into(), ..Default::default() };
+        let unknown = Device { maker: "Framework".into(), apps_known: true, ..Default::default() };
+        let unread = Device { apps_known: false, ..d.clone() };
+        let said = block_for(&unread, "cap my battery at 80%");
+        assert!(said.contains("couldn't be checked") && !said.contains("isn't installed"), "a failed read is never \"not installed\"");
         assert!(block_for(&unknown, "set a charge limit").contains("isn't one Izuki knows"));
     }
 
@@ -389,7 +419,7 @@ mod tests {
     fn short_bios_answers_still_read() {
         let (maker, model, family) = parse_bios("    SystemManufacturer    REG_SZ    Dell Inc.\r\n    SystemProductName    REG_SZ    Latitude 7420\r\n");
         assert_eq!((maker.as_str(), model.as_str(), family.as_str()), ("Dell Inc.", "Latitude 7420", ""));
-        let d = Device { maker, model, family, apps: vec![] };
+        let d = Device { maker, model, family, apps: vec![], apps_known: true };
         assert_eq!(d.name(), "Dell Inc. Latitude 7420");
         assert!(charge_limit_route(&d).unwrap().apps.contains(&"Dell Power Manager"));
     }

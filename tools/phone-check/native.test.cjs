@@ -6,7 +6,7 @@ const path = require("path");
 const vm = require("vm");
 
 const calls = [];
-let tapped = 0, screenMoves = true;
+let tapped = 0, screenMoves = true, launchId = "YouTube";
 let prompted = false, appSettings = 0, lastNavigate = null, lastInstall = null, lastProgress = null;
 const stored = {};
 const localStorage = {
@@ -44,7 +44,8 @@ const window = {
         launch: async ({ name }) => {
           if (String(name).toLowerCase() !== "youtube") throw new Error("not installed");
           calls.push("launch:YouTube");
-          return { name: "YouTube" };
+          // The package id lets the bridge confirm the app came to the front.
+          return { name: "YouTube", id: launchId };
         },
         navigate: async ({ to, orb }) => { calls.push(`navigate:${to}`); lastNavigate = { to, orb }; return { to }; },
         orb: async ({ state, text }) => { calls.push(`orb:${state}${text ? `:${text}` : ""}`); return true; },
@@ -110,6 +111,11 @@ vm.runInNewContext(fs.readFileSync(path.resolve(__dirname, "../../docs/app/nativ
   assert.deepEqual(calls, ["home"], "unrecognised words must never become device actions");
   assert.equal(await window.IzukiNative.quickDeviceCommand("open YouTube"), "Opened YouTube. Tap the orb to come back to me.");
   assert.deepEqual(calls, ["home", "launch:YouTube"]);
+  // Without a package id it can't be checked, so it isn't called opened.
+  launchId = undefined;
+  assert.match(await window.IzukiNative.quickDeviceCommand("open YouTube"), /couldn't check that it opened/);
+  launchId = "YouTube";
+  calls.splice(calls.lastIndexOf("launch:YouTube"), 1);
   assert.equal(await window.IzukiNative.quickDeviceCommand("take me to Walmart"), "Taking you to Walmart. Google Maps has the turns — tap the orb when you need me.");
   assert.equal(calls.at(-1), "navigate:Walmart");
   assert.equal(lastNavigate.orb, true, "Maps respects the orb preference");

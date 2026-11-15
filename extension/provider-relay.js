@@ -59,7 +59,7 @@
       const before=await inspect(id,spec,connection.origin);
       if(ctrl.signal.aborted)throw new DOMException("Stopped","AbortError");
       if(before.busy)throw Error(`${spec.name} is already answering. Wait before sharing another question.`);
-      const [sent]=await within(chrome.scripting.executeScript({target:{tabId:id},func:root.IzukiProviderDOM.typeIntoComposer,args:[text,spec.composer,spec.send,true,connection.origin,requestId]}),
+      const [sent]=await within(chrome.scripting.executeScript({target:{tabId:id},func:root.IzukiProviderDOM.typeIntoComposer,args:[text,spec.composer,spec.send,true,connection.origin,requestId,Date.now()+CALL_LIMIT]}),
         CALL_LIMIT,`${spec.name}'s tab didn't take the question. Open it to check it, then try again.`);
       if(!sent?.result?.ok || !sent.result.sent)throw Error(root.IzukiProviderRelay.problem(sent?.result?.why,spec.name));
       let latest="",stableAt=0;
@@ -98,11 +98,15 @@
    * Only the one the panel saw: a newer question that took the tab since is
    * left alone.
    */
-  function cancelTab(tabId,requestId) {
+  async function cancelTab(tabId,requestId) {
     const lock=tabLocks.get(tabId); if(!lock||(requestId&&lock.requestId!==requestId))return false;
     cancel(lock.requestId);
-    // Free the tab now: the stopped request leaves at its next check.
-    tabLocks.delete(tabId);
+    // The lock stays until the stopped question has really left (its own
+    // finally frees it), so a new question never shares the tab with it.
+    const until=Date.now()+CALL_LIMIT+1000;
+    while(tabLocks.get(tabId)?.requestId===lock.requestId&&Date.now()<until)await new Promise(r=>setTimeout(r,50));
+    // Stuck past every limit (it can't type or send any more): let the tab go.
+    if(tabLocks.get(tabId)?.requestId===lock.requestId)tabLocks.delete(tabId);
     return true;
   }
   /** What every AI tab is busy with: [{tabId, requestId, startedAt, label, provider}]. */
