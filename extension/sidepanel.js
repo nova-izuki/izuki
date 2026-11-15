@@ -76,9 +76,9 @@ async function ping() {
       if (proof.why !== "offline") { st.className = ""; st.innerHTML = `<i></i>${proof.why === "unpaired" ? "Set up from Izuki" : "Not Izuki"}`; st.title = globalThis.IzukiBridgeProof.message[proof.why]; return false; }
       throw 0;
     }
-    st.title = "";
+    st.title = "Izuki on this PC is reachable";
     st.className = "on";
-    st.innerHTML = "<i></i>Connected";
+    st.innerHTML = "<i></i>PC connected";
     try {
       const f = await (await globalThis.IzukiBridgeProof.fetch(`${BRIDGE}/focus`, { method: "POST", headers: H, body: "{}" })).json();
       if (f.left) st.innerHTML += ` · 🎯 Focus ${Math.ceil(f.left / 60)} min`;
@@ -86,7 +86,7 @@ async function ping() {
     return true;
   } catch {
     st.className = "off";
-    st.innerHTML = "<i></i>Izuki isn't running";
+    st.innerHTML = "<i></i>Izuki app off";
     return false;
   }
 }
@@ -205,6 +205,8 @@ function paintWho() {
   if (!who) return;
   const local = !c || !!c.provider.local;
   who.textContent = local ? "Izuki on this PC" : `${c.provider.name} tab`;
+  const askWho = $("ask-who");
+  if (askWho) { askWho.textContent = local ? "Izuki" : c.provider.name; askWho.title = local ? "Answered by Izuki on this PC" : `Answered in your ${c.provider.name} tab`; }
   // One state, said once: Izuki on this PC is "ready" only when it answered
   // (it used to say ready whether or not the app was running), and Connect
   // shows only when something needs connecting.
@@ -591,11 +593,24 @@ function clearChat() {
 // ---- wiring ---------------------------------------------------------------------------
 
 const q = $("q");
+// Four plain views: the chat, the page Izuki reads, the longer jobs, and the
+// few settings. The composer stays put; only the area above it changes.
+const viewButtons = [...document.querySelectorAll("#views [data-view]")];
+function showView(name) {
+  const known = ["ask", "page", "tasks", "settings"].includes(name) ? name : "ask";
+  document.body.dataset.view = known;
+  for (const b of viewButtons) b.setAttribute("aria-selected", b.dataset.view === known ? "true" : "false");
+  if (known === "ask") q.focus();
+}
+for (const b of viewButtons) b.addEventListener("click", () => showView(b.dataset.view));
+for (const b of document.querySelectorAll("[data-view-link]")) b.addEventListener("click", () => showView(b.dataset.viewLink));
 const short = (t) => (t.length > 60 ? `${t.slice(0, 57)}…` : t);
 $("ask").onsubmit = (e) => {
   e.preventDefault();
   const t = q.value.trim();
   if (!t) return;
+  // Sent from Settings or Tasks: the answer belongs in the conversation.
+  showView("ask");
   const sent = () => { q.value = ""; q.style.height = ""; };
   if (/^\/?(?:clear|clear (?:the )?chat|new chat)[.!]?$/i.test(t)) { sent(); clearChat(); return; }
   // A task is running on the PC: the question stays in the box for later.

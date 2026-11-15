@@ -72,25 +72,29 @@ let server,browser,profile,ws;
   await run('panelTest.reply("About this part.")');
   await wait('document.getElementById("log").textContent.includes("About this part")');
   assert.equal(await run('document.getElementById("log").textContent.includes("page changed")'),false,'no "the page changed" refusal');
-  // A different page under the same tab: its words don't go out for a
-  // question about the old one, and asking again works (it used to fail
-  // the same way every time).
+  // Another page on the same site is the page the person is looking at: it
+  // is read and answered, not refused. A different site is not silently
+  // swapped: it says where the tab is, then Try again asks about it.
   await run('panelTest.pages[0].url="https://course.example/grades"');
   const sentBefore=await run('panelTest.asks.length');
-  await ask('and this one');
-  await wait('document.getElementById("log").textContent.includes("moved to another page")');
-  assert.equal(await run('panelTest.asks.length'),sentBefore,'the other page was not sent');
   await ask('and this one');await wait(`panelTest.asks.length===${sentBefore+1}`);
   await run('panelTest.reply("About the grades page.")');await wait('document.getElementById("log").textContent.includes("grades page")');
+  await run('panelTest.pages[0].url="https://other.example/grades"');
+  const otherBefore=await run('panelTest.asks.length');
+  await ask('and this one');
+  await wait('document.getElementById("log").textContent.includes("not the site you shared")');
+  assert.equal(await run('panelTest.asks.length'),otherBefore,'the other site was not sent');
+  await ask('and this one');await wait(`panelTest.asks.length===${otherBefore+1}`);
+  await run('panelTest.reply("About the other site.")');await wait('document.getElementById("log").textContent.includes("other site")');
   // A follow-up chip asks its follow-up.
-  await run('document.querySelector(".follow-ups button").click()');await wait('panelTest.asks.length===8');
-  assert.match(await run('panelTest.asks[7].body.question'),/shorter/i);
+  await run('document.querySelector(".follow-ups button").click()');await wait('panelTest.asks.length===9');
+  assert.match(await run('panelTest.asks[8].body.question'),/shorter/i);
   await run('panelTest.reply("Short.")');await wait('!document.getElementById("send").disabled');
   // ↑ brings the last question back; "clear" clears and isn't asked.
   await run('document.getElementById("q").dispatchEvent(new KeyboardEvent("keydown",{key:"ArrowUp",bubbles:true,cancelable:true}))');
   assert.match(await run('document.getElementById("q").value'),/shorter/i,'↑ recalls the last question');
   await ask('clear');await wait('document.querySelector(".hello")');
-  assert.equal(await run('panelTest.asks.length'),8,'"clear" is a command, not a question');
+  assert.equal(await run('panelTest.asks.length'),9,'"clear" is a command, not a question');
   assert.equal(await run('document.querySelectorAll(".msg").length'),0,'the chat is cleared');
   await run('const p=document.getElementById("provider");p.value="any";p.dispatchEvent(new Event("change"));');
   await wait('document.querySelectorAll("#provider-tabs option").length===2');

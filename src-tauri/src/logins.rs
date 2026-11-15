@@ -410,7 +410,9 @@ pub fn report(events: &[Logon], source: &str, days: u32) -> String {
         s.push_str(&format!("How: {}.\n", kinds.iter().map(|(k, n)| format!("{n} {k}")).collect::<Vec<_>>().join(", ")));
     }
     let findings = analyze(events);
-    if findings.is_empty() {
+    if events.is_empty() {
+        s.push_str("No 4624 or 4625 records came back in this range. That can mean nobody signed in, or that Windows is not recording these sign-ins (auditing can be off). This read cannot tell those apart; check Local Security Policy → Audit Policy if you expected records.\n");
+    } else if findings.is_empty() {
         s.push_str("Nothing stands out: no bursts of failures, no sign-ins from outside your network, no lockouts.\n");
     }
     for f in &findings {
@@ -430,7 +432,19 @@ pub fn report(events: &[Logon], source: &str, days: u32) -> String {
             s.push_str(&format!("    {r}\n"));
         }
     }
-    s.push_str("(Times are UTC. Only what the log recorded is here; nothing was changed.)");
+    let outside = findings.iter().any(|f| f.what.contains("outside your network"));
+    let guessing = findings.iter().any(|f| f.what.contains("different user names") || f.what.contains("kept trying passwords"));
+    s.push_str("What you can do next:\n");
+    if outside {
+        s.push_str("    If a sign-in from outside your network wasn't you: change that password, sign out other sessions, turn on multi-factor sign-in, and check Remote Desktop and VPN access.\n");
+    }
+    if guessing {
+        s.push_str("    If the failed attempts weren't you: keep a strong password and multi-factor sign-in on the account, and check whether a remote service is exposed to the internet.\n");
+    }
+    if !outside && !guessing {
+        s.push_str("    No action is needed from this log alone; if something still feels wrong, check the account's recent activity in its own settings.\n");
+    }
+    s.push_str("(Times are UTC. Only what the log recorded is here; the read was read-only and no setting was changed. Findings are patterns to check, not proof of an attack.)");
     s
 }
 
@@ -491,7 +505,9 @@ pub fn read(days: u32, as_admin: bool) -> Read {
         let xml = std::fs::read_to_string(&out).unwrap_or_default();
         let problem = std::fs::read_to_string(&err).unwrap_or_default();
         let finished = std::fs::read_to_string(&done).unwrap_or_default();
-        for f in [&out, &err, &done] {
+        // No event export or helper script is left behind: this investigation
+        // keeps no copy of the Security log.
+        for f in [&out, &err, &done, &script] {
             let _ = std::fs::remove_file(f);
         }
         // Only a read that really ran and said it finished counts: an empty
@@ -524,7 +540,7 @@ pub fn read(days: u32, as_admin: bool) -> Read {
 pub fn read(days: u32, _as_admin: bool) -> Read {
     let since = format!("-{days}d");
     let journal = std::process::Command::new("journalctl")
-        .args(["-q", "--no-pager", "-o", "short-iso", "--since", &since, "-t", "sshd", "-t", "login", "-t", "gdm-password]", "-t", "lightdm", "-t", "sddm"])
+        .args(["-q", "--no-pager", "-o", "short-iso", "--since", &since, "-t", "sshd", "-t", "login", "-t", "gdm-password", "-t", "lightdm", "-t", "sddm"])
         .output();
     if let Ok(o) = journal {
         let text = String::from_utf8_lossy(&o.stdout).to_string();
@@ -559,8 +575,14 @@ pub fn asked(said: &str) -> Option<String> {
     let about = has(&[" sign in", " signed in", " signin", " login", " logged in", " log in", " logon", " sign ins", " signins"]);
     let looking = has(&[" who ", " failed ", " suspicious ", " activity ", " attempts ", " attempt ", " history ", " investigate ", " unusual ", " anyone ", " someone ", " any ", " recent ", " check ", " show ", " list ", " review ", " today ", " this week ", " last ", " month "]);
     let this_pc = has(&[" pc ", " computer ", " laptop ", " windows ", " this machine ", " my machine ", " linux ", " this device "]);
+    // A site or another app has its own account history; without a local
+    // marker ("failed", "suspicious", "sign-ins", "on my PC") don't read the
+    // PC's log for it. This is also what keeps "check my login for Blackboard"
+    // out of the Security log.
+    let local = this_pc
+        || has(&[" failed ", " suspicious ", " unusual ", " sign ins ", " signins ", " sign-ins ", " logons ", " login activity ", " sign-in activity ", " login history ", " anyone ", " someone "]);
     let somewhere_else = has(&[" in to ", " into ", " on to ", " onto ", " me in "]) && !this_pc;
-    let ok = about && looking && !somewhere_else && crate::practical::mode_of(said) == crate::practical::Mode::Do && !crate::practical::offers(said);
+    let ok = about && looking && local && !somewhere_else && crate::practical::mode_of(said) == crate::practical::Mode::Do && !crate::practical::offers(said);
     ok.then(|| said.to_string())
 }
 
@@ -568,9 +590,21 @@ pub fn asked(said: &str) -> Option<String> {
 /// (a model asking for "admin" isn't enough: chat.rs checks this first).
 pub fn agreed(said: &str) -> bool {
     let s = format!(" {} ", said.to_lowercase().replace(|c: char| !c.is_alphanumeric() && c != '\'', " "));
-    let yes = [" yes ", " yeah ", " yep ", " ok ", " okay ", " sure ", " go ahead ", " do it ", " allow ", " admin ", " fine ", " please do "];
+    // "admin" is the request, never the consent: "check logins as admin" is
+    // a person asking what to do, not agreeing to Windows' prompt. The yes
+    // has to be its own word in the latest message.
+    let yes = [" yes ", " yeah ", " yep ", " ok ", " okay ", " sure ", " go ahead ", " do it ", " allow ", " fine ", " please do "];
     let no = [" no ", " dont ", " don't ", " not ", " nope ", " never "];
     yes.iter().any(|w| s.contains(w)) && !no.iter().any(|w| s.contains(w))
+}
+
+/// The one plain sentence that asks before Windows' administrator prompt.
+pub const ASK_ADMIN: &str = "I need to read the Windows Security log as administrator once; Windows will ask you to allow it. Okay?";
+
+/// The same request, with the words that let the person agree without
+/// having to guess the next command.
+pub fn ask_admin() -> String {
+    format!("{} If you agree, say \"yes, read my sign-ins as admin\".", ASK_ADMIN)
 }
 
 /// `[IZUKI: logins | week]` / `[IZUKI: logins | month, admin]`: the real
@@ -580,11 +614,9 @@ pub fn ability(details: &str) -> String {
     let admin = details.to_lowercase().contains("admin");
     match read(days, admin) {
         Read::Events { source, events } => report(&events, &source, days),
-        Read::NeedsAdmin => "Windows keeps the Security log (who signed in, and failed tries) for administrators, and Izuki \
-isn't running as one. Ask the person: \"I need to read it as administrator once; Windows will ask you to allow it. Okay?\" \
-Only if they say yes, use [IZUKI: logins | the same days, admin]. They could also open Event Viewer → Windows Logs → \
-Security themselves. Nothing was read."
-            .into(),
+        Read::NeedsAdmin => format!("Windows keeps the Security log (who signed in, and failed tries) for administrators, and Izuki \
+isn't running as one. Ask the person: \"{}\" Only if they say yes, use [IZUKI: logins | the same days, admin]. \
+They could also open Event Viewer → Windows Logs → Security themselves. Nothing was read.", ASK_ADMIN),
         Read::Unavailable(why) => format!("The sign-in log couldn't be read: {why}. Nothing was read, so don't describe any sign-ins."),
     }
 }
@@ -646,6 +678,9 @@ mod tests {
         assert!(analyze(&ev).is_empty(), "the same morning sign-in every day is normal");
         let r = report(&ev, "sample", 14);
         assert!(r.contains("Nothing stands out") && r.contains("12 sign-in(s)"), "{r}");
+        assert!(r.contains("read-only") && r.contains("not proof of an attack"), "{r}");
+        let empty = report(&[], "sample", 7);
+        assert!(empty.contains("No 4624 or 4625 records") && empty.contains("auditing can be off"), "{empty}");
     }
 
     #[test]
@@ -684,6 +719,8 @@ Nov 14 08:21:00 lab CRON[700]: pam_unix(cron:session): session opened for user r
         assert!(agreed("okay, read it as admin"));
         assert!(!agreed("no don't"));
         assert!(!agreed("what did you find"));
+        assert!(!agreed("check logins as admin"), "asking for admin is not agreeing to the prompt");
+        assert!(!agreed("read it as administrator"), "still not a yes");
     }
 
     #[test]
@@ -694,6 +731,7 @@ Nov 14 08:21:00 lab CRON[700]: pam_unix(cron:session): session opened for user r
         assert!(asked("check sign-ins this week").is_some(), "the agent's own wording");
         assert!(asked("log in to blackboard").is_none());
         assert!(asked("who's logged in to discord").is_none());
+        assert!(asked("check my login for blackboard").is_none(), "a site's own login isn't this PC's log");
         assert!(asked("teach me how to check failed logins").is_none(), "a lesson, not the answer");
         assert!(asked("help me investigate suspicious login activity").is_none(), "asked how first");
         assert!(asked("what's the weather").is_none());

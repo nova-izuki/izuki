@@ -18,6 +18,24 @@
     header { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--line); background: var(--panel); }
     header img { width: 22px; height: 22px; }
     header b { font-size: 15px; }
+    #views { display: flex; gap: 3px; padding: 5px 8px; background: var(--panel); border-bottom: 1px solid var(--line); flex-shrink: 0; }
+    #views button { flex: 1 1 0; min-width: 0; font: inherit; font-size: 11px; padding: 6px 2px; border: 1px solid transparent; border-radius: 9px; background: transparent; color: var(--muted); cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    #views button:hover { color: var(--ink); border-color: var(--line); }
+    #views button[aria-selected="true"] { color: var(--ink); border-color: var(--violet); background: color-mix(in srgb, var(--violet) 18%, transparent); }
+    #ask-page { display: none; align-items: center; gap: 7px; min-width: 0; margin: 8px 12px 0; padding: 5px 9px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); }
+    #ask-page img { width: 15px; height: 15px; flex: none; }
+    #ask-page span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+    #ask-who { flex: none; font-size: 10.5px; font-weight: 500; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 0 7px; }
+    #ask-page button { flex: none; }
+    .panel-view { display: none; }
+    body[data-view="page"] #view-page, body[data-view="tasks"] #view-tasks, body[data-view="settings"] #view-settings { display: block; }
+    #settings { padding: 10px 12px 4px; }
+    #settings #privacy { padding: 8px 0 0; background: transparent; }
+    body[data-view="ask"] #ask-page { display: flex; }
+    body[data-view="ask"] #workspace-controls, body[data-view="ask"] #workspace-size { display: none; }
+    body:not([data-view="ask"]) #log, body:not([data-view="ask"]) #modes { display: none; }
+    body:not([data-view="ask"]) #workspace-controls { flex: 1 1 0; min-height: 0; max-height: none; display: block; }
+    body:not([data-view="ask"]) #workspace-size { display: none; }
     #state { font-size: 11.5px; color: var(--muted); display: flex; align-items: center; gap: 5px; }
     #state i { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); display: inline-block; }
     #state.on i { background: var(--ok); } #state.off i { background: #fbbf24; }
@@ -136,7 +154,7 @@
     @media (prefers-reduced-motion: reduce) { .dots span { animation: none; } }
   </style>
 </head>
-<body>
+<body data-view="ask">
   <header>
     <img src="icons/icon-48.png" alt="" />
     <b>Izuki</b>
@@ -148,23 +166,20 @@
     <button class="icon" id="new" title="Clear the chat and start fresh (it stays in Recent chats). You can also type “clear”.">🧹 Clear</button>
   </header>
 
-  <div id="workspace-controls">
-  <section id="connection" aria-label="Choose an assistant">
-    <details id="answer-with">
-      <summary>Answering with <b id="answer-who">Izuki on this PC</b><span id="answer-state" class="pill-state">ready</span></summary>
-      <div class="connect-row"><select id="provider" aria-label="Assistant"><option value="izuki">Izuki on this PC</option><option value="chatgpt">ChatGPT website</option><option value="gemini">Gemini website</option></select><button id="connect" class="chip" type="button">Connect</button></div>
-      <div class="connect-row" id="provider-tabs-row" hidden><select id="provider-tabs" aria-label="Assistant website tab"></select><button id="refresh-tabs" class="chip" type="button">Refresh tabs</button><button id="side-by-side" class="chip" type="button" hidden>Side by side</button></div>
-      <p id="connection-help">Izuki uses the AI provider configured in the desktop app.</p>
-      <label class="switch" title="Use the AI tab that is already open, without pressing Connect."><input type="checkbox" id="auto-connect" checked /> Use the AI tab that's already open</label>
-      <label class="switch"><input type="checkbox" id="show-companion" /> Show desktop companion</label>
-    </details>
-    <label class="switch"><input type="checkbox" id="follow-questions" /> Follow questions on this tab</label>
-    <p id="follow-state">Off. Enable to share each new visible question with the selected assistant.</p>
-    <label class="switch"><input type="checkbox" id="read-aloud" /> Read new answers aloud</label>
-  </section>
+  <nav id="views" role="tablist" aria-label="Izuki panel">
+    <button type="button" role="tab" data-view="ask" aria-selected="true">Ask IZUKI</button>
+    <button type="button" role="tab" data-view="page" aria-selected="false">Current Page</button>
+    <button type="button" role="tab" data-view="tasks" aria-selected="false">Tasks</button>
+    <button type="button" role="tab" data-view="settings" aria-selected="false">Settings</button>
+  </nav>
 
+  <div id="ask-page" aria-label="The page Izuki will read">
+    <img id="fav" alt="" /><span id="ptitle">This page</span><b id="ask-who" title="Who answers">Izuki</b><button class="chip" type="button" data-view-link="page">Change</button>
+  </div>
+
+  <div id="workspace-controls">
+  <section id="view-page" class="panel-view" aria-label="Current page">
   <section id="context" aria-label="What Izuki can see">
-    <div class="page"><img id="fav" alt="" /><span id="ptitle">This page</span></div>
     <div class="connect-row"><label class="switch"><input id="pin-page" type="checkbox" /> Keep this page selected</label><button id="choose-page" class="chip" type="button">Choose page</button><select id="source-tab" aria-label="Page to work on" hidden></select></div>
     <label class="switch"><input type="checkbox" id="share" checked /> Share this page with the selected assistant</label>
     <label class="switch" title="When the answer may be behind a link (a syllabus, assignment details), Izuki reads those linked pages too, quietly, with your sign-ins. It never opens links like Log out, Delete or Buy."><input type="checkbox" id="deep" checked /> Read linked pages too</label>
@@ -174,7 +189,9 @@
       <div class="tabs" id="tabs" aria-label="Add other tabs"></div>
     </details>
   </section>
+  </section>
 
+  <section id="view-tasks" class="panel-view" aria-label="Tasks">
   <details class="workspace-tools" id="quiz-tools">
     <summary>Go through each question</summary>
     <p>Reads each multiple-choice question on your page and asks your connected assistant.</p>
@@ -201,6 +218,24 @@
     </div>
   </details>
   <details class="workspace-tools" id="recent-chats"><summary>Recent chats <span id="recent-count"></span></summary><div id="recent-list"></div><button id="clear-chats" class="icon" type="button">Clear all chats</button></details>
+  </section>
+
+  <section id="view-settings" class="panel-view" aria-label="Settings">
+  <section id="settings" aria-label="How Izuki connects and speaks">
+    <details id="answer-with">
+      <summary>Answering with <b id="answer-who">Izuki on this PC</b><span id="answer-state" class="pill-state">checking…</span></summary>
+      <div class="connect-row"><select id="provider" aria-label="Assistant"><option value="izuki">Izuki on this PC</option><option value="chatgpt">ChatGPT website</option><option value="gemini">Gemini website</option></select><button id="connect" class="chip" type="button">Connect</button></div>
+      <div class="connect-row" id="provider-tabs-row" hidden><select id="provider-tabs" aria-label="Assistant website tab"></select><button id="refresh-tabs" class="chip" type="button">Refresh tabs</button><button id="side-by-side" class="chip" type="button" hidden>Side by side</button></div>
+      <p id="connection-help">Izuki uses the AI provider configured in the desktop app.</p>
+      <label class="switch" title="Use the AI tab that is already open, without pressing Connect."><input type="checkbox" id="auto-connect" checked /> Use the AI tab that's already open</label>
+      <label class="switch"><input type="checkbox" id="show-companion" /> Show desktop companion</label>
+    </details>
+    <label class="switch"><input type="checkbox" id="follow-questions" /> Follow questions on this page</label>
+    <p id="follow-state">Off. Enable to share each new visible question with the selected assistant.</p>
+    <label class="switch"><input type="checkbox" id="read-aloud" /> Read new answers aloud</label>
+  </section>
+  <small id="privacy">Shared page text goes to your selected assistant. Automation starts only when you ask. Stop: Alt+Shift+X. Connect a regular AI website tab; built-in browser assistants cannot be connected here.</small>
+  </section>
   </div>
   <div id="workspace-size" role="separator" aria-label="Resize setup and conversation areas" aria-orientation="horizontal" tabindex="0"></div>
 
@@ -214,11 +249,10 @@
     <label class="mode" title="Searches several sources, reads them and writes a cited report. Takes a minute or two."><input type="radio" name="mode" value="research" /><span>Research</span></label>
   </div>
   <form id="ask">
-    <textarea id="q" rows="1" placeholder="Ask about this page… (↑ for your last question)" autocomplete="off"></textarea>
+    <textarea id="q" rows="1" aria-label="Ask Izuki about this page or anything" placeholder="Ask IZUKI about this page… (↑ for your last question)" autocomplete="off"></textarea>
     <button id="send" type="submit" title="Ask (Enter)">➤</button>
     <button id="stop" type="button" hidden>Stop</button>
   </form>
-  <small id="privacy">Shared page text goes to your selected assistant. Automation starts only when you ask. Stop: Alt+Shift+X. Connect a regular AI website tab; built-in browser assistants cannot be connected here.</small>
   <dialog id="task-review"><h3>Run a task with Izuki</h3><p>Review the task below. Izuki will use the desktop app's normal action checks. An answer alone never starts a task.</p><textarea id="task-text" aria-label="Task to run"></textarea><div class="connect-row"><button id="task-cancel" class="chip" type="button">Cancel</button><button id="task-run" class="chip" type="button">Run this task</button></div></dialog>
   <script type="module" src="sidepanel.js"></script>
 </body>

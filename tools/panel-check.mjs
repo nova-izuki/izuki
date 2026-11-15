@@ -201,6 +201,12 @@ assert.deepEqual(dead, [], `the code reaches for ids the page hasn't got: ${dead
 
 // And every control the page offers has to be wired to something.
 const mustBeWired = ['provider', 'provider-tabs', 'refresh-tabs', 'connect', 'auto-connect', 'follow-questions', 'read-aloud', 'show-companion', 'task-run', 'task-cancel', 'task-text', 'stop', 'answer-who', 'web-search'];
+// Four plain views, with the composer outside them so it never disappears.
+for (const view of ['ask', 'page', 'tasks', 'settings']) assert(new RegExp(`data-view=\"${view}\"`).test(html), `the panel needs the ${view} view`);
+assert(/<body data-view="ask">/.test(html), 'the chat is the first view');
+assert(html.indexOf('id="run-bar"') > html.indexOf('id="log"') && html.indexOf('id="run-bar"') < html.indexOf('id="ask"'), 'the run bar sits between the chat and the composer, always in sight');
+assert(/id="q"[^>]*aria-label=/.test(html), 'the composer needs a readable label');
+assert(/body\[data-view="ask"\] #workspace-controls/.test(html), 'the ask view leaves room for the conversation');
 const unwired = mustBeWired.filter((id) => !lookedUp.has(id));
 assert.deepEqual(unwired, [], `these controls exist on the page but nothing uses them: ${unwired.join(', ')}`);
 

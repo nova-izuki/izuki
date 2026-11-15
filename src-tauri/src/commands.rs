@@ -425,8 +425,13 @@ pub async fn instant_command(app: AppHandle, said: String) -> Option<String> {
         }
     }
     // "Who signed in to my PC this week?", "any failed logins?": read from
-    // the system's own log, never guessed (logins.rs).
+    // the system's own log, never guessed (logins.rs). Asking for an
+    // administrator read is not itself consent to Windows' prompt: the
+    // person's latest words have to say yes.
     if let Some(details) = crate::logins::asked(&said) {
+        if details.to_lowercase().contains("admin") && !crate::logins::agreed(&said) {
+            return Some(crate::logins::ask_admin());
+        }
         return Some(crate::logins::ability(&details));
     }
     if crate::notes::is_study_prompt(&said) { return None; }
