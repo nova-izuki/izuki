@@ -165,18 +165,20 @@ const fixture = '<!doctype html><body><button id="target">Continue</button><form
       const toolbar = await evaluate(`(() => {
         const rects = [...document.querySelectorAll('header .tools > button')].map(b => b.getBoundingClientRect());
         return {
-          fits: rects.length === 9 && rects.every(r => r.left >= 0 && r.right <= innerWidth),
+          fits: rects.length === 6 && rects.every(r => r.left >= 0 && r.right <= innerWidth),
           touchable: rects.every(r => r.width >= 44 && r.height >= 44),
           iconsVisible: [...document.querySelectorAll('header .tools > button svg')].every(svg => svg.getBoundingClientRect().width >= 17),
-          separate: rects.every((r, i) => rects.slice(i + 1).every(s => r.right <= s.left || s.right <= r.left || r.bottom <= s.top || s.bottom <= r.top))
+          separate: rects.every((r, i) => rects.slice(i + 1).every(s => r.right <= s.left || s.right <= r.left || r.bottom <= s.top || s.bottom <= r.top)),
+          commands: ['go-drive', 'go-remote', 'go-lecture', 'go-touch'].every(id => !!document.querySelector('#tools-sheet #' + id)),
+          more: !!document.getElementById('more-tools')
         };
       })()`);
-      assert(toolbar.fits && toolbar.touchable && toolbar.iconsVisible && toolbar.separate, phoneOS + ' toolbar must fit with separate touch targets at ' + width + ': ' + JSON.stringify(toolbar));
+      assert(toolbar.fits && toolbar.touchable && toolbar.iconsVisible && toolbar.separate && toolbar.commands && toolbar.more, phoneOS + ' toolbar must fit with separate touch targets and reachable commands at ' + width + ': ' + JSON.stringify(toolbar));
       fs.writeFileSync(path.join(os.tmpdir(), 'izuki-toolbar-' + phoneOS + '-' + width + '.png'), Buffer.from((await call('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
     }
     fs.writeFileSync(path.join(os.tmpdir(), 'izuki-toolbar-' + phoneOS + '.png'), Buffer.from((await call('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
   }
-  console.log('Phone toolbar: iOS and Android fit at 320, 390, 768 and 1024 with separate 44px touch targets.');
+  console.log('Phone toolbar: six controls and the four Command Centre actions fit iOS and Android at 320, 390, 768 and 1024 with separate 44px touch targets.');
   await call('Page.removeScriptToEvaluateOnNewDocument', { identifier: nativeMock.identifier });
   await navigate('/dist/index.html', '!!document.querySelector(".izk-finder-trigger")');
   assert(await evaluate('(() => { const bar=document.getElementById("draw-command");return !!bar && !bar.closest("main") && bar.getBoundingClientRect().top<innerHeight*0.4; })()'), 'the Draw command bar must stay in the header, at the top — not scroll away with the page');
