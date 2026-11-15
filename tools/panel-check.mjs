@@ -233,6 +233,16 @@ assert(read('workspace-worker.js').includes('web:false'), 'quiz answers must not
 assert(/tabId:\s*source\.id/.test(panel), 'prepare must send the frozen source tab the reviewed task belongs to');
 assert(rust.includes('"tabId"'), 'ext.rs still expects a tabId — keep the panel sending it');
 
+// The panel tells the connection code which browser window is its own:
+// without it every "Side by side" failed ("Open the panel from a browser
+// window first", owner's screenshot).
+assert(/setUpConnection\(\{[^}]*windowId:\s*panelWindow/s.test(panel), 'the panel must pass its window to setUpConnection');
+
+// Clicking through the shared tab on the same site is read, not refused
+// (owner: "This tab moved to another page…" on nearly every question).
+assert(!panel.includes('This tab moved to another page while I was reading it'), 'same-site navigation must not fail the question');
+assert(/site\(page\.url\) !== site\(source\.url\)/.test(panel), 'only a different site stops a question about the shared tab');
+
 // Stop without a kind cancels a chat and leaves the task running.
 assert(/side\("stop",\s*\{\s*requestId:\s*job\.id,\s*kind:\s*"task"\s*\}/.test(panel), 'Stop must say it is stopping a task');
 

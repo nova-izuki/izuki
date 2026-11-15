@@ -74,6 +74,36 @@ let finish;f=quizFixture([onPage(q),complete],{answer:()=>new Promise(resolve=>f
 finish({text:JSON.stringify({questionId:'q1',choices:[2]})});await done;
 assert.equal(f.runner.status().phase,'stopped');assert(!f.calls.includes('record'),'a stopped run records nothing');assert.deepEqual(clicked(f),[]);
 
+// A run still going is never replaced silently: a new start asks
+// (run_active), the old one carries on; replace:true is the yes. One that
+// stopped checking in (stuck) is cleared instead of blocking.
+{
+  let hold;const g=quizFixture([onPage(q),complete],{answer:()=>new Promise(resolve=>hold=resolve)});g.start();await flush();
+  const first=g.runner.current,next={source:{id:3,url:'https://example.edu/quiz',title:'Quiz'},windowId:7};
+  assert.throws(()=>g.runner.start(next),e=>e.code==='run_active'&&/Stop it and start this one, or keep it/.test(e.message),'a live run is asked about');
+  assert(!first.stopped&&g.runner.current===first,'and keeps going until the student says');
+  assert.throws(()=>g.runner.start({source:{id:3,url:'file:///x'}}),/Choose the browser tab/,'a start that could never run stops nothing');
+  assert(!first.stopped,'the live run is untouched by it');
+  g.runner.start({...next,replace:true});
+  assert(first.stopped&&g.runner.current&&g.runner.current!==first,'replace:true stops it and starts the new one');
+  assert.equal(first.state.text,'Stopped: you started a new question run.');
+  const second=g.runner.current;second.beat=Date.now()-10*60*1000;
+  assert.equal(g.runner.health(),'stale','a run that stopped checking in is stale');
+  g.runner.start(next);
+  assert(second.stopped&&/stopped responding/.test(second.state.text),'a stale run is cleared, said so');
+  g.runner.stop();hold({text:'{}'});await flush();
+  assert.equal(g.runner.status().health,'recoverable','a stopped run can be started again');
+}
+// An assistant that never answers pauses the run with the reason (owner:
+// "Asking Gemini..." forever).
+{
+  const calls=[];const adapter={install:async()=>{},stop:async()=>calls.push('stop'),read:async()=>onPage(q),answer:()=>new Promise(()=>{})};
+  const r=new QuestionRunner(adapter,{answerLimitMs:30});r.start({source,windowId:7,connection:{name:'Gemini'}});
+  await r.current.done;
+  assert.equal(r.status().phase,'paused');assert.match(r.status().text,/Gemini didn't answer within 1 minute/);
+  assert(calls.includes('stop'),'its request is cancelled');
+}
+
 // A question that is only a picture: said so, not guessed at.
 f=quizFixture([onPage({...q,missingImage:true}),complete]);await f.start();
 assert.deepEqual(asked(f),[],'a picture-only question is not sent to the assistant');
