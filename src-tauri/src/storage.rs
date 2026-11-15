@@ -355,7 +355,7 @@ pub fn report() -> String {
     }
     found.rebuild.sort_by(|a, b| b.2.cmp(&a.2));
     if let Some((what, path, b)) = found.rebuild.first() {
-        safe.push(format!("{what} at {} ({}) rebuilds itself if deleted — remove it yourself when you're done with that project", path.display(), gb(*b as f64 / 1e9)));
+        safe.push(format!("{what} in {} ({}) rebuilds itself if deleted — remove it yourself when you're done with that project", where_in_home(path), gb(*b as f64 / 1e9)));
     }
     if !safe.is_empty() {
         lines.push(format!("Safe to clear: {}.", safe.join("; ")));
@@ -366,6 +366,15 @@ pub fn report() -> String {
         "Say “open apps and features” to remove an app, or “open Downloads” (or any folder) to go through it yourself.".into()
     });
     lines.join(" ")
+}
+
+/// A place the way you'd find it: "Downloads › project › target" under
+/// your own folder, the full path anywhere else.
+fn where_in_home(path: &Path) -> String {
+    dirs::home_dir()
+        .and_then(|home| path.strip_prefix(&home).ok().map(|rest| rest.components().map(|c| c.as_os_str().to_string_lossy().into_owned()).collect::<Vec<_>>().join(" › ")))
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| path.display().to_string())
 }
 
 /// Folders that rebuild themselves (safe for the user to delete when done).
@@ -519,6 +528,14 @@ pub fn handle(ask: Ask) -> String {
 #[cfg(test)]
 mod tests {
     use super::is_storage_question;
+
+    #[test]
+    fn a_folder_is_named_the_way_you_would_find_it() {
+        let home = dirs::home_dir().unwrap();
+        assert_eq!(super::where_in_home(&home.join("Downloads").join("game").join("target")), "Downloads › game › target");
+        let elsewhere = std::path::Path::new(r"D:\builds\target");
+        assert_eq!(super::where_in_home(elsewhere), elsewhere.display().to_string());
+    }
 
     /// The real answer on this PC: run by hand with --ignored --nocapture.
     #[test]
