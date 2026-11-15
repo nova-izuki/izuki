@@ -126,7 +126,7 @@ Board tidy (Claude, 2026-11-10, owner request): every row still said "active", i
   `evidence`, `journal_incomplete`). These were flagged by CodeRabbit on
   1.0.116.
 - Claude: Island 2.0 (adaptive states, expansion panel, settings); provider
-  orchestration beyond retry-after/backoff; Touch Grass phone dashboard.
+  orchestration beyond retry-after/backoff; PC Missions phone dashboard.
 - Either: any new helper thread inside a mission must carry the execution
   context (`execution::current()` then `execution::attach(..)` in the thread).
 

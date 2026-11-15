@@ -36,7 +36,7 @@ the build being tested.
 - [ ] Run **Autopilot → self-test**; it finishes with its Stop control present.
 - [ ] Ask Nova to speak; sound starts, and Mute/Stop stops it immediately.
 - [ ] The header has six controls; **More** opens the Command Centre with
-      Drive, Remote, Lecture and Touch Grass, and each one opens.
+      Drive, Remote, Lecture and PC Missions, and each one opens.
 - [ ] The Home dock and live-call buttons use drawn icons, not text glyphs.
       Every button is easy to hit and nothing is clipped at the screen edge.
 

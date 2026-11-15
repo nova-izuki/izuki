@@ -1,4 +1,4 @@
-// 🌱 Touch Grass: run your PC's work from your phone while you're out
+// 🌱 PC Missions: run your PC's work from your phone while you're out
 // (the PC side is src-tauri/src/touch.rs, through the private link).
 //
 //   IzukiTouch.open(pcLink, { pass, onPair })   show it; ✕ closes it
@@ -57,11 +57,11 @@
     root = document.createElement("div");
     root.className = "izt";
     root.setAttribute("role", "dialog");
-    root.setAttribute("aria-label", "Touch Grass — your PC's work from here");
+    root.setAttribute("aria-label", "PC Missions — tasks and approvals from your PC");
     root.innerHTML = `
-      <header><b>🌱 Touch Grass</b><button class="watch" type="button" aria-label="Watch the PC live">🖥️ Watch</button><button class="close" type="button" aria-label="Close">✕</button></header>
+      <header><b>🌱 PC Missions</b><button class="watch" type="button" aria-label="Watch the PC live">🖥️ Watch</button><button class="close" type="button" aria-label="Close">✕</button></header>
       <p class="note" role="status"></p>
-      <section class="pairbox" hidden><h3>First, pair this phone</h3><div>Touch Grass needs this phone paired with your PC (once). Tap Pair — a code pops up on your PC to type in here.</div><button class="pair go" type="button">Pair this phone</button></section>
+      <section class="pairbox" hidden><h3>First, pair this phone</h3><div>PC Missions needs this phone paired with your PC (once). Tap Pair — a code pops up on your PC to type in here.</div><button class="pair go" type="button">Pair this phone</button></section>
       <section class="bell"><h3>Notifications</h3><div class="muted belltext">Get a buzz on this phone when Izuki needs your yes or your missions finish — even with Izuki closed.</div><button class="push" type="button">🔔 Notify me on this phone</button></section>
       <section class="biz"><h3>Your business <button class="bizgo" type="button" aria-label="Refresh your business" style="float:right;padding:4px 10px;font-size:12px">↻</button></h3><div class="bizbody muted">Loading…</div></section>
       <section class="pc"><h3>Your PC</h3><div class="now">…</div><div class="warn locked" hidden>Your PC is locked, so anything that needs the screen waits. Email, apps and files still work.</div><button class="stop all" type="button">⏹ Stop everything</button></section>

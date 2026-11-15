@@ -111,7 +111,7 @@ html[data-os="android"] .app > header .call-btn {
   min-width: 0;
   height: 46px;
   min-height: 46px;
-  border-radius: 16px;
+  border-radius: 999px;
   border: 1px solid rgba(255, 255, 255, 0.095);
   background: rgba(255, 255, 255, 0.045);
   color: #dce6ff;
@@ -120,7 +120,22 @@ html[data-os="android"] .app > header .call-btn {
   justify-content: center;
   gap: 0;
   padding: 0;
-  box-shadow: inset 0 1px rgba(255, 255, 255, 0.07);
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.09), 0 8px 18px rgba(0, 0, 0, 0.16);
+  transition: transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 180ms ease, background 180ms ease;
+}
+
+html[data-os="android"] .app > header .icon-btn {
+  width: 46px;
+  max-width: 100%;
+  justify-self: center;
+  border-radius: 50%;
+}
+
+html[data-os="android"] .app > header .call-btn {
+  width: 100%;
+  max-width: 112px;
+  justify-self: center;
+  border-radius: 999px;
 }
 
 html[data-os="android"] .app > header .icon-btn svg {
@@ -141,7 +156,8 @@ html[data-os="android"] .app > header .call-btn {
   color: #071127;
   box-shadow:
     inset 0 1px rgba(255, 255, 255, 0.48),
-    0 8px 22px rgba(67, 113, 255, 0.28);
+    0 12px 28px rgba(67, 113, 255, 0.34),
+    0 2px 5px rgba(0, 0, 0, 0.18);
 }
 
 html[data-os="android"] .app > header .call-btn svg {
@@ -150,10 +166,12 @@ html[data-os="android"] .app > header .call-btn svg {
 }
 
 html[data-os="android"] .app > header .icon-btn.on {
-  background: linear-gradient(145deg, rgba(110, 231, 223, 0.26), rgba(100, 150, 255, 0.2));
+  background:
+    radial-gradient(circle at 32% 18%, rgba(255, 255, 255, 0.28), transparent 46%),
+    linear-gradient(145deg, rgba(110, 231, 223, 0.3), rgba(100, 150, 255, 0.22));
   border-color: rgba(110, 231, 223, 0.42);
   color: #c8fffa;
-  box-shadow: inset 0 1px rgba(255, 255, 255, 0.2), 0 6px 18px rgba(37, 213, 197, 0.15);
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.24), 0 10px 24px rgba(37, 213, 197, 0.18);
 }
 
 /* Press: a short, physical dip instead of a flat tint. */
@@ -190,6 +208,70 @@ html[data-os="ios"] .app > header .tools > button {
   padding-inline: 0;
 }
 html[data-os="ios"] .app > header .tools .call-btn { font-size: 0; gap: 0; }
+html[data-os="ios"] .app > header .tools > .icon-btn {
+  width: 44px;
+  max-width: 100%;
+  justify-self: center;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 32% 18%, rgba(255, 255, 255, 0.14), transparent 46%),
+    rgba(255, 255, 255, 0.055);
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.12), 0 8px 18px rgba(0, 0, 0, 0.22);
+  transition: transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 180ms ease, background 180ms ease;
+}
+html[data-os="ios"] .app > header .tools > .icon-btn.on {
+  background:
+    radial-gradient(circle at 32% 18%, rgba(255, 255, 255, 0.32), transparent 46%),
+    linear-gradient(145deg, rgba(176, 152, 255, 0.48), rgba(124, 92, 245, 0.3));
+  border-color: rgba(197, 181, 255, 0.48);
+  color: #f5f0ff;
+  box-shadow:
+    inset 0 1px rgba(255, 255, 255, 0.25),
+    0 10px 24px rgba(112, 82, 255, 0.24),
+    0 0 0 1px rgba(180, 160, 255, 0.08);
+}
+html[data-os="ios"] .app > header .tools > .icon-btn:active {
+  transform: scale(0.92);
+  opacity: 1;
+}
+html[data-os="ios"] .app > header .tools > .call-btn {
+  width: 100%;
+  max-width: 92px;
+  justify-self: center;
+  border-radius: 999px;
+  background:
+    radial-gradient(120% 100% at 25% 0%, rgba(255, 255, 255, 0.42), transparent 55%),
+    linear-gradient(145deg, #a68cff, #7c5cf5);
+  color: #fff;
+  box-shadow:
+    inset 0 1px rgba(255, 255, 255, 0.55),
+    0 12px 26px rgba(108, 78, 255, 0.38),
+    0 2px 6px rgba(0, 0, 0, 0.25);
+  transition: transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 180ms ease;
+}
+html[data-os="ios"] .app > header .tools > .call-btn:active {
+  transform: translateY(1px) scale(0.96);
+  opacity: 1;
+  box-shadow:
+    inset 0 1px rgba(255, 255, 255, 0.45),
+    0 5px 14px rgba(108, 78, 255, 0.28);
+}
+
+/* Give Home and New their names back where there is room, still one row. */
+@media (min-width: 600px) {
+  html[data-os="ios"] .app > header .tools > .compact-action {
+    width: auto;
+    max-width: 100%;
+    justify-self: center;
+    gap: 6px;
+    padding-inline: 13px;
+    border-radius: 999px;
+  }
+}
+@media (max-width: 599px) {
+  html[data-os="ios"] .app > header .compact-action span { display: none; }
+}
 
 html[data-os="android"] #open-settings.needs-attention::before {
   content: "";
@@ -1091,7 +1173,7 @@ html[data-os="android"] .round.end i {
   html[data-os] .app > header .tools > button { min-width: 44px; }
   html[data-os] .app > header .tools svg { width: 18px; min-width: 18px; height: 18px; }
   html[data-os="android"] .app > header .icon-btn,
-  html[data-os="android"] .app > header .call-btn { height: 44px; min-height: 44px; border-radius: 14px; }
+  html[data-os="android"] .app > header .call-btn { height: 44px; min-height: 44px; }
   html[data-os="android"] .phone-action { min-height: 48px; padding-inline: 7px; }
   .tools-grid { grid-template-columns: minmax(0, 1fr); }
   .tool-card { min-height: 94px; }

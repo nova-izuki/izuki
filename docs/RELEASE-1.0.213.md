@@ -3,7 +3,8 @@
 ## 🧊 The phone app, rebuilt around the glass
 
 - The Android companion now has one floating glass language: a rounded header with a soft rim, a night-blue ground, frosted composer, deeper cards and gentler press feedback. Nothing new floats on top of a conversation.
-- The header is six clear controls: Home, New, Read aloud, Call, Settings and **More**. Drive, Remote, Lecture and Touch Grass moved into a Command Centre where each has room, a real icon and a one-line description.
+- The header is six clear controls: Home, New, Read aloud, Call, Settings and **More**. Drive, Remote, Lecture and **PC Missions** (formerly Touch Grass) moved into a Command Centre where each has room, a real icon and a one-line description.
+- Read aloud is a compact floating glass circle when it is on, not a stretched oval. Call keeps its pill shape with a brighter gradient and a soft lift, and Home and New get their names back on wider screens.
 - The one-tap phone dock on Home is now always visible. Home, Back, Recents, Notifications, Screenshot and Lock are glass pills with proper icons instead of Unicode glyphs, and each is large enough to hit without aiming.
 - The live call's round controls are layered glass now, with a red glass end button, a soft halo behind the orb and stronger press states.
 - The cockpit's Home, Back, Music, Lock, Drive and Shot buttons use drawn icons and glass tiles instead of `⌂ ↩ ♫ ⏻ ◈ ◉`.
@@ -25,12 +26,12 @@
 
 ## 📱 iPhone too
 
-- The Command Centre reaches Drive, Remote, Lecture and Touch Grass on the iPhone companion. Android-only tools are hidden there rather than shown as dead buttons.
+- The Command Centre reaches Drive, Remote, Lecture and PC Missions on the iPhone companion. Android-only tools are hidden there rather than shown as dead buttons.
 
 ## Under the hood
 
 - New native plugin methods: `repairStatus`, `openOverlaySettings`, `openNotificationSettings` and `openBatterySettings`. The JavaScript bridge is defensive, so an older APK cannot break the page.
-- The offline shell is `izuki-phone-v84` and includes `android-glass.css`.
+- The offline shell is `izuki-phone-v85` and includes `android-glass.css`.
 - Android `versionCode` is 213, so this installs over 1.0.212 without uninstalling.
 
 ## Checked before release

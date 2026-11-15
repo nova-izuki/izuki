@@ -25,9 +25,12 @@
 <title>Izuki on your phone — free AI companion</title>
 <!-- The bug catcher first, so it hears about anything that goes wrong below. -->
 <script>
+  // An explicit phone preview wins over the TV/headless-browser heuristic:
+  // ?os=android and ?os=ios must show the phone skin everywhere.
+  const askedOS = new URLSearchParams(location.search).get("os");
   // On a TV (Android TV, Google TV, Fire TV, smart TVs): bigger text and a
   // strong highlight for the remote.
-  if (/\b(Android TV|GoogleTV|Google TV|AFT[A-Z]|BRAVIA|SMART-TV|SmartTV|Tizen|Web0S|webOS|AppleTV|CrKey)\b/i.test(navigator.userAgent) || matchMedia("(pointer: none)").matches) {
+  if (!askedOS && (/\b(Android TV|GoogleTV|Google TV|AFT[A-Z]|BRAVIA|SMART-TV|SmartTV|Tizen|Web0S|webOS|AppleTV|CrKey)\b/i.test(navigator.userAgent) || matchMedia("(pointer: none)").matches)) {
     document.documentElement.classList.add("tv");
   }
   // Each phone in its own language (platform.css): the device's own OS,
@@ -36,8 +39,7 @@
     const h = document.documentElement;
     if (h.classList.contains("tv")) return;
     const ua = navigator.userAgent;
-    const asked = new URLSearchParams(location.search).get("os");
-    const os = asked === "ios" || asked === "android" ? asked
+    const os = askedOS === "ios" || askedOS === "android" ? askedOS
       : /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1) ? "ios"
       : /Android/.test(ua) ? "android" : "";
     if (!os) return;
@@ -360,9 +362,9 @@
           <span class="tool-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 9l10-4.7L22 9 12 13.7z"/><path d="M6 11.2V16c3 2 9 2 12 0v-4.8M22 9v5"/></svg></span>
           <b>Lecture</b><small>Record it; your PC writes the notes</small>
         </button>
-        <button class="tool-card" id="go-touch" type="button" data-close-tools aria-label="Touch Grass — your PC's missions and approvals">
+        <button class="tool-card" id="go-touch" type="button" data-close-tools aria-label="PC Missions — tasks and approvals from your PC">
           <span class="tool-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 20h18"/><path d="M6.5 20c0-5.5 1.2-9.8 3.2-13"/><path d="M12 20c0-6.5.6-11 1.5-15"/><path d="M17.5 20c0-4.4-1.1-7.5-3.2-9.5"/></svg></span>
-          <b>Touch Grass</b><small>Missions and approvals from your PC</small>
+          <b>PC Missions</b><small>Check tasks and approve what your PC did</small>
         </button>
       </div>
       <div class="tools-advanced">
@@ -744,7 +746,7 @@
     if (pc) window.IzukiRemote?.open(pc, { pass: store.get("pcPass", ""), savePass: (p) => store.set("pcPass", p) });
     else alert("Link this phone to your PC first: on the PC, Izuki → Settings → Phone → Call Izuki from your phone, then scan the QR code.");
   });
-  // 🌱 Touch Grass (touchgrass.js): missions and approvals for the linked PC.
+  // 🌱 PC Missions (touchgrass.js): missions and approvals for the linked PC.
   const openTouch = () => {
     if (!pc) return alert("Link this phone to your PC first: on the PC, Izuki → Settings → Phone → Call Izuki from your phone, then scan the QR code.");
     const remote = () => window.IzukiRemote?.open(pc, { pass: store.get("pcPass", ""), savePass: (p) => store.set("pcPass", p) });
@@ -756,7 +758,7 @@
     if (!pc) return alert("Link this phone to your PC first: on the PC, Izuki → Settings → Phone → Call Izuki from your phone, then scan the QR code.");
     window.IzukiLecture?.open(pc);
   });
-  // A tapped notification opens Touch Grass (#touch, or a message from the worker).
+  // A tapped notification opens PC Missions (#touch, or a message from the worker).
   if (location.hash === "#touch") setTimeout(openTouch, 300);
   navigator.serviceWorker?.addEventListener("message", (e) => { if (e.data?.type === "open-touch") openTouch(); });
   /** Report a problem to Izuki's bug catcher (../shared/bugs.js). */
