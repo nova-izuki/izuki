@@ -81,8 +81,9 @@ const gb = (n) => `${(n / 1024 ** 3).toFixed(2)} GB`;
 /** A folder's entries, or none if it vanished meanwhile (another build or cleaner). */
 const list = (dir) => { try { return readdirSync(dir); } catch { return []; } };
 // A Rust build running anywhere on this PC (cargo or rustc): incremental
-// folders aren't touched at all, however old they look.
-const building = (() => {
+// folders aren't touched at all, however old they look. Asked again right
+// before each one is removed, so a build that starts mid-trim keeps its data.
+const buildRunning = () => {
   try {
     const out = process.platform === 'win32'
       ? execFileSync('tasklist', ['/fo', 'csv', '/nh'], { encoding: 'utf8', windowsHide: true })
@@ -91,7 +92,8 @@ const building = (() => {
   } catch {
     return true; // can't tell: assume one is, and keep them
   }
-})();
+};
+const building = buildRunning();
 const dirIn = (p) => inside(p)?.isDirectory() ?? false;
 
 const victims = [];
@@ -120,7 +122,7 @@ for (const profileDir of profiles) {
   // The incremental folder only when nothing in it changed for --hours: a
   // build running right now (any profile) keeps its data.
   const incremental = path.join(profileDir, 'incremental');
-  if (!building && dirIn(incremental) && newest(incremental) < cutoff) victims.push({ file: incremental, size: sizeOf(incremental) });
+  if (!building && dirIn(incremental) && newest(incremental) < cutoff) victims.push({ file: incremental, size: sizeOf(incremental), incremental: true });
 }
 const total = victims.reduce((n, v) => n + v.size, 0);
 console.log(`trim: cache ${gb(sizeOf(target))}; ${victims.length} old Izuki build outputs (${gb(total)}) older than ${hours} h${apply ? '' : ' — run with --apply to remove them'}`);
@@ -128,8 +130,13 @@ if (building) console.log('trim: a Rust build is running, so incremental folders
 if (apply) {
   let removed = 0;
   for (const v of victims) {
-    // Checked again right before: still a real entry inside the cache.
+    // Checked again right before: still a real entry inside the cache, and
+    // (for an incremental folder) still untouched with no build running.
     if (!inside(v.file)) continue;
+    if (v.incremental && (buildRunning() || newest(v.file) >= cutoff)) {
+      console.log(`trim: kept ${path.relative(target, v.file)}: a build started meanwhile`);
+      continue;
+    }
     rmSync(v.file, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 });
     removed += v.size;
   }
