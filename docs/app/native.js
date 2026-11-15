@@ -393,7 +393,8 @@
     async takeWake() {
       try {
         const r = await control()?.takeWake();
-        wakeExtra = { audio: String(r?.audio || ""), voice: !!r?.voice };
+        // An overlapping empty poll must not erase a wake awaiting unlock.
+        if (r?.phrase || r?.audio || r?.voice) wakeExtra = { audio: String(r?.audio || ""), voice: !!r?.voice };
         return String(r?.phrase || "");
       } catch { return ""; }
     },

@@ -305,6 +305,12 @@ public class IzukiAccessibilityService extends AccessibilityService {
       String id = node.getViewIdResourceName();
       if (id != null && !id.isEmpty()) it.put("id", id.substring(id.indexOf('/') + 1));
       // A box's hint is what it's for ("Search YouTube"), even with a draft in it.
+      // Keep the content description as separate search metadata: some apps
+      // expose only that, and a draft in the box must never authorize search.
+      if (node.isEditable() && node.getContentDescription() != null) {
+        String desc = node.getContentDescription().toString().replaceAll("\\s+", " ").trim();
+        if (!desc.isEmpty()) it.put("desc", desc.length() > 80 ? desc.substring(0, 80) : desc);
+      }
       if (node.isEditable() && Build.VERSION.SDK_INT >= 26 && node.getHintText() != null) {
         String hint = node.getHintText().toString().replaceAll("\\s+", " ").trim();
         if (!hint.isEmpty()) it.put("hint", hint.length() > 80 ? hint.substring(0, 80) : hint);
@@ -356,8 +362,15 @@ public class IzukiAccessibilityService extends AccessibilityService {
    * Android. A click that was performed is never repeated as a tap: doing it
    * twice could toggle a switch back or press the next screen's button.
    */
+  private static List<String> identity(AccessibilityNodeInfo node) {
+    return java.util.Arrays.asList(labelOf(node), node.getViewIdResourceName(),
+        String.valueOf(node.getClassName()), String.valueOf(node.getPackageName()),
+        String.valueOf(node.getContentDescription()));
+  }
+
   private static void press(AccessibilityNodeInfo node, String matched, boolean preferTouch, Consumer<JSONObject> done) {
-    if (!node.refresh()) { done.accept(result(false, null, "stale")); return; }
+    List<String> found = identity(node);
+    if (!node.refresh() || !found.equals(identity(node))) { done.accept(result(false, null, "stale")); return; }
     if (!node.isVisibleToUser()) { done.accept(result(false, null, "hidden")); return; }
     boolean revealed = false;
     try { revealed = node.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_SHOW_ON_SCREEN.getId()); } catch (Exception ignored) { }
@@ -365,7 +378,7 @@ public class IzukiAccessibilityService extends AccessibilityService {
       // It may have scrolled: let it settle, then read the node again — a
       // node's bounds are a snapshot, and a stale one taps the wrong thing.
       try { Thread.sleep(250); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
-      if (!node.refresh()) { done.accept(result(false, null, "stale")); return; }
+      if (!node.refresh() || !found.equals(identity(node))) { done.accept(result(false, null, "stale")); return; }
       if (!node.isVisibleToUser()) { done.accept(result(false, null, "hidden")); return; }
     }
     AccessibilityNodeInfo target = pressable(node);
@@ -393,10 +406,11 @@ public class IzukiAccessibilityService extends AccessibilityService {
     // the real control and bubbles to its row. Fall back to the parent only
     // when the label has no usable bounds.
     Rect b = new Rect();
-    if (!node.refresh()) { JSONObject r = result(false, null, "stale"); put(r, "matched", matched); done.accept(r); return; }
+    if (!node.refresh() || !found.equals(identity(node))) { done.accept(result(false, null, "stale")); return; }
     node.getBoundsInScreen(b);
     if (b.isEmpty() && used != node) {
-      if (!used.refresh()) { JSONObject r = result(false, null, "stale"); put(r, "matched", matched); done.accept(r); return; }
+      List<String> parentFound = identity(used);
+      if (!used.refresh() || !parentFound.equals(identity(used))) { done.accept(result(false, null, "stale")); return; }
       used.getBoundsInScreen(b);
     }
     if (b.isEmpty()) { JSONObject r = result(false, null, "no-bounds"); put(r, "matched", matched); done.accept(r); return; }
@@ -627,7 +641,7 @@ public class IzukiAccessibilityService extends AccessibilityService {
 
   /**
    * A search or address box, by its own words only (hint, id without the
-   * app's package, description, class) — a parent's label is no evidence
+   * app's package, description) — a parent's label is no evidence
    * of what this box's Enter does.
    */
   private static boolean looksLikeSearch(AccessibilityNodeInfo box) {
@@ -636,7 +650,6 @@ public class IzukiAccessibilityService extends AccessibilityService {
     String id = box.getViewIdResourceName();
     if (id != null) words.append(id.substring(id.indexOf('/') + 1)).append(' ');
     if (box.getContentDescription() != null) words.append(box.getContentDescription()).append(' ');
-    if (box.getClassName() != null) words.append(box.getClassName()).append(' ');
     return ControlState.searchy(words.toString());
   }
 

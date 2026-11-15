@@ -73,7 +73,8 @@ public class ControlStateTest {
     assertTrue(ControlState.searchy("com.android.chrome:id/url_bar"));
     assertFalse("a chat composer never gets Enter", ControlState.searchy("Message entry android.widget.EditText"));
     assertFalse("whole words only", ControlState.searchy("Research notes research_body"));
-    assertTrue(ControlState.searchy("search_src_text android.widget.AutoCompleteTextView"));
+    assertTrue(ControlState.searchy("search_src_text"));
+    assertFalse("a composer only exposes its own metadata", ControlState.searchy("Message entry"));
   }
 
   @Test public void riskyControlsNeedTheirNameInTheRequest() {

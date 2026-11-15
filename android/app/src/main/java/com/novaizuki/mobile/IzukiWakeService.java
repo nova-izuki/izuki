@@ -158,8 +158,12 @@ public class IzukiWakeService extends Service implements RecognitionListener {
       Context app = context.getApplicationContext();
       // Checked again when it runs: a stop may have come first.
       s.main.post(() -> {
-        if (self == s && !s.stopping) s.startAgain();
-        else startThroughAndroid(app);
+        try {
+          if (self == s && !s.stopping) s.startAgain();
+          else startThroughAndroid(app);
+        } catch (Exception e) {
+          remember("Android didn't let the listener start: " + e.getClass().getSimpleName());
+        }
       });
       return;
     }

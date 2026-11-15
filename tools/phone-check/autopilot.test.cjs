@@ -8,7 +8,7 @@ let screen = {
   app: "YouTube",
   items: [
     { n: 1, text: "Search", kind: "button" },
-    { n: 2, text: "Search YouTube", kind: "box" },
+    { n: 2, text: "Search YouTube", hint: "Search YouTube", kind: "box", focused: true },
     { n: 3, text: "Home", kind: "button" },
   ],
 };
@@ -79,7 +79,7 @@ const A = window.IzukiAutopilot;
 
   screen = {
     app: "YouTube",
-    items: [{ n: 1, text: "Search", kind: "button" }, { n: 2, text: "Search YouTube", kind: "box" }],
+    items: [{ n: 1, text: "Search", kind: "button" }, { n: 2, text: "Search YouTube", hint: "Search YouTube", kind: "box", focused: true }],
   };
   calls.length = 0;
   assert.equal(await A.run("scroll down twice"), true);
@@ -104,7 +104,7 @@ const A = window.IzukiAutopilot;
   window.IzukiNative.act = async (args) => {
     calls.push(`act:${args.op}${args.text ? `:${args.text}` : ""}${args.n ? `:${args.n}` : ""}`);
     if (args.op === "click" && args.n === 1) {
-      screen = { app: "YouTube", items: [{ n: 1, text: "Search", kind: "button" }, { n: 2, text: "Search YouTube", kind: "box" }] };
+      screen = { app: "YouTube", items: [{ n: 1, text: "Search", kind: "button" }, { n: 2, text: "Search YouTube", hint: "Search YouTube", kind: "box", focused: true }] };
     }
     return { done: true };
   };
@@ -128,7 +128,7 @@ const A = window.IzukiAutopilot;
   screen = { app: "YouTube", items: [{ n: 1, text: "Voice search", kind: "button" }, { n: 2, text: "Search", kind: "button" }] };
   window.IzukiNative.act = async (args) => {
     calls.push(`act:${args.op}${args.text ? `:${args.text}` : ""}${args.n ? `:${args.n}` : ""}`);
-    if (args.op === "click" && args.n === 2) screen = { app: "YouTube", items: [{ n: 1, text: "Voice search", kind: "button" }, { n: 3, text: "Search YouTube", kind: "box", focused: true }] };
+    if (args.op === "click" && args.n === 2) screen = { app: "YouTube", items: [{ n: 1, text: "Voice search", kind: "button" }, { n: 3, text: "Search YouTube", hint: "Search YouTube", kind: "box", focused: true }] };
     if (args.op === "submit") screen = { app: "YouTube", items: [{ n: 4, text: "lofi hip hop radio", kind: "button" }] };
     return { done: true, verified: true };
   };
@@ -136,6 +136,50 @@ const A = window.IzukiAutopilot;
   assert.equal(await A.run("search lofi"), true);
   assert.deepEqual(calls, ["act:click:2", "act:click:3", "act:type:lofi:3", "act:submit"], "the plain Search button opens the field, not Voice search");
   assert.match(A.state.log.map((x) => x.text).join(" "), /results are on screen/);
+
+  // Draft contents never authorize searching, even with a Search button
+  // somewhere else. An address field's own metadata does authorize it.
+  const fastContext = { window, console, Date, Promise, clearTimeout,
+    setTimeout: (fn) => setTimeout(fn, 0) };
+  vm.runInNewContext(fs.readFileSync(path.resolve(__dirname, "../../docs/app/autopilot.js"), "utf8"), fastContext);
+  const fast = window.IzukiAutopilot;
+  for (const text of ["Search for flights", "Please search for flights"]) {
+    screen = { app: "Messages", items: [{ n: 1, kind: "box", text, focused: true }] };
+    calls.length = 0;
+    assert.equal(await fast.run("search cats"), false);
+    assert.deepEqual(calls, [], "a person's draft is not search metadata");
+  }
+  screen = { app: "Browser", items: [{ n: 1, kind: "box", text: "", hint: "Address", id: "url_bar", focused: true }] };
+  window.IzukiNative.act = async (args) => {
+    calls.push(args.op);
+    if (args.op === "type") screen.items[0].text = args.text;
+    if (args.op === "submit") screen = { app: "Browser", items: [{ kind: "text", text: "Results" }] };
+    return { done: true };
+  };
+  calls.length = 0;
+  assert.equal(await fast.run("search kittens"), true, "an address field works without a separate Search button");
+  assert.deepEqual(calls, ["click", "type", "submit"]);
+  // Some apps expose their search purpose only as a content description;
+  // the field's visible text is not evidence that it is a search box.
+  screen = { app: "Browser", items: [{ n: 1, kind: "box", text: "Search", desc: "Search", focused: true }, { n: 2, kind: "button", text: "Go" }] };
+  window.IzukiNative.act = async (args) => {
+    calls.push(args.op);
+    if (args.op === "type") screen.items[0].text = args.text;
+    if (args.op === "submit") screen = { app: "Browser", items: [{ kind: "text", text: "Results" }] };
+    return { done: true };
+  };
+  calls.length = 0;
+  assert.equal(await fast.run("search otters"), true, "a description-only search field works");
+  assert.deepEqual(calls, ["click", "type", "submit"]);
+  screen = { app: "Messages", items: [{ n: 1, kind: "box", hint: "Search", focused: true }, { n: 2, kind: "button", text: "Search" }] };
+  window.IzukiNative.act = async (args) => {
+    calls.push(args.op);
+    if (args.op === "type") screen.items[0] = { n: 1, kind: "box", hint: "Message", text: args.text, focused: true };
+    return { done: true };
+  };
+  calls.length = 0;
+  assert.equal(await fast.run("search kittens"), false, "a field changed to a composer must not be submitted");
+  assert.deepEqual(calls, ["click", "type"], "an unrelated Search control cannot authorize sending");
 
   // A label that isn't there says so; nothing else is pressed.
   window.IzukiNative.act = async (args) => { calls.push(`act:${args.op}:${args.text || ""}`); return { done: false, reason: "not-found" }; };

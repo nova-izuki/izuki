@@ -127,7 +127,7 @@ final class ControlState {
 
   /**
    * A text box's own words (hint, id without its package, description,
-   * class) that say it's for searching or an address. Whole words only:
+   * excluding the class) that say it's for searching or an address. Whole words only:
    * "research" or "com.research.app" isn't a search box.
    */
   static boolean searchy(String words) {

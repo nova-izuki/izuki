@@ -47,6 +47,47 @@ assert.ok(trimmed.length < clip.length && trimmed.length >= 16000, "quiet margin
 
 // Off (or nobody enrolled): nothing is checked and nothing is blocked.
 (async () => {
+  const html = fs.readFileSync(path.resolve(__dirname, "../../docs/app/index.html"), "utf8");
+  const wakeStart = html.indexOf("  async function startWake(");
+  const wakeEnd = html.indexOf("  async function receiveWake(", wakeStart);
+  assert.ok(wakeStart > 0 && wakeEnd > wakeStart);
+  const heard = [], opened = [], checked = [];
+  const wakeContext = vm.createContext({
+    window: { IzukiVoiceMatch: { read: () => ({ enabled: true }), check: async (audio) => { checked.push(audio); return { ok: true }; } } },
+    talking: false, wakeTurn: false, lastWakeText: "", lastWakeAt: 0,
+    setStatus() {}, ready: () => true, openLive: () => opened.push(true), ask: (said) => heard.push(said), Date,
+  });
+  vm.runInContext(html.slice(wakeStart, wakeEnd) + "\nglobalThis.wake = startWake;", wakeContext);
+  await wakeContext.wake("Hey Nova open maps", { voice: true, audio: "" });
+  assert.deepEqual(heard, [], "an inline command without wake audio never bypasses voice matching");
+  assert.equal(opened.length, 1, "record the command again for verification");
+  assert.equal(wakeContext.wakeTurn, true);
+  wakeContext.wakeTurn = false;
+  await wakeContext.wake("Hey Nova open calendar", { voice: true, audio: "wav" });
+  assert.equal(checked.length, 1);
+  assert.deepEqual(heard, ["open calendar"], "a verified spoken wake can carry an inline command");
+  // Execute the actual ask() transcription branch. A provider can return
+  // partial words after its stream is aborted; they must not become actions.
+  const askStart = html.indexOf("  async function ask(said, audio)");
+  const askEnd = html.indexOf("  function replyTools()", askStart);
+  assert.ok(askStart > 0 && askEnd > askStart);
+  for (const reason of ["timeout", "cancelled"]) {
+    let listening = 0;
+    const notices = [];
+    const context = vm.createContext({
+      window: {}, attached: [], busy: false, wakeTurn: false, talking: true,
+      ready: () => true, canHear: () => true, beginRequest() {}, finishRequest() {},
+      brainKeys: { groq: true }, requestEnd: "", refreshSend() {}, setOrb() {}, setStatus() {}, stage() {},
+      bubble: (_, words) => notices.push(words), endedSay: () => "Request timed out",
+      groqHear: async () => { context.requestEnd = reason; return "delete this late transcript"; },
+      listen: () => listening++, Error,
+    });
+    vm.runInContext(html.slice(askStart, askEnd) + "\nglobalThis.runAsk = ask;", context);
+    await context.runAsk("", { type: "audio/wav", b64: "test" });
+    assert.equal(context.busy, false, "the transcription request is cleaned up");
+    assert.equal(listening, reason === "timeout" ? 1 : 0, "timeout resumes the call; Stop keeps it silent");
+    assert.deepEqual(notices, reason === "timeout" ? ["Request timed out"] : [], "a partial timeout is explained without using late words");
+  }
   assert.equal((await V.check({ b64: "" })).off, true);
   store.set("izuki.wake-speakers.v1", JSON.stringify({ enabled: false, profiles: [profile] }));
   assert.equal((await V.check({ b64: "" })).off, true);

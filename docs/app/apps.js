@@ -93,10 +93,12 @@
     return id;
   }
 
-  async function session(fresh) {
+  const STOPPED = "izuki-apps-stopped";
+  async function session(fresh, stopped = () => false) {
     const k = key();
     if (!fresh && sessionId.id && sessionId.for === k) return sessionId.id;
     // No premium (paid-per-call) tools: Izuki stays free.
+    if (stopped()) throw new Error(STOPPED);
     const v = await post("/tool_router/session", { user_id: userId(), premium_usage: false }, k);
     if (!v.session_id) throw new Error("Composio gave no session");
     sessionId.id = v.session_id;
@@ -105,13 +107,19 @@
   }
 
   /** Call the router, making a new session once if the old one expired. */
-  async function router(action, body) {
+  async function router(action, body, stopped = () => false) {
     const k = key();
+    const go = async (fresh) => {
+      if (stopped()) throw new Error(STOPPED);
+      const id = await session(fresh, stopped);
+      if (stopped()) throw new Error(STOPPED);
+      return post(`/tool_router/session/${id}/${action}`, body, k);
+    };
     try {
-      return await post(`/tool_router/session/${await session(false)}/${action}`, body, k);
+      return await go(false);
     } catch (e) {
       if (/^Composio answered 404\b/.test(String(e.message))) {
-        return await post(`/tool_router/session/${await session(true)}/${action}`, body, k);
+        return await go(true);
       }
       throw e;
     }
@@ -155,8 +163,8 @@
   }
 
   /** A sign-in page for one app. */
-  async function link(toolkit) {
-    const v = await router("link", { toolkit: String(toolkit).trim().toLowerCase() });
+  async function link(toolkit, stopped = () => false) {
+    const v = await router("link", { toolkit: String(toolkit).trim().toLowerCase() }, stopped);
     const url = v.redirect_url || v.data?.redirect_url || "";
     if (!url) throw new Error(`Composio couldn't make a sign-in link for ${toolkit}`);
     return url;
@@ -343,10 +351,11 @@
 
     // Discover tools immediately, saving an entire model round trip.
     try {
-      const v = await router("search", { queries: [{ use_case: last }] });
+      const v = await router("search", { queries: [{ use_case: last }] }, stopped);
       missing = unconnected(v);
       messages.push({ role: "user", content: "[tool discovery — not account contents]\n" + describeSearch(v) });
     } catch (e) {
+      if (stopped()) return { text: "Stopped.", links, stopped: true };
       return { text: "I couldn't reach your apps: " + e.message, links };
     }
 
@@ -382,8 +391,9 @@
           if (!missing) return unavailable();
           const app = missing;
           try {
-            links.push([pretty(app), await link(app)]);
+            links.push([pretty(app), await link(app, stopped)]);
           } catch {}
+          if (stopped()) return { text: "Stopped.", links: [], stopped: true };
           return {
             text: `I couldn't actually open your ${pretty(app)} just now, so I don't want to guess at what's in there. Sign in with the link (just once), then ask me again.`,
             links,
@@ -394,7 +404,7 @@
         return { text, links };
       } else if (typeof step.search === "string") {
         try {
-          const v = await router("search", { queries: [{ use_case: step.search }] });
+          const v = await router("search", { queries: [{ use_case: step.search }] }, stopped);
           missing = missing || unconnected(v);
           seen = describeSearch(v);
         } catch (e) {
@@ -403,13 +413,14 @@
       } else if (typeof step.connect === "string") {
         const app = String(step.connect).trim().toLowerCase();
         try {
-          const url = await link(app);
+          const url = await link(app, stopped);
           links.push([pretty(app), url]);
           return {
             text: `I need access to your ${pretty(app)} first — sign in with the link (just once), then ask me again.`,
             links,
           };
         } catch (e) {
+          if (stopped()) return { text: "Stopped.", links: [], stopped: true };
           seen = `Couldn't make a sign-in link: ${e.message}`;
         }
       } else if (step.run && typeof step.run === "object") {
@@ -420,7 +431,7 @@
         const args = step.run.arguments && typeof step.run.arguments === "object" ? step.run.arguments : {};
         try {
           const v = await router("execute", { tool_slug: tool, arguments: args,
-            ...(typeof step.run.account === "string" ? { account: step.run.account } : {}) });
+            ...(typeof step.run.account === "string" ? { account: step.run.account } : {}) }, stopped);
           const failure = toolError(v);
           if (failure) {
             seen = `${tool} failed: ${failure}`;
