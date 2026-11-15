@@ -123,6 +123,7 @@ pub mod planner;
 pub mod recipes;
 pub mod reminders;
 pub mod settings;
+pub mod siteaccess;
 pub mod state;
 pub mod store;
 pub mod suggest;
@@ -488,6 +489,7 @@ pub fn run() {
             commands::air_keys,
             commands::air_target,
             commands::eye_target,
+            commands::sites_change,
             commands::air_key,
             commands::air_draw,
             commands::window_spot,

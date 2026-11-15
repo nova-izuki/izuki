@@ -8,10 +8,21 @@
 /// Added to the chat's instructions while the log is on.
 pub const RULE: &str = "\n\nSTUDY LOG IS ON: every question the user asks and your answer are saved to their notes so they can learn from them later. When they ask a question, answer so it teaches: the answer first, then why or how in a few short steps, then one last line starting \"Remember:\" with the key idea. Commands and small talk are answered normally.";
 
+/// Short enough to be something said or typed as a command (the latest
+/// message only). Instructions built for the AI, pasted pages and long
+/// questions are not commands, whatever words they contain.
+pub fn command_sized(said: &str) -> bool {
+    let latest = said.split("\n\n(The conversation just before,").next().unwrap_or(said);
+    latest.split_whitespace().count() <= 40
+}
+
 /// "Save every question and answer to my notes" → Some(true); "stop saving my
 /// questions" → Some(false). A bare mention of "answer" or "question" is
-/// never a state change.
+/// never a state change, and neither is anything longer than a command.
 pub fn parse(said: &str) -> Option<bool> {
+    if said.split_whitespace().count() > 20 {
+        return None;
+    }
     let s = said
         .to_lowercase()
         .replace('’', "").replace("'", "")
@@ -265,6 +276,28 @@ mod tests {
         assert_eq!(parse("what's in my study log?"), None);
         assert_eq!(parse("study log off"), Some(false));
         assert_eq!(parse("study log on"), Some(true));
+    }
+
+    /// The owner's report: "what's the ANSWER" answered "Study log off". The
+    /// question became an instruction for the AI that says "question",
+    /// "Notes" and "do not start", and that was matched as a command.
+    #[test]
+    fn questions_and_built_instructions_never_switch_the_log() {
+        let built = "Answer the question on my screen directly. Give the answer first (including the option label if clearly visible), then explain why in one or two sentences. If the question or options are unreadable, say what you need to see. Do not start a walkthrough, offer Notes, or click or submit anything.";
+        assert_eq!(parse(built), None, "an instruction for the AI is not a command");
+        assert!(!command_sized(built) || parse(built).is_none());
+        for said in ["answer", "what's the ANSWER", "What's the answer?!", "answer this question", "what's the answer to number 3?", "Answer me", "Can you answer this?", "windows", "whatttt", "WHATTTT", "what does Study Log do?", "Does the study log save every question?"] {
+            assert_eq!(parse(said), None, "{said}");
+        }
+        assert_eq!(parse("turn off Study Log"), Some(false));
+        assert_eq!(parse("Turn off study log."), Some(false));
+        assert_eq!(parse("enable Study Log"), Some(true));
+        assert_eq!(parse("don't turn off Study Log"), Some(true), "keeping it on is the explicit ask");
+        assert_eq!(parse("stop saving my questions to my notes"), Some(false));
+        // Pasted text that happens to contain the words is not a command.
+        let pasted = format!("{} stop saving my questions to notes", "word ".repeat(30));
+        assert_eq!(parse(&pasted), None);
+        assert!(command_sized("turn off study log\n\n(The conversation just before, oldest first: User: long talk …)"));
     }
 
     #[test]

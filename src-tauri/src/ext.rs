@@ -39,7 +39,7 @@ static WAKE: Mutex<Option<Sender<()>>> = Mutex::new(None);
 
 /// The newest extension (extension/manifest.json). Older copies don't know
 /// every request Izuki makes (Blackboard, finding your school's tab).
-pub const LATEST: &str = "1.6.1";
+pub const LATEST: &str = "1.6.2";
 /// The connected extension's version; empty: one from before 1.4.1, which
 /// didn't say.
 static VERSION: Mutex<String> = Mutex::new(String::new());
@@ -1200,19 +1200,65 @@ pub fn parse_page(v: &Value) -> Page {
 
 /// The page elements the last look listed, by the control number the AI
 /// was shown — so "click #903" becomes a click inside the page.
-static LISTED: Mutex<Vec<(u32, String)>> = Mutex::new(Vec::new());
+/// (control number, the element's id in the page, the name it showed).
+static LISTED: Mutex<Vec<(u32, String, String)>> = Mutex::new(Vec::new());
 
-pub fn remember_listed(pairs: Vec<(u32, String)>) {
-    *LISTED.lock() = pairs;
+pub fn remember_listed(listed: Vec<(u32, String, String)>) {
+    *LISTED.lock() = listed;
 }
 
 pub fn dom_id_for(control: u32) -> Option<String> {
-    LISTED.lock().iter().find(|(id, _)| *id == control).map(|(_, d)| d.clone())
+    LISTED.lock().iter().find(|(id, _, _)| *id == control).map(|(_, d, _)| d.clone())
 }
 
-/// Click an element inside the page — no mouse.
+/// The name an element showed when it was listed: sent with the action, so
+/// the page acts only while it's still that element.
+fn listed_name(dom_id: &str) -> String {
+    LISTED.lock().iter().find(|(_, d, _)| d == dom_id).map(|(_, _, n)| n.clone()).unwrap_or_default()
+}
+
+/// The address the browser in front shows right now, while it's the window
+/// Izuki last read (`Ok(None)`: not a browser page Izuki read, no site rule
+/// to apply). A tab that moved to another site since is judged by where it
+/// is, never where it was: asked of the extension, else read from the
+/// browser's own address bar; if neither can say, nothing is done.
+pub fn live_url() -> Result<Option<String>> {
+    if snapshot_url_cached().is_none() {
+        return Ok(None);
+    }
+    let now = request("where", json!({}), Duration::from_millis(1500))
+        .ok()
+        .and_then(|v| v["url"].as_str().map(str::to_string))
+        .filter(|u| u.starts_with("http"));
+    // Still the same window in front after the wait: the answer is about it.
+    if snapshot_url_cached().is_none() {
+        return Err(anyhow!("page_changed: the window in front changed while I checked the page, so I didn't act. Taking a fresh look."));
+    }
+    match now.or_else(crate::uia::foreground_web_address) {
+        Some(url) => Ok(Some(url)),
+        None => Err(anyhow!("page_changed: I couldn't confirm which page is showing, so I didn't act. Taking a fresh look.")),
+    }
+}
+
+/// The page the listed elements came from, whichever window it's in.
+fn listed_page_url() -> Option<String> {
+    LAST_URL.lock().clone().map(|(url, _)| url)
+}
+
+/// The site rule for the page the elements came from, and its host — sent
+/// with the action, so the extension only acts if the tab is still on that
+/// site (it may have moved on since the look).
+fn checked_host() -> Result<String> {
+    let url = listed_page_url().unwrap_or_default();
+    crate::siteaccess::gate(&url)?;
+    Ok(crate::siteaccess::host_of(&url))
+}
+
+/// Click an element inside the page — no mouse. Never on a site you've kept
+/// Izuki out of, or a careful one you haven't said yes to (siteaccess.rs).
 pub fn click(dom_id: &str) -> Result<()> {
-    let done = request("click", json!({ "id": dom_id }), Duration::from_secs(4))?;
+    let host = checked_host()?;
+    let done = request("click", json!({ "id": dom_id, "host": host, "name": listed_name(dom_id) }), Duration::from_secs(4))?;
     // A click that leaves the page is reported a moment before it happens,
     // so its reply gets out before the page goes. Wait for it to land before
     // anyone looks at the page or tries again: a look inside that gap sees
@@ -1229,9 +1275,11 @@ fn deferred_ms(reply: &Value) -> Option<u64> {
     reply["deferred"].as_u64().map(|ms| ms.min(1000) + 60)
 }
 
-/// Type into an element inside the page — no keyboard.
+/// Type into an element inside the page — no keyboard. The same site rule
+/// as clicks; the extension itself refuses password, card and code boxes.
 pub fn type_into(dom_id: &str, text: &str) -> Result<()> {
-    request("type", json!({ "id": dom_id, "text": text }), Duration::from_secs(4)).map(|_| ())
+    let host = checked_host()?;
+    request("type", json!({ "id": dom_id, "text": text, "host": host, "name": listed_name(dom_id) }), Duration::from_secs(4)).map(|_| ())
 }
 
 #[cfg(test)]

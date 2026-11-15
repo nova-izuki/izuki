@@ -945,7 +945,12 @@ export function VoiceEngine() {
     // Chat shorthand ("wats the ans", "pls open yt") read as plain words —
     // and a bare "answer" / "what's the answer" means the question on screen,
     // not "answer what?".
-    const t = answerOnScreen(expandShortWords(text.trim()));
+    // `own`: the person's own words — the only thing local commands ever see.
+    // `t`: what the AI is asked, which may be a longer instruction built from
+    // them. Matching commands against `t` once turned the Study log off when
+    // someone asked "what's the answer" (the built instruction says "Notes").
+    const own = expandShortWords(text.trim());
+    const t = answerOnScreen(own);
     if (!t) return;
     // "What are you doing?" — the real answer, from the task actually
     // running (never made up). Asked mid-task, it doesn't stop the task.
@@ -1183,7 +1188,7 @@ export function VoiceEngine() {
       return;
     }
 
-    const local = matchLocalCommand(t);
+    const local = matchLocalCommand(own);
     if (local) {
       switch (local.kind) {
         case "stop":
@@ -1224,7 +1229,7 @@ export function VoiceEngine() {
     // "what time is it" — done at once, no AI to wait for or get wrong.
     // Only a coach start from THIS request counts (coach.rs's event).
     coachStarted = false;
-    const quick = await api.instantCommand(t).catch(() => null);
+    const quick = await api.instantCommand(own).catch(() => null);
     if (requestSeq !== at) return;
     if (quick) {
       // Part of the conversation too, so "and again" / "now the next one" follows on.

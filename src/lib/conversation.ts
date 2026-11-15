@@ -14,6 +14,8 @@ import { api, EV, emit, on } from "./ipc";
 export interface Turn {
   role: "user" | "assistant";
   content: string;
+  /** The saved chat it came from (Chat tab), so deleting that chat removes it. */
+  chat?: string;
 }
 
 const history: Turn[] = [];
@@ -62,23 +64,43 @@ const MAX_TURNS = 16;
  * the orb hears another, and a reply spoken at one of them must never drop what
  * the other just said. Duplicates are skipped, newest wins the order.
  */
-export function shareHistory(turns: Turn[]): void {
+export function shareHistory(turns: Turn[], chat?: string): void {
   const incoming = turns
     .slice(-MAX_TURNS)
-    .map((t) => ({ role: t.role, content: (t.content ?? "").trim() }))
+    .map((t) => ({ role: t.role, content: (t.content ?? "").trim(), chat }))
     .filter((t) => t.content && (t.role === "user" || t.role === "assistant"));
   if (!incoming.length) return;
-  const seen = new Set(history.map((t) => `${t.role}\u0000${t.content}`));
+  // Per chat: the same line in two chats is two lines, so deleting one chat
+  // never takes the other's. A line the orb heard that this chat now holds
+  // (it opened on the shared thread) becomes this chat's, not a second copy.
   for (const t of incoming) {
-    const key = `${t.role}\u0000${t.content}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    history.push(t);
+    const same = history.filter((h) => h.role === t.role && h.content === t.content);
+    if (same.some((h) => (h.chat ?? "") === (t.chat ?? ""))) continue;
+    const untagged = t.chat ? same.find((h) => !h.chat) : undefined;
+    if (untagged) untagged.chat = t.chat;
+    else history.push(t);
   }
   // Shared, so it counts as just now — otherwise the 15-minute reset would wipe
   // a thread the user is still typing into.
   lastAt = Date.now();
   if (history.length > MAX_TURNS) history.splice(0, history.length - MAX_TURNS);
+  publish();
+}
+
+/**
+ * A chat was deleted: every line it shared leaves the shared conversation too
+ * (the partial ones shared while a reply streamed included), so it can't come
+ * back as context for the next request (voice, typed or the phone). `null`:
+ * every line — Clear all.
+ */
+export function forgetHistory(chat: string | null): void {
+  if (chat === null) {
+    history.length = 0;
+  } else {
+    for (let i = history.length - 1; i >= 0; i--) {
+      if (history[i].chat === chat) history.splice(i, 1);
+    }
+  }
   publish();
 }
 

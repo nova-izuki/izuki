@@ -19,6 +19,7 @@ export const FEATURES: Feature[] = [
   { label: "See-through windows", hint: "make discord see-through, transparent window, translucent, 50% transparent, opacity, glass window, make it solid again", tab: "style", id: "style-arrange" },
   { label: "Saved window layouts", hint: "save my windows as work, save this layout, set up my work layout, restore my coding setup, workspace, open my apps where they were, multiple monitors, every screen", tab: "style", id: "style-arrange" },
   { label: "What Izuki can access", hint: "privacy, permissions, access, microphone, camera, screen, connected accounts, gmail, keys, phone control, turn off, revoke, trust", tab: "settings", id: "settings-access" },
+  { label: "Sites Izuki can use", hint: "signed in, logged in, websites, sites, bank, paypal, allow, block, let izuki use, passwords, extension, browser", tab: "settings", id: "settings-sites" },
   { label: "What Izuki did", hint: "history, activity, log, actions, what did you do today, what changed, clicks, audit", tab: "settings", id: "settings-activity" },
   { label: "Copy or erase my data", hint: "export my data, download my data, backup, take a copy, erase everything, delete my data, wipe, reset izuki, privacy", tab: "settings", id: "settings-mydata" },
   { label: "Windhawk mods", hint: "windhawk, mods, vertical taskbar, taskbar styler, start menu styler, taskbar height, icon size, clock weather cpu, notification center, translucent windows, rounded corners, deeper customization", tab: "style", id: "style-windhawk" },

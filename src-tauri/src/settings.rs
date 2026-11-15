@@ -672,6 +672,13 @@ pub struct Settings {
     /// and brings it back when the session ends. Off until turned on.
     #[serde(default)]
     pub focus_dims: bool,
+    /// Sites Izuki may act in even though they look like a bank, payment,
+    /// health, government or sign-in page (siteaccess.rs). Hosts, lower case.
+    #[serde(default)]
+    pub sites_allowed: Vec<String>,
+    /// Sites Izuki never clicks or types in, whatever is asked (siteaccess.rs).
+    #[serde(default)]
+    pub sites_blocked: Vec<String>,
     /// The user's town or city, for the weather glance ("" = from memory).
     #[serde(default)]
     pub home_city: String,
@@ -887,6 +894,11 @@ impl Settings {
     /// Fill in any provider the config file predates, so upgrades never drop
     /// a newly supported brain.
     pub fn heal(&mut self) {
+        // Sites: plain hosts, no repeats, and a block wins over a yes.
+        crate::siteaccess::tidy(&mut self.sites_allowed);
+        crate::siteaccess::tidy(&mut self.sites_blocked);
+        let blocked = self.sites_blocked.clone();
+        self.sites_allowed.retain(|h| !blocked.contains(h));
         if !["mouse", "precision"].contains(&self.control_style.as_str()) { self.control_style = "mouse".into(); }
         // The always-on desktop mate is retired (it slowed PCs down; the
         // moving characters replace it): it stays off.
@@ -1308,6 +1320,8 @@ impl Default for Settings {
             screen_time_enabled: true,
             keep_activity: true,
             focus_dims: false,
+            sites_allowed: Vec::new(),
+            sites_blocked: Vec::new(),
             home_city: String::new(),
             learn_city: false,
             n8n_hooks: Vec::new(),

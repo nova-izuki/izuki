@@ -407,6 +407,15 @@ pub async fn instant_command(app: AppHandle, said: String) -> Option<String> {
     if let Some(reply) = crate::airsafe::voice(&said) {
         return Some(reply);
     }
+    // Commands are short. A long text is a prompt or a pasted page, never a
+    // command — and must never flip a setting by containing the right words.
+    if !crate::studylog::command_sized(&said) {
+        return None;
+    }
+    // "Let Izuki use chase.com", "never let Izuki use reddit.com" (siteaccess.rs).
+    if let Some(ask) = crate::siteaccess::parse(&said) {
+        return Some(crate::siteaccess::handle(ask));
+    }
     if crate::notes::is_study_prompt(&said) { return None; }
     if crate::brain::direct_answer_requested(&said) {
         crate::coach::stop();
@@ -2287,6 +2296,24 @@ pub fn air_draw(app: AppHandle) {
 pub async fn air_target(app: AppHandle, nx: f64, ny: f64) -> Option<crate::air::Seen> {
     let overlay = app.get_webview_window("overlay").and_then(|w| w.hwnd().ok()).map(|h| h.0 as isize);
     blocking(move || crate::air::target_norm(nx, ny, overlay)).await.ok().flatten()
+}
+
+/// Settings → Privacy: one change to the site rules ("allow", "block" or
+/// "forget" one site), made on the stored lists so nothing said or pressed
+/// meanwhile is undone (full settings saves never touch them). Both lists as
+/// they now are, and what changed.
+#[tauri::command]
+pub fn sites_change(op: String, host: String) -> Result<serde_json::Value, String> {
+    use crate::siteaccess::Ask;
+    let host = crate::siteaccess::site_name(&host).ok_or("That doesn't look like a site name (like chase.com).")?;
+    let ask = match op.as_str() {
+        "allow" => Ask::Allow(host),
+        "block" => Ask::Block(host),
+        "forget" => Ask::Forget(host),
+        _ => return Err("Unknown change.".into()),
+    };
+    let (s, note) = crate::siteaccess::change(ask).ok_or("Izuki is still starting. Try again in a moment.")?;
+    Ok(serde_json::json!({ "allowed": s.sites_allowed, "blocked": s.sites_blocked, "note": note }))
 }
 
 /// Eye Control: where a steady look settles — the control under it, or the

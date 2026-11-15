@@ -337,6 +337,9 @@ export interface Settings {
   keep_activity: boolean;
   /** Focus mode also dims everything but the window in front (haze.rs). */
   focus_dims: boolean;
+  /** Sites Izuki may act in though they look careful (bank, health…); and sites it never touches. */
+  sites_allowed: string[];
+  sites_blocked: string[];
   home_city: string;
   learn_city: boolean;
   /** Saved flows clear after this many days unused (0 = keep). */

@@ -223,6 +223,8 @@ export const MOCK_SETTINGS: Settings = {
   screen_time_enabled: true,
   keep_activity: true,
   focus_dims: false,
+  sites_allowed: [],
+  sites_blocked: [],
   home_city: "",
   learn_city: false,
   app_theme: "nova",
@@ -1046,6 +1048,9 @@ export const api = {
   /** Air control: the box around what's under a normalized spot (normalized). */
   airTarget: (nx: number, ny: number) => call<{ nx: number; ny: number; nw: number; nh: number; kind: string; field: boolean } | null>("air_target", { nx, ny }, () => null),
   /** Eye Control: the control a steady look settles on — under it, or the nearest within reach (normalized). */
+  /** Settings → Privacy: one change to the site rules, on the stored lists (their only way to change). */
+  sitesChange: (op: "allow" | "block" | "forget", host: string) =>
+    call<{ allowed: string[]; blocked: string[]; note: string }>("sites_change", { op, host }, () => ({ allowed: [], blocked: [], note: "" })),
   eyeTarget: (nx: number, ny: number) => call<{ nx: number; ny: number; nw: number; nh: number; kind: string; field: boolean } | null>("eye_target", { nx, ny }, () => null),
   /** 24/7 PC fast, live: when it last looked and what it last did by itself. */
   /** Dictated text with its grammar and punctuation fixed (unchanged if no brain answers). */

@@ -115,6 +115,29 @@ mem.shareHistory(long);
 is("only the recent turns are kept", count() <= 16, true);
 is("and they are the newest", last(), "turn 59");
 
+console.log("a deleted chat leaves the shared conversation:");
+fresh();
+mem.shareHistory([{ role: "user", content: "my bank pin is 1234" }, { role: "assistant", content: "No" }], "chat-a");
+// A reply streaming in is shared again as it grows.
+mem.shareHistory([{ role: "user", content: "my bank pin is 1234" }, { role: "assistant", content: "Noted, I won't" }], "chat-a");
+mem.shareHistory([{ role: "user", content: "play lofi" }], "chat-b");
+mem.remember("user", "spoken to the orb");
+mem.forgetHistory("chat-a");
+is("every line that chat shared goes, partial ones too", shape(), ["user:play lofi", "user:spoken to the orb"]);
+fresh();
+mem.shareHistory([{ role: "user", content: "same words" }], "chat-a");
+mem.shareHistory([{ role: "user", content: "same words" }], "chat-b");
+mem.forgetHistory("chat-a");
+is("the same line in another chat stays", shape(), ["user:same words"]);
+fresh();
+mem.remember("user", "heard at the orb");
+mem.shareHistory([{ role: "user", content: "heard at the orb" }], "chat-c");
+is("a line the chat took from the orb isn't doubled", count(), 1);
+mem.forgetHistory("chat-c");
+is("and goes with that chat", count(), 0);
+mem.forgetHistory(null);
+is("Clear all empties it", count(), 0);
+
 console.log("suggested next replies:");
 
 fresh();
