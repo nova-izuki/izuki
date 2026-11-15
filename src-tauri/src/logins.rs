@@ -807,8 +807,8 @@ mod tests {
         ev.extend((0..5).map(|i| fail(&format!("2026-11-14T02:0{i}:00"), "bob", "10.0.0.5", "wrong password")));
         let f = analyze(&ev);
         let burst = f.iter().find(|f| f.what.contains("the account bob")).expect("the burst");
-        assert!(burst.evidence.iter().any(|e| e.contains("02:00:00")), "{burst:?}");
-        assert!(!burst.evidence.iter().any(|e| e.contains("01:0")), "old isolated failures are not the burst: {burst:?}");
+        assert!(burst.evidence.iter().any(|e| e.contains(" 02:")), "{burst:?}");
+        assert!(!burst.evidence.iter().any(|e| e.contains(" 01:")), "old isolated failures are not the burst: {burst:?}");
     }
 
     #[test]
@@ -817,7 +817,8 @@ mod tests {
 Nov 14 03:00:01 lab sshd[1]: Failed password for invalid user bob from 203.0.113.9 port 50000 ssh2
 Nov 14 03:00:02 lab sshd[1]: Failed password for invalid user bob from 203.0.113.9 port 50000 ssh2";
         let ev = parse_linux(log, 2026);
-        assert_eq!(ev.len(), 3, "one probe explains one failure, not the next attempt: {ev:#?}");
+        assert_eq!(ev.len(), 2, "the Invalid user line plus one separate failed attempt: {ev:#?}");
+        assert_eq!(ev[1].at, "2026-11-14T03:00:02", "the first matching failure is the duplicate, the next one counts");
     }
 
     #[test]
