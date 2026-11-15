@@ -201,6 +201,12 @@ assert.deepEqual(dead, [], `the code reaches for ids the page hasn't got: ${dead
 
 // And every control the page offers has to be wired to something.
 const mustBeWired = ['provider', 'provider-tabs', 'refresh-tabs', 'connect', 'auto-connect', 'follow-questions', 'read-aloud', 'show-companion', 'task-run', 'task-cancel', 'task-text', 'stop', 'answer-who', 'web-search'];
+// Four plain views, with the composer outside them so it never disappears.
+for (const view of ['ask', 'page', 'tasks', 'settings']) assert(new RegExp(`data-view=\"${view}\"`).test(html), `the panel needs the ${view} view`);
+assert(/<body data-view="ask">/.test(html), 'the chat is the first view');
+assert(html.indexOf('id="run-bar"') > html.indexOf('id="log"') && html.indexOf('id="run-bar"') < html.indexOf('id="ask"'), 'the run bar sits between the chat and the composer, always in sight');
+assert(/id="q"[^>]*aria-label=/.test(html), 'the composer needs a readable label');
+assert(/body\[data-view="ask"\] #workspace-controls/.test(html), 'the ask view leaves room for the conversation');
 const unwired = mustBeWired.filter((id) => !lookedUp.has(id));
 assert.deepEqual(unwired, [], `these controls exist on the page but nothing uses them: ${unwired.join(', ')}`);
 
@@ -232,6 +238,16 @@ assert(read('workspace-worker.js').includes('web:false'), 'quiz answers must not
 // desktop task was refused with "Choose an open browser tab first."
 assert(/tabId:\s*source\.id/.test(panel), 'prepare must send the frozen source tab the reviewed task belongs to');
 assert(rust.includes('"tabId"'), 'ext.rs still expects a tabId — keep the panel sending it');
+
+// The panel tells the connection code which browser window is its own:
+// without it every "Side by side" failed ("Open the panel from a browser
+// window first", owner's screenshot).
+assert(/setUpConnection\(\{[^}]*windowId:\s*panelWindow/s.test(panel), 'the panel must pass its window to setUpConnection');
+
+// Clicking through the shared tab on the same site is read, not refused
+// (owner: "This tab moved to another page…" on nearly every question).
+assert(!panel.includes('This tab moved to another page while I was reading it'), 'same-site navigation must not fail the question');
+assert(/site\(page\.url\) !== site\(source\.url\)/.test(panel), 'only a different site stops a question about the shared tab');
 
 // Stop without a kind cancels a chat and leaves the task running.
 assert(/side\("stop",\s*\{\s*requestId:\s*job\.id,\s*kind:\s*"task"\s*\}/.test(panel), 'Stop must say it is stopping a task');

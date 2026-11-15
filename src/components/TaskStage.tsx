@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { Check, ChevronDown, ChevronUp, Pause, Play, RotateCcw, Square } from "lucide-react";
+import { Check, ChevronDown, ChevronUp, Hand, Pause, Play, RotateCcw, Square } from "lucide-react";
 import { api, EV, on } from "../lib/ipc";
 import type { StatusEvent } from "../lib/types";
 
-type Step = { current: number; total: number; before: boolean };
-type Pending = "pause" | "resume" | "stop" | "rerun" | null;
+type Step = { current: number; total: number; before: boolean; waiting: boolean };
+type Pending = "pause" | "resume" | "stop" | "rerun" | "turn" | null;
 type TrailItem = { n: number; label: string; at: number };
 
 function clock(ms: number): string {
@@ -27,7 +27,13 @@ function readStep(status: StatusEvent | null): Step | null {
   if (!hit) return null;
   const total = Math.max(1, Number.parseInt(hit[2], 10) || 1);
   const current = Math.min(total, Math.max(1, Number.parseInt(hit[1], 10) || 1));
-  return { current, total, before: /(?:before|then)\s+step\s+\d+/i.test(`${status.message} ${status.detail ?? ""}`) };
+  const words = `${status.message} ${status.detail ?? ""}`;
+  return {
+    current,
+    total,
+    before: /(?:before|then)\s+step\s+\d+/i.test(words),
+    waiting: /your turn/i.test(words),
+  };
 }
 
 /** A status that means there is no task left to show. */
@@ -129,6 +135,16 @@ export function TaskStage({ onActiveChange }: { onActiveChange?: (active: boolea
       return;
     }
     if (!numbered) return;
+    // "Your turn · step 2 of 4" is waiting, not completed: keep it out of
+    // the trail and the progress count until the person presses "I did it".
+    if (numbered.waiting) {
+      lastTotal.current = numbered.total;
+      if (!startedRef.current) {
+        startedRef.current = Date.now();
+        setStartedAt(startedRef.current);
+      }
+      return;
+    }
     if (!lastTotal.current || lastTotal.current !== numbered.total) {
       setTrail([]);
       lastNumber.current = 0;
@@ -178,7 +194,7 @@ export function TaskStage({ onActiveChange }: { onActiveChange?: (active: boolea
       setTotal(announced);
       // The start event names the plan before the first click; this is what
       // lets the stage appear while Izuki is still taking its first look.
-      setStep({ current: 1, total: announced, before: true });
+      setStep({ current: 1, total: announced, before: true, waiting: false });
     }
   }, [status, total]);
 
@@ -232,7 +248,7 @@ export function TaskStage({ onActiveChange }: { onActiveChange?: (active: boolea
 
   if (!active) return null;
 
-  const done = complete ? total : step ? Math.max(0, step.before ? step.current - 1 : step.current) : 0;
+  const done = complete ? total : step ? Math.max(0, step.before || step.waiting ? step.current - 1 : step.current) : 0;
   const percent = complete ? 100 : Math.max(0, Math.min(100, Math.round((done / total) * 100)));
   const currentLabel = finished
     ? complete
@@ -241,7 +257,9 @@ export function TaskStage({ onActiveChange }: { onActiveChange?: (active: boolea
     : step
       ? step.before
         ? `Ready for step ${step.current}`
-        : `Step ${step.current}`
+        : step.waiting
+          ? `Waiting for step ${step.current}`
+          : `Step ${step.current}`
       : "Preparing the first step";
   // Before the first action the step is "ready" but not done, so the count
   // and the bar agree at zero. After it, the step number is complete.
@@ -249,6 +267,8 @@ export function TaskStage({ onActiveChange }: { onActiveChange?: (active: boolea
   const countLabel = `${done}/${total}${startedAt ? ` · ${elapsed}` : ""}`;
   const recentTrail = trail.slice(-4);
 
+  // Practical mode: a step that's the person's (practical.rs).
+  const yourTurn = /^your turn\b/i.test(status?.message ?? "");
   const run = (kind: Exclude<Pending, null>, command: () => Promise<unknown>) => {
     if (pending) return;
     setPending(kind);
@@ -358,6 +378,28 @@ export function TaskStage({ onActiveChange }: { onActiveChange?: (active: boolea
             </div>
 
             <div className="izk-task-actions">
+              {yourTurn && (
+                <>
+                  <button
+                    type="button"
+                    data-izk-hit
+                    className="izk-task-button primary"
+                    disabled={pending !== null}
+                    onClick={() => run("turn", () => api.practicalTurn(true))}
+                  >
+                    <Check size={11} /> I did it
+                  </button>
+                  <button
+                    type="button"
+                    data-izk-hit
+                    className="izk-task-button"
+                    disabled={pending !== null}
+                    onClick={() => run("turn", () => api.practicalTurn(false))}
+                  >
+                    <Hand size={11} /> Do it for me
+                  </button>
+                </>
+              )}
               {finished ? (
                 <>
                   {complete && (

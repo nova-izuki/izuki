@@ -178,7 +178,7 @@
   chrome.runtime.onMessage.addListener((message,sender,respond)=>{
     const request=message?.izukiWorkspace||(message?.izukiQuiz?.op==="stop"?{...message.izukiQuiz,op:"stop"}:null);
     if(!request)return;
-    route(request,sender).then(respond,error=>respond({ok:false,text:error.message||"The workspace could not continue."}));return true;
+    route(request,sender).then(respond,error=>respond({ok:false,text:error.message||"The workspace could not continue.",code:error.code,state:error.state}));return true;
   });
   chrome.commands.onCommand.addListener(command=>{if(command==="stop-workspace"){quiz.stop();lab.stop();}});
   chrome.windows.onRemoved.addListener(id=>{for(const [source,popup] of popups)if(id===popup||id===source){popups.delete(source);if(quiz.current?.windowId===source)quiz.stop("The workspace window closed.");if(lab.current?.windowId===source)lab.stop();}});

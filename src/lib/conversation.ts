@@ -127,6 +127,12 @@ export function suggestions(): string[] {
     if (out.length < 4 && !out.includes(s)) out.push(s);
   };
 
+  // "Want me to do it, do it with you, or teach you step by step?"
+  // (practical.rs): the three answers, and the way out. Each carries on with
+  // the job just asked about (the conversation goes with it).
+  if (/do it with you, or teach you step by step\?$/i.test(reply)) {
+    return ["Teach me", "Do it with me", "Just do it", "Start over"];
+  }
   // It asked something, or offered to do something: yes is the obvious next word.
   if (/\?\s*$/.test(reply) || /\b(want me to|shall i|should i|would you like|do you want me to|ready to)\b/i.test(reply)) {
     add("Yes, do that");
@@ -187,11 +193,17 @@ const APPS = new RegExp(
  * decided locally and instantly. When unsure it says no: the chat model
  * can still hand over with `[SCREEN]`.
  */
+/** Practical mode (practical.rs): learning a job, or doing it together, happens on the screen. */
+const PRACTICAL =
+  /\b(teach me|walk me through|guide me|help me learn|show me how|do (it|this|that) with me|do it together|take turns|let me try|i'?ll do it myself)\b/i;
+
 export function needsScreen(text: string): boolean {
-  // The user's say wins: "while I watch" / "on my screen" → the screen;
-  // "in the background" / "don't open anything" → behind the scenes.
-  if (wantsToWatch(text)) return true;
+  // The user's explicit preference wins: "teach me in the background" is
+  // still a background request, not permission to take over the screen.
   if (wantsBackground(text) || answersInBackground(text)) return false;
+  if (PRACTICAL.test(text)) return true;
+  // "While I watch" / "on my screen" means the screen.
+  if (wantsToWatch(text)) return true;
   return (SCREEN.test(text) && !/\b(remind me|set (a |an )?reminder)\b/i.test(text)) || looksLikeDirections(text);
 }
 

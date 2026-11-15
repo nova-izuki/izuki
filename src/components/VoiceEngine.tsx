@@ -623,6 +623,10 @@ const asksToSave = (t: string) => SAVE_TO_NOTES.test(t) && !NO_SAVE.test(t);
 const TUTOR_STOP = /^(?:please )?(?:stop|end|exit|quit|turn off|leave|close) (?:the )?(?:teacher|tutor|teaching) mode\b|^stop (?:teaching|tutoring)( me)?\b|^(?:that's|thats) enough (?:teaching|for today)\b/i;
 const TUTOR_FOR_MS = 20 * 60_000;
 
+/** Practical mode (practical.rs): the words that move a step between hands. */
+const PRACTICAL_TURN =
+  /^(?:ok(?:ay)?[,\s]+)?(?:i\s+did\s+it|i(?:'ve|\s+have)\s+done\s+it|did\s+it|done|finished|i\s+finished|you\s+do\s+(?:it|this\s+one|that\s+one|the\s+rest)|do\s+(?:it|this\s+one)\s+for\s+me|can\s+you\s+do\s+it|your\s+turn|let\s+me\s+(?:do\s+(?:it|this\s+one|the\s+rest)|try)|i'?ll\s+do\s+(?:it|this\s+one|the\s+rest)|my\s+turn|(?:just\s+)?do\s+the\s+rest|you\s+finish\s+it|finish\s+it\s+for\s+me|teach\s+me\s+instead|i\s+want\s+to\s+do\s+it\s+myself|(?:let'?s\s+)?take\s+turns|do\s+it\s+with\s+me)[.!]*$/i;
+
 function tutorPrompt(said: string, first: boolean): string {
   if (first) {
     return (
@@ -966,6 +970,17 @@ export function VoiceEngine() {
       // the conversation and finishes it itself.
       if (idle) void afterReply(at, false);
       return;
+    }
+    // Practical mode's turns, said mid-task ("I did it", "do it for me", "let
+    // me do this one"): handed to the task, which keeps going. Nothing
+    // running: they go on as a normal request.
+    if (PRACTICAL_TURN.test(own.trim())) {
+      const reply = await api.practicalSay(own).catch(() => null);
+      if (reply) {
+        if (!session.current.on) startSession(from === "voice", "speaking");
+        await respond(reply, "calm", true, true);
+        return;
+      }
     }
     // Classroom requests deliberately keep the pen overlay open until the
     // spoken explanation has finished. That also makes the caller wait, so

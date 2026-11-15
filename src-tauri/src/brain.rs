@@ -1026,7 +1026,8 @@ fn ask_model(
                 (false, true) if on_practice => ANSWER_ON_PAGE_PROMPT,
                 _ => "",
             }
-            + if wants_pointing(&session.prompt) { POINTING_PROMPT } else { "" },
+            + if wants_pointing(&session.prompt) { POINTING_PROMPT } else { "" }
+            + crate::practical::prompt_block(),
         windows: uia::open_windows(14),
         page_text,
         think,
@@ -2456,7 +2457,7 @@ where F: FnOnce() + Send + 'static,
         .name("izuki-act".into())
         .spawn(move || {
             let _execution = crate::execution::attach(execution_context);
-            let (finished, _) = run_steps_blocking(&app, &store, &steps, &|| task_alive(task));
+            let (finished, _, _) = run_steps_blocking(&app, &store, &steps, &|| task_alive(task));
             // A replay has no brain to take a fresh look: when it stopped
             // part-way (paused and resumed, a covered or greyed-out button),
             // it says so rather than going quiet or clicking stale spots.
@@ -2479,6 +2480,9 @@ where F: FnOnce() + Send + 'static,
 /// Why the last run of steps stopped, when it's something the brain can fix
 /// on its next look (a window on top of the button, a greyed-out button).
 static STEP_SNAG: Mutex<Option<String>> = Mutex::new(None);
+/// What this round's direct steps brought back (a report, a reading): real
+/// data for the next look, word for word, never just "did it".
+static DIRECT_SAID: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
 /// A final control that has been attempted, keyed by its exact visible label.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -2503,6 +2507,7 @@ thread_local! {
 
 /// Start a new task with no stale re-plan signal or final-action memory.
 fn clear_replan_state() {
+    DIRECT_SAID.lock().clear();
     STEP_REPLAN.with(|f| f.set(false));
     FINAL_TRIED.with(|f| f.borrow_mut().clear());
     FINAL_CONFIRMED.with(|f| f.borrow_mut().clear());
@@ -2648,8 +2653,15 @@ struct Working(u64);
 
 impl Working {
     fn on(task: &str) -> Self {
+        Self::on_with(task, false)
+    }
+
+    /// `continuing`: the checkpoint's restored objective is not a new
+    /// request; keep the practical mode the person chose after writing it.
+    fn on_with(task: &str, continuing: bool) -> Self {
         let id = WORK_SEQ.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
         *WORK_TASK.lock() = (id, task.to_string());
+        crate::practical::begin(id, task, continuing);
         Working(id)
     }
 
@@ -2729,14 +2741,74 @@ fn wait_while_paused(app: &AppHandle, alive: &dyn Fn() -> bool, step_index: usiz
     Hold::Resumed
 }
 
+/// A step that's the person's (practical.rs): the hand points where it is,
+/// Izuki says what to do and why, and waits while they do it.
+fn your_turn(app: &AppHandle, step: &ActionStep, what: &str, i: usize, total: usize, alive: &dyn Fn() -> bool) -> crate::practical::Turn {
+    if step.x != 0 || step.y != 0 {
+        let _ = crate::overlay::ensure_caption_visible(app);
+        let _ = app.emit(
+            events::HAND,
+            HandCommand {
+                highlight: true,
+                x: step.x,
+                y: step.y,
+                x2: step.x2,
+                y2: step.y2,
+                action: Intent::Point,
+                duration_ms: 300,
+                label: Some(format!("{}/{total}", i + 1)),
+                shape: None,
+                text: None,
+                desktop: Some({
+                    let b = capture::virtual_bounds();
+                    crate::model::DesktopBounds { x: b.x, y: b.y, w: b.w, h: b.h, scale: 1.0 }
+                }),
+            },
+        );
+    }
+    let _ = app.emit("izuki://say", serde_json::json!({ "text": what, "mood": "calm", "reply": true, "quick": false }));
+    let _ = app.emit(
+        events::STATUS,
+        StatusEvent {
+            kind: "working",
+            message: format!("Your turn · step {} of {total}", i + 1),
+            detail: Some(format!("{what} I'm watching: say \"I did it\" or \"do it for me\".")),
+        },
+    );
+    let turn = {
+        // Your hands now: Izuki's own buttons take clicks, Esc is the app's.
+        let _yours = crate::overlay::yours(app);
+        let _esc = crate::hotkey::yours();
+        // A real progress line every so often: the voice watchdog must not
+        // cancel a person who needs more than a minute for their step.
+        let beat = || {
+            let _ = app.emit(
+                events::STATUS,
+                StatusEvent {
+                    kind: "working",
+                    message: format!("Your turn · step {} of {total}", i + 1),
+                    detail: Some(format!("{what} Take your time — say \"I did it\" or \"do it for me\".")),
+                },
+            );
+        };
+        crate::practical::wait_for_person(alive, step.action == Intent::Type, &beat)
+    };
+    // What you did on your turn is yours, not "you grabbed the PC while I worked".
+    *LAST_OWN.lock() = Some(std::time::Instant::now());
+    turn
+}
+
 /// Run `steps` on this thread. `true` if every step ran (not stopped and
 /// no step failed).
-fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep], alive: &dyn Fn() -> bool) -> (bool, usize) {
-            if !crate::execution::allowed() { return (false, 0); }
+fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep], alive: &dyn Fn() -> bool) -> (bool, usize, Vec<String>) {
+            if !crate::execution::allowed() { return (false, 0, Vec::new()); }
             let _active = TaskActive::begin();
             STEP_SNAG.lock().take();
             take_step_replan();
             let executed = std::cell::Cell::new(0usize);
+            // Person-completed steps are real progress but are not automated
+            // clicks: keep them out of `executed` (and last_click replay).
+            let people = std::cell::RefCell::new(Vec::new());
             let settings = store.settings();
             let move_ms = settings.move_duration_ms;
             // Let the Task Stage appear before the first click. Without this
@@ -2821,6 +2893,36 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
                     // Pointing is only seen on the overlay — make sure it's up.
                     if matches!(step.action, Intent::Point | Intent::Draw) {
                         let _ = crate::overlay::ensure_caption_visible(app);
+                    }
+                    // Practical mode: this step may be the person's (teach me,
+                    // do it with me). Shown and watched, never performed; the
+                    // next look checks it worked (practical.rs).
+                    if crate::practical::hands_for(step) == crate::practical::Hands::Person {
+                        let what = crate::practical::say_what(step);
+                        match your_turn(app, step, &what, i, steps.len(), alive) {
+                            crate::practical::Turn::HandBack => {
+                                // The hand-back click is not the person
+                                // competing with Izuki: refresh the input
+                                // watermark before the step is performed.
+                                own.set(std::time::Instant::now());
+                            }
+                            crate::practical::Turn::Done => {
+                                crate::practical::record(crate::practical::Hands::Person, &what);
+                                // The person's step is progress, but not an
+                                // automated click: last_click must never replay it.
+                                people.borrow_mut().push(format!("step {} of {}: {what}", i + 1, steps.len()));
+                                *STEP_SNAG.lock() = Some(format!("{} step {} of {}: {what}", crate::practical::YOUR_TURN_DONE, i + 1, steps.len()));
+                                return false;
+                            }
+                            crate::practical::Turn::Stopped => {
+                                let _ = app.emit(events::STATUS, StatusEvent::info("Stopped."));
+                                return false;
+                            }
+                            crate::practical::Turn::Idle => {
+                                *STEP_SNAG.lock() = Some(crate::practical::YOUR_TURN_IDLE.into());
+                                return false;
+                            }
+                        }
                     }
                     // Tell the overlay's hand where it is going before we move
                     // the real pointer, so the animation leads rather than trails.
@@ -2962,7 +3064,17 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
                         && !asked_for_window(&WORK_TASK.lock().1, "minimise"))
                     .then(uia::front_raw)
                     .flatten();
-                    match automation::execute(step, move_ms, settings.magnetic_hand, settings.dry_run)
+                    // Carry the window this step was planned for into the
+                    // executor: a direct shortcut is checked against it
+                    // immediately before the keys are sent, so a window switch
+                    // after a hand-back cannot receive it.
+                    match automation::execute_in(
+                        step,
+                        move_ms,
+                        settings.magnetic_hand,
+                        settings.dry_run,
+                        uia::held_window(),
+                    )
                     {
                         Ok(detail) => {
                             // Opening something has its own result check: it can
@@ -2976,6 +3088,17 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
                                 return false;
                             }
                             executed.set(i + 1);
+                            // Showing a control (point/draw/watch/hover) is
+                            // not an alternating action turn.
+                            if !matches!(step.action, Intent::Point | Intent::Draw | Intent::Watch | Intent::Hover) {
+                                crate::practical::record(crate::practical::Hands::Izuki, "");
+                            }
+                            if step.action == Intent::Do {
+                                let mut said = DIRECT_SAID.lock();
+                                if said.len() < 4 {
+                                    said.push(detail.chars().take(4000).collect());
+                                }
+                            }
                             final_press_confirmed(final_attempt.as_ref());
                             if let Some(raw) = front_before {
                                 // (The minimise animation takes a moment.)
@@ -3073,6 +3196,7 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
                             && recover_click(&app, step).is_some() =>
                         {
                             executed.set(i + 1);
+                            crate::practical::record(crate::practical::Hands::Izuki, "");
                             final_press_confirmed(final_attempt.as_ref());
                             if let Some(evidence) = evidence {
                                 if evidence.finish(crate::mission_journal::EvidenceOutcome::Returned).is_err() { return false; }
@@ -3109,7 +3233,7 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
                 true
             };
 
-            (run(), executed.get())
+            (run(), executed.get(), people.into_inner())
 }
 
 /// The control a click was meant for, pressed another way: 1) inside the
@@ -3545,7 +3669,7 @@ pub fn run_named_click(app: &AppHandle, store: &Arc<Store>, said: &str) -> Optio
     step.grounding = c.identity.clone();
     eprintln!("[named] \"{said}\" → clicking \"{}\" directly", c.name);
     let working = Working::on(said);
-    let (worked, _) = run_steps_blocking(app, store, std::slice::from_ref(&step), &alive);
+    let (worked, _, _) = run_steps_blocking(app, store, std::slice::from_ref(&step), &alive);
     let stop = working.stopped();
     drop(working);
     if let Some(stop) = stop {
@@ -3706,6 +3830,10 @@ pub fn run_instant(app: &AppHandle, store: &Arc<Store>, said: &str) -> Option<Vi
     if uia::screen_locked() {
         return None;
     }
+    // An instant command is Izuki's own action, not the person's next lesson
+    // step. Reset the practical mode first so a scroll after Teach does not
+    // wait for the person or leave `done` looking unconfirmed.
+    crate::practical::reset_for_instant();
     // Like any new task, this replaces one still running, and starts with no
     // earlier task's re-plan signal or final-action attempts.
     clear_replan_state();
@@ -3825,7 +3953,9 @@ fn submit_task(
     let resumes = resumes_waiting(&prompt);
     // A taken task is no longer waiting: its durable copy goes with it,
     // before any action can fail; a fresh stop writes a fresh checkpoint.
-    let (prompt, resumed) = match take_unfinished() {
+    let checkpoint = take_unfinished();
+    let resuming = resumes && checkpoint.is_some();
+    let (prompt, resumed) = match checkpoint {
         Some((task, done)) if resumes => (task, done),
         Some(t) => {
             // Something new — forget the old one.
@@ -3945,6 +4075,9 @@ fn submit_task(
     // place acted on so far, so "already been done" has something to mean.
     let mut going_in_circles = 0u32;
     let mut places_seen: Vec<(usize, ActionProgress)> = Vec::new();
+    // Person-led steps are progress too, without entering last_click.
+    let mut people_seen = 0usize;
+    let mut people_mark = 0usize;
     let mut screen_epoch = 0usize;
     // What the user showed or told Izuki when it asked, for the next look.
     // What the user drew, kept for the whole task: its clicks belong there.
@@ -4011,7 +4144,7 @@ fn submit_task(
     let _doing = crate::state::Doing::start(&prompt);
     // Izuki's last word, set when it stops on purpose (kept through finalizing).
     let mut final_word: Option<String> = None;
-    let working = Working::on(&prompt);
+    let working = Working::on_with(&prompt, resuming);
     // A new task starts with no failed-step debt and no final action blocked
     // by a previous task's attempt.
     clear_replan_state();
@@ -4713,7 +4846,7 @@ fn submit_task(
         // The window being worked in, so a step that minimises it by mistake
         // ("clear what's in the way" gone wrong) is caught and undone.
         let working_in = uia::target_window();
-        let (finished, executed) = run_steps_blocking(app, store, &steps, &alive);
+        let (finished, executed, people) = run_steps_blocking(app, store, &steps, &alive);
         let replan = take_step_replan();
         last_click = steps
             .iter()
@@ -4743,6 +4876,8 @@ fn submit_task(
         going_in_circles = if only_repeats(&places_now, &places_seen) { going_in_circles + 1 } else { 0 };
         places_seen.extend(places_now);
         done_so_far.extend(steps.iter().take(executed).map(describe_step));
+        done_so_far.extend(people.iter().cloned());
+        people_seen += people.len();
         if going_in_circles >= CIRCLES_BEFORE_STOPPING {
             eprintln!("[agent] {going_in_circles} rounds doing only things already done — stopping");
             crate::lessons::note(
@@ -4758,6 +4893,18 @@ fn submit_task(
         if let Some(said) = working.stopped() {
             final_word = Some(said);
             break;
+        }
+        let said: Vec<String> = std::mem::take(&mut *DIRECT_SAID.lock());
+        if !said.is_empty() {
+            let note = format!(
+                "Your direct step(s) returned this. It is real data from this PC: base what you say on it, quote it, \
+                 and never add to it:\n{}",
+                said.join("\n---\n")
+            );
+            told = Some(match told.take() {
+                Some(t) => format!("{t}\n{note}"),
+                None => note,
+            });
         }
         if uia::working_behind().is_some() {
             let note = "The person switched to another app while you work, so you're working in your window BEHIND \
@@ -4776,6 +4923,14 @@ fn submit_task(
             set_unfinished((prompt.clone(), done_so_far.clone()));
             let mut plan = last_plan.take().unwrap_or_default();
             plan.summary = "You're still using the PC, so I've paused here. Say \"keep going\" when you're ready.".into();
+            plan.mood = Some("calm".into());
+            last_plan = Some(plan);
+            break;
+        }
+        if snag.as_deref() == Some(crate::practical::YOUR_TURN_IDLE) {
+            set_unfinished((prompt.clone(), done_so_far.clone()));
+            let mut plan = last_plan.take().unwrap_or_default();
+            plan.summary = "I'll leave this step with you. Say \"keep going\" when you've done it, or \"do it for me\".".into();
             plan.mood = Some("calm".into());
             last_plan = Some(plan);
             break;
@@ -4800,7 +4955,14 @@ fn submit_task(
                 last_plan = Some(plan);
                 break;
             }
-            let note = if why.starts_with("paused:") {
+            let note = if let Some(done) = why.strip_prefix(crate::practical::YOUR_TURN_DONE) {
+                format!(
+                    "The person did this step themselves ({}). Look at this fresh screenshot: if it worked, say so in a few \
+                     words, explain anything that came back (output, a message, an error) in plain words, and give the next \
+                     step; if something else happened, say kindly what and how to get back. Don't redo their step.",
+                    done.trim()
+                )
+            } else if why.starts_with("paused:") {
                 "The person used the PC while you worked, so you paused. Things may have moved or another window may \
                  be in front: parse this fresh screenshot, bring the window you were working in back if needed, and \
                  carry on from where you were. Do not redo steps already done."
@@ -4864,8 +5026,9 @@ fn submit_task(
             // Steps done in this window that hadn't been done before it —
             // repeating old ones used to count, so a loop looked productive.
             let (before, window) = places_seen.split_at(progress_mark.min(places_seen.len()));
-            let fresh = new_among(window, before);
+            let fresh = new_among(window, before) + people_seen.saturating_sub(people_mark);
             progress_mark = places_seen.len();
+            people_mark = people_seen;
             if fresh < 3 {
                 eprintln!("[agent] little progress in the last {PROGRESS_EVERY} rounds — pausing");
                 crate::lessons::note(&uia::foreground_app(), "a task here stalled before: check the instructions on screen, scroll to find what's missing, and say what's in the way instead of retrying");
@@ -4965,7 +5128,7 @@ fn submit_task(
     // Asked to do something on the screen and nothing was done at all: the
     // answer alone must not read as if it had been ("Option D" is not a
     // click). "Already open" and the like are left as they are.
-    if honest.is_none() && all_steps.is_empty() && crate::companion::asks_to_do(&prompt) {
+    if honest.is_none() && all_steps.is_empty() && crate::companion::asks_to_do(&prompt) && crate::practical::mode() == crate::practical::Mode::Do {
         let said = plan.summary.trim().to_lowercase();
         if !said.is_empty() && !said.contains("already") && !said.contains("didn't click") && !said.contains("didn’t click") && !said.contains("i didn't") {
             eprintln!("[agent] a do-request ended with no action — saying so");
@@ -5021,6 +5184,11 @@ fn submit_task(
         plan.outcome = crate::model::TaskOutcome::Partial;
         let base = if said.trim().is_empty() || said.trim() == "Done." { "I did part of it.".to_string() } else { said.trim_end().to_string() };
         plan.summary = format!("{base} Still open on my list: {}.", open.join("; "));
+    }
+    if completed && alive() {
+        if let Some(line) = crate::practical::wrap_up() {
+            plan.summary = format!("{} {line}", plan.summary.trim_end());
+        }
     }
     if !alive() { plan.outcome = crate::model::TaskOutcome::Cancelled; }
     // The task is over: the chips its last look pointed at come down, so a
@@ -5555,6 +5723,11 @@ pub fn reserve_draw_task() -> u64 {
 /// accepted and applied before the first action.
 pub fn has_active_steps() -> bool {
     STEPS_ACTIVE.load(std::sync::atomic::Ordering::SeqCst) > 0
+}
+
+/// A screen task is running (planning or acting).
+pub fn task_running() -> bool {
+    WORK_TASK.lock().0 != 0
 }
 
 /// Ask the live step runner to pause before its next step, or queue the pause

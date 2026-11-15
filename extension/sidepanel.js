@@ -76,9 +76,9 @@ async function ping() {
       if (proof.why !== "offline") { st.className = ""; st.innerHTML = `<i></i>${proof.why === "unpaired" ? "Set up from Izuki" : "Not Izuki"}`; st.title = globalThis.IzukiBridgeProof.message[proof.why]; return false; }
       throw 0;
     }
-    st.title = "";
+    st.title = "Izuki on this PC is reachable";
     st.className = "on";
-    st.innerHTML = "<i></i>Connected";
+    st.innerHTML = "<i></i>PC connected";
     try {
       const f = await (await globalThis.IzukiBridgeProof.fetch(`${BRIDGE}/focus`, { method: "POST", headers: H, body: "{}" })).json();
       if (f.left) st.innerHTML += ` · 🎯 Focus ${Math.ceil(f.left / 60)} min`;
@@ -86,7 +86,7 @@ async function ping() {
     return true;
   } catch {
     st.className = "off";
-    st.innerHTML = "<i></i>Izuki isn't running";
+    st.innerHTML = "<i></i>Izuki app off";
     return false;
   }
 }
@@ -205,11 +205,19 @@ function paintWho() {
   if (!who) return;
   const local = !c || !!c.provider.local;
   who.textContent = local ? "Izuki on this PC" : `${c.provider.name} tab`;
+  const askWho = $("ask-who");
+  if (askWho) { askWho.textContent = local ? "Izuki" : c.provider.name; askWho.title = local ? "Answered by Izuki on this PC" : `Answered in your ${c.provider.name} tab`; }
+  // One state, said once: Izuki on this PC is "ready" only when it answered
+  // (it used to say ready whether or not the app was running), and Connect
+  // shows only when something needs connecting.
+  const ok = local ? c?.izukiUp === true : !!c?.ready;
+  const checking = local && c?.izukiUp === undefined;
   if (chip) {
-    const ok = local || c.ready;
-    chip.textContent = ok ? "ready" : "not connected";
+    chip.textContent = ok ? "ready" : checking ? "checking…" : local ? "Izuki app not running" : "not connected";
     chip.className = "pill-state" + (ok ? " ok" : "");
   }
+  const button = $("connect");
+  if (button) button.hidden = ok;
 }
 
 const FOLD_AFTER = 1200;
@@ -364,6 +372,7 @@ async function ask(question, sourceOverride = null, userInitiated = false) {
   question = String(question || "").trim();
   if (!question || busy || starting || desktopTask || !current) return false;
   const source = { ...(sourceOverride || current) };
+  const captured = !!sourceOverride;
   // (Busy from the first moment: a second question sent while this one
   // checks for a quiz or lab command used to cancel it.)
   starting = true;
@@ -408,17 +417,25 @@ async function ask(question, sourceOverride = null, userInitiated = false) {
     const page = share ? await readTab(source.id) : null;
     if (!requests.active(request)) return false;
     if (page?.url && page.url !== source.url) {
-      // The tab is somewhere new. The panel learns it either way, so asking
-      // again works: before, "the page changed" came back every time on pages
-      // that change their address as you use them, since nothing told it.
+      // A queued question or a follow-up was asked about the page it was
+      // asked on. Do not combine its title/question with a different page
+      // that merely shares the host.
+      if (captured) throw Error("The page this question was asked on has changed. Open that page again, or ask a new question about the page that's open now.");
+      // A fresh question can follow a harmless same-site navigation. The
+      // panel learns the new address either way, so asking again works.
       if (current?.id === source.id) current.url = page.url;
-      // …and so does a retry or a follow-up holding the old address.
-      if (sourceOverride?.id === source.id) sourceOverride.url = page.url;
-      const where = (u) => { try { const x = new URL(u); x.hash = ""; return x.href; } catch { return u; } };
-      // A different page (a new path, or a new ?id= — another assignment):
-      // its words never go out for a question about the old one. Same page,
-      // a new #part (a quiz moving on): answered.
-      if (where(page.url) !== where(source.url)) throw Error("This tab moved to another page while I was reading it. Ask again and I'll read the page that's there now.");
+      // You shared this tab, and you're asking about what it shows now: on
+      // the same site (you clicked through, a quiz moved on, an app changed
+      // its address) the page read just now is the one answered. Every click
+      // used to cost a "moved to another page" and a retype. Another site is
+      // a different thing to share: that stops, says where it is now, and
+      // keeps the question for Try again.
+      const site = (u) => { try { return new URL(u).hostname.toLowerCase().replace(/^www\./, ""); } catch { return ""; } };
+      if (site(page.url) !== site(source.url)) throw Error(`This tab is now on ${site(page.url) || "another site"}, not the site you shared. Press Try again to ask about the page that's there now, or choose another tab.`);
+      // Another page on that site (not just a new #part): answered, and said
+      // so in the chat, never a silent switch.
+      const where = (u) => { try { const x = new URL(u); return x.pathname + x.search; } catch { return u; } };
+      if (where(page.url) !== where(source.url)) divider(`Reading the page that's open now: ${page.title || where(page.url)}`);
       source.url = page.url;
     }
     if (link && !link.provider.local) {
@@ -578,11 +595,24 @@ function clearChat() {
 // ---- wiring ---------------------------------------------------------------------------
 
 const q = $("q");
+// Four plain views: the chat, the page Izuki reads, the longer jobs, and the
+// few settings. The composer stays put; only the area above it changes.
+const viewButtons = [...document.querySelectorAll("#views [data-view]")];
+function showView(name) {
+  const known = ["ask", "page", "tasks", "settings"].includes(name) ? name : "ask";
+  document.body.dataset.view = known;
+  for (const b of viewButtons) b.setAttribute("aria-selected", b.dataset.view === known ? "true" : "false");
+  if (known === "ask") q.focus();
+}
+for (const b of viewButtons) b.addEventListener("click", () => showView(b.dataset.view));
+for (const b of document.querySelectorAll("[data-view-link]")) b.addEventListener("click", () => showView(b.dataset.viewLink));
 const short = (t) => (t.length > 60 ? `${t.slice(0, 57)}…` : t);
 $("ask").onsubmit = (e) => {
   e.preventDefault();
   const t = q.value.trim();
   if (!t) return;
+  // Sent from Settings or Tasks: the answer belongs in the conversation.
+  showView("ask");
   const sent = () => { q.value = ""; q.style.height = ""; };
   if (/^\/?(?:clear|clear (?:the )?chat|new chat)[.!]?$/i.test(t)) { sent(); clearChat(); return; }
   // A task is running on the PC: the question stays in the box for later.
@@ -767,6 +797,10 @@ $("task-run")?.addEventListener("click", async () => {
   // The connection controls (which AI, follow the page, the companion).
   try {
     const wired = await setUpConnection({
+      // The browser window this panel belongs to (the source window when
+      // floating): side by side arranges that one. Left out, every "Side by
+      // side" failed with "Open the panel from a browser window first."
+      windowId: panelWindow,
       ask,
       onFollowed: async (question, where) => {
         if (busy) return false;

@@ -416,6 +416,24 @@ pub async fn instant_command(app: AppHandle, said: String) -> Option<String> {
     if let Some(ask) = crate::siteaccess::parse(&said) {
         return Some(crate::siteaccess::handle(ask));
     }
+    // "Help me investigate suspicious login activity": asked once which way
+    // (do it, together, or teach me) before anything is touched. Never from
+    // inside the agent's own direct step (practical.rs).
+    if !crate::direct::in_step() {
+        if let Some(offer) = crate::practical::offer(&said) {
+            return Some(offer);
+        }
+    }
+    // "Who signed in to my PC this week?", "any failed logins?": read from
+    // the system's own log, never guessed (logins.rs). Asking for an
+    // administrator read is not itself consent to Windows' prompt: the
+    // person's latest words have to say yes.
+    if let Some(details) = crate::logins::asked(&said) {
+        if details.to_lowercase().contains("admin") && !crate::logins::agreed(&said) {
+            return Some(crate::logins::ask_admin());
+        }
+        return Some(crate::logins::ability(&details));
+    }
     if crate::notes::is_study_prompt(&said) { return None; }
     if crate::brain::direct_answer_requested(&said) {
         crate::coach::stop();
@@ -2296,6 +2314,21 @@ pub fn air_draw(app: AppHandle) {
 pub async fn air_target(app: AppHandle, nx: f64, ny: f64) -> Option<crate::air::Seen> {
     let overlay = app.get_webview_window("overlay").and_then(|w| w.hwnd().ok()).map(|h| h.0 as isize);
     blocking(move || crate::air::target_norm(nx, ny, overlay)).await.ok().flatten()
+}
+
+/// Practical mode's turn words, said while a task runs ("I did it", "do it
+/// for me", "let me do this one", "do the rest"). `None`: not about turns,
+/// or no task running (the words then go on as a normal request).
+#[tauri::command]
+pub fn practical_say(said: String) -> Option<String> {
+    crate::practical::heard(&said, crate::brain::task_running())
+}
+
+/// The Task Stage's "I did it" (true) / "Do it for me" (false) on a step
+/// that's the person's. False when no step is waiting on them.
+#[tauri::command]
+pub fn practical_turn(done: bool) -> bool {
+    crate::practical::press(done)
 }
 
 /// Settings → Privacy: one change to the site rules ("allow", "block" or
