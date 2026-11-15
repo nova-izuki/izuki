@@ -290,7 +290,9 @@ public class IzukiWakeService extends Service implements RecognitionListener {
       return;
     }
     if (state == WakeGate.State.QUIET) { arm(); return; }
-    if (now - lastStartAt < 1500 && state != WakeGate.State.ERROR) return;
+    // Even an ERROR is not reset instantly: several on/resume calls must not
+    // wipe the backoff and turn it into a retry loop.
+    if (now - lastStartAt < 1500) return;
     lastStartAt = now;
     if (state == WakeGate.State.OFF) move(WakeGate.State.STARTING);
     if (state == WakeGate.State.ERROR) {
