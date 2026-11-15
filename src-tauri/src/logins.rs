@@ -321,8 +321,8 @@ fn evidence(list: &[&Logon]) -> Vec<String> {
     lines
 }
 
-/// Who the account is, including its Windows domain: DOMAIN_Aob and
-/// DOMAIN_Bob are not the same person.
+/// Who the account is, including its Windows domain: DOMAIN_A/bob and
+/// DOMAIN_B/bob are not the same person.
 fn account(l: &Logon) -> String {
     if l.domain.is_empty() || l.domain == "-" {
         l.user.to_lowercase()
