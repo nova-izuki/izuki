@@ -206,6 +206,19 @@ const PRACTICAL =
 const ON_SCREEN_ANSWER =
   /\b(?:answers?|ans|solve)\s+(?:(?:the|this|that|these|those)\s+)?(?:questions?|quiz|test|problem|one|number\s*\d+|q\s*\d+|#\s*\d+|options?|choices?|all(?:\s+of\s+them)?)\b|\b(?:what'?s|what\s+is|give\s+me|tell\s+me|show\s+me)\s+the\s+(?:correct\s+|right\s+)?(?:answer|option|one)\b|\b(?:can|could|would|will)\s+you\s+(?:answer|solve)\s+(?:it|this|that|these|those)\b/i;
 
+/** "Don't answer it", "without giving the answer": respect the refusal. */
+const DECLINES_DIRECT =
+  /(?:^|[^a-z])(?:don'?t|do not|never|without)\s+(?:(?:the|an?)\s+)?(?:answers?|ans|giv(?:e|ing)|tell|say|show)(?:[^a-z]|$)/i;
+
+/** A direct answer is wanted, not a refusal or a "just explain it" request. */
+export function wantsDirectAnswer(text: string): boolean {
+  return answersOnScreenQuestion(text) && !DECLINES_DIRECT.test(text);
+}
+
+/** "add to my missions: answer question 5" must be saved, not read off-screen. */
+export const MISSION_ADD =
+  /^(?:please\s+)?(?:add|put)\s+(?:this\s+)?(?:to|on)\s+(?:my\s+)?(?:missions?|mission list|rest mode)[:,\s-]+(.{3,})$/i;
+
 export function answersOnScreenQuestion(text: string): boolean {
   const t = text.trim();
   const bare = t.replace(/[?.!]+$/, "").trim().toLowerCase();

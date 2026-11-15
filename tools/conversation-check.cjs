@@ -209,6 +209,11 @@ for (const t of cases.opens) is(`"${t}" opens the app`, mem.opensAnApp(t) && !me
 for (const t of cases.account) is(`"${t}" isn't just opening the app`, mem.opensAnApp(t), false);
 for (const t of ["read my emails", "what's in my inbox", "check my outlook"]) is(`"${t}" is about the account`, mem.needsApps(t), true);
 
+fresh();
+is("a refusal of the answer is not a direct-answer request", mem.wantsDirectAnswer("Don't answer the question; explain it instead"), false);
+is("a normal answer request is still direct", mem.wantsDirectAnswer("answer it"), true);
+is("a mission-add stays a mission", mem.MISSION_ADD.test("add to my missions: answer question 5"), true);
+
 console.log("");
 console.log(`${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

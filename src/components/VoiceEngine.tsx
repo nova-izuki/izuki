@@ -6,7 +6,7 @@ import { useDictation } from "../hooks/useDictation";
 import { isNoteStudyPrompt } from "../lib/notes";
 import { AIR_SLOTS, actionLabel, airBindings, parseAirVoice, slotLabel } from "../lib/airActions";
 import { autoFacts, matchLocalCommand, type LocalCommand } from "../lib/voiceCommands";
-import { answerOnScreenPrompt, answersOnScreenQuestion, answersInBackground, cancelChat, chatLane, directionsTask, looksLikeDirections, needsApps, needsScreen, recentHistory, remember, wantsBackground, wantsToWatch, type LaneResult } from "../lib/conversation";
+import { answerOnScreenPrompt, answersInBackground, cancelChat, chatLane, directionsTask, looksLikeDirections, MISSION_ADD, needsApps, needsScreen, recentHistory, remember, wantsBackground, wantsDirectAnswer, wantsToWatch, type LaneResult } from "../lib/conversation";
 import { speakable } from "../lib/speakable";
 import { parseInstant, type Instant } from "../lib/instant";
 import { isEcho, noteSaid, noteStillSaying } from "../lib/echo";
@@ -605,7 +605,7 @@ function chime(up = true) {
 function answerOnScreen(t: string): string {
   // Bare "answer" and the many ways people point at the question in front of
   // them ("answer this", "what's the answer to number 3", "give ans").
-  return answersOnScreenQuestion(t) ? answerOnScreenPrompt(t) : t;
+  return wantsDirectAnswer(t) ? answerOnScreenPrompt(t) : t;
 }
 
 // ---- teacher mode -----------------------------------------------------------
@@ -956,7 +956,7 @@ export function VoiceEngine() {
     // While dictating, every word is content for the focused box — never a
     // request to look at the screen. Expanding "answer question 5" here would
     // type the whole instruction into their document.
-    const t = dictating || isNoteStudyPrompt(own) ? own : answerOnScreen(own);
+    const t = dictating || isNoteStudyPrompt(own) || MISSION_ADD.test(own) ? own : answerOnScreen(own);
     if (!t) return;
     // "What are you doing?" — the real answer, from the task actually
     // running (never made up). Asked mid-task, it doesn't stop the task.
@@ -1093,7 +1093,7 @@ export function VoiceEngine() {
 
     // Missions (Rest mode): "add to my missions: check my assignments",
     // "start my missions" / "rest mode", "what's on my missions".
-    const missionAdd = t.match(/^(?:please\s+)?(?:add|put)\s+(?:this\s+)?(?:to|on)\s+(?:my\s+)?(?:missions?|mission list|rest mode)[:,\s-]+(.{3,})$/i);
+    const missionAdd = t.match(MISSION_ADD);
     // Only a clear "start my missions" / "start rest mode" — never a passing "do the mission".
     const missionGo = /^(?:please\s+)?(?:start|run|begin|do)\s+(?:my\s+missions?|the\s+missions|missions)\b|^(?:please\s+)?(?:start|turn\s+on|go\s+into|switch\s+to)\s+rest\s+mode\b/i.test(t);
     if (missionAdd || missionGo) {
