@@ -244,6 +244,7 @@ export const MOCK_SETTINGS: Settings = {
   island_blur: 0,
   island_accent: "#22d3ee",
   island_shadow: true,
+  island_light_glass: false,
   island_motion: true,
   island_auto_expand: false,
   tidy_dupes_auto: false,

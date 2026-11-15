@@ -215,6 +215,11 @@ export function TalkToIzuki() {
             <Slider label="Glass blur" value={settings.island_blur ?? 0} min={0} max={24} onChange={(v) => patch({ island_blur: v })} suffix=" px" />
           </Row>
         )}
+        {settings.island_enabled && ["notch", "float"].includes(settings.island_style ?? "default") && (
+          <Row label="Light glass" hint="A brighter, frostier slate glass on the Screen notch and Float. Off is smoked black.">
+            <Toggle label="Light glass" checked={!!settings.island_light_glass} onChange={(v) => patch({ island_light_glass: v })} />
+          </Row>
+        )}
         {settings.island_enabled && (
           <Row label="Accent" hint="The rim and glow colour on the Notch and Float shapes. Classic keeps its original white rim.">
             <div className="flex flex-wrap justify-end gap-1.5">

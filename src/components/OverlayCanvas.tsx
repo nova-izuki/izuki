@@ -150,6 +150,7 @@ export function OverlayCanvas() {
   const [islandBlur, setIslandBlur] = useState(0);
   const [islandAccent, setIslandAccent] = useState("#22d3ee");
   const [islandShadow, setIslandShadow] = useState(true);
+  const [islandLightGlass, setIslandLightGlass] = useState(false);
   const [islandMotion, setIslandMotion] = useState(true);
   const [islandAutoExpand, setIslandAutoExpand] = useState(false);
   const [keepReply, setKeepReply] = useState(false);
@@ -505,6 +506,7 @@ export function OverlayCanvas() {
           setIslandBlur(s.island_blur ?? 0);
           setIslandAccent(s.island_accent || "#22d3ee");
           setIslandShadow(s.island_shadow ?? true);
+          setIslandLightGlass(!!s.island_light_glass);
           setIslandMotion(s.island_motion ?? true);
           setIslandAutoExpand(!!s.island_auto_expand);
           setKeepReply(s.keep_reply);
@@ -583,6 +585,7 @@ export function OverlayCanvas() {
           setIslandBlur(s.island_blur ?? 0);
           setIslandAccent(s.island_accent || "#22d3ee");
           setIslandShadow(s.island_shadow ?? true);
+          setIslandLightGlass(!!s.island_light_glass);
           setIslandMotion(s.island_motion ?? true);
           setIslandAutoExpand(!!s.island_auto_expand);
           setKeepReply(s.keep_reply);
@@ -915,6 +918,7 @@ export function OverlayCanvas() {
             blur={islandBlur}
             accent={islandAccent}
             shadow={islandShadow}
+            lightGlass={islandLightGlass}
             animated={islandMotion}
             autoExpand={islandAutoExpand}
             visualizing={musicShowing}

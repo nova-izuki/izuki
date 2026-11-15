@@ -366,6 +366,8 @@ export interface Settings {
   island_accent?: string;
   /** Draw the soft shadow (off is flatter and cheaper). */
   island_shadow?: boolean;
+  /** A brighter, frostier glass for the Screen notch and Float. */
+  island_light_glass?: boolean;
   /** Springy transitions; off is calm/low-power. */
   island_motion?: boolean;
   /** Open the task panel automatically when a task starts. */

@@ -155,6 +155,7 @@ export function Island({
   blur = 0,
   accent = "#22d3ee",
   shadow = true,
+  lightGlass = false,
   animated = true,
   autoExpand = false,
   visualizing = false,
@@ -184,6 +185,8 @@ export function Island({
   accent?: string;
   /** Draw the soft shadow. */
   shadow?: boolean;
+  /** Frostier glass for the Screen notch and Float. */
+  lightGlass?: boolean;
   /** Springy transitions; off is calm/low-power. */
   animated?: boolean;
   /** Open into the task panel when a task starts. */
@@ -717,6 +720,7 @@ export function Island({
           (docked ? " izk-island-docked" : "") +
           (live.kind === "rest" && !open ? " izk-island-resting" : "") +
           (!shadow ? " izk-island-flat" : "") +
+          (lightGlass ? " izk-island-light" : "") +
           (blur > 0 ? " izk-island-blurred" : "") +
           (calm ? " izk-island-calm" : "")
         }

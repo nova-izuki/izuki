@@ -306,6 +306,9 @@ pub struct Settings {
     /// Draw the Island's soft shadow (off for a flatter, cheaper look).
     #[serde(default = "default_true")]
     pub island_shadow: bool,
+    /// A brighter, frostier glass for the Screen notch and Float.
+    #[serde(default)]
+    pub island_light_glass: bool,
     /// Springy transitions; off for a calm/low-power Island.
     #[serde(default = "default_true")]
     pub island_motion: bool,
@@ -1254,6 +1257,7 @@ impl Default for Settings {
             island_blur: default_island_blur(),
             island_accent: default_island_accent(),
             island_shadow: true,
+            island_light_glass: false,
             island_motion: true,
             island_auto_expand: false,
             auto_skip_ads: false,
@@ -1472,6 +1476,7 @@ mod tests {
         assert_eq!(s.island_opacity, 94);
         assert_eq!(s.island_blur, 0);
         assert_eq!(s.island_accent, "#22d3ee");
+        assert!(!s.island_light_glass, "smoked glass stays the default");
         assert!(!s.island_auto_expand, "a task must not open the panel unless asked");
 
         s.island_style = "notch".into();
