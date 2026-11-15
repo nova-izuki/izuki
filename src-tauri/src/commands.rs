@@ -403,6 +403,12 @@ pub fn open_log_folder() -> R<()> {
 /// everyday commands (instant.rs).
 #[tauri::command]
 pub async fn instant_command(app: AppHandle, said: String) -> Option<String> {
+    if let Some(request) = crate::rescue::request(&said) {
+        return Some(blocking(move || match request {
+            crate::rescue::Request::Hide => crate::rescue::reset(&app),
+            crate::rescue::Request::Restore => crate::rescue::restore(&app),
+        }).await.unwrap_or_else(|error| format!("The overlay recovery could not finish: {error}. Press Esc three times for native emergency hiding.")));
+    }
     // Eye control's voice stop, pause and resume come first (airsafe.rs).
     if let Some(reply) = crate::airsafe::voice(&said) {
         return Some(reply);

@@ -56,6 +56,7 @@ fn build_menu(app: &AppHandle, settings: &Settings) -> tauri::Result<Menu<tauri:
         None::<&str>,
     )?;
     let quit = MenuItem::with_id(app, "quit", "Quit Izuki", true, None::<&str>)?;
+    let restore = MenuItem::with_id(app, "restore-overlay", "Restore overlay", true, None::<&str>)?;
     let sep1 = PredefinedMenuItem::separator(app)?;
     let sep2 = PredefinedMenuItem::separator(app)?;
 
@@ -63,6 +64,7 @@ fn build_menu(app: &AppHandle, settings: &Settings) -> tauri::Result<Menu<tauri:
         app,
         &[
             &draw,
+            &restore,
             &follow,
             &air,
             &sep1,
@@ -89,6 +91,13 @@ pub fn refresh(app: &AppHandle) {
 fn on_menu(app: &AppHandle, event: MenuEvent) {
     match event.id.as_ref() {
         "draw" => crate::open_draw_overlay(app),
+        "restore-overlay" => {
+            let app=app.clone();
+            std::thread::spawn(move || {
+                let text=crate::rescue::restore(&app);
+                let _=app.emit(events::STATUS,crate::model::StatusEvent::info(text));
+            });
+        }
         "follow" => {
             let store = crate::state::store();
             let mut settings = store.settings();

@@ -3412,6 +3412,13 @@ pub fn submit_voice_command(app: &AppHandle, store: &Arc<Store>, prompt: String)
 /// The same, knowing the conversation so far (chat answers included), so
 /// "open Amazon and find that one" knows which one was being talked about.
 pub fn submit_voice_command_in(app: &AppHandle, store: &Arc<Store>, prompt: String, recent: &[crate::chat::Turn]) -> VisionPlan {
+    if let Some(request) = crate::rescue::request(&prompt) {
+        let summary = match request {
+            crate::rescue::Request::Hide => crate::rescue::reset(app),
+            crate::rescue::Request::Restore => crate::rescue::restore(app),
+        };
+        return VisionPlan { summary, provider: "native overlay recovery".into(), ..Default::default() };
+    }
     // A TV request that reached the screen path (a hand-over from the chat
     // lane, a follow-up mid-conversation) still goes to the TV — never "I
     // can't control your TV" while it opens Netflix on the PC instead.
@@ -5872,6 +5879,14 @@ pub fn cancel_task() {
     automation::request_abort();
     take_unfinished();
     answer_help(None);
+}
+
+/// First half of emergency cancellation: no storage, provider, UI or task
+/// mutex can block the independent key watcher from invalidating this task.
+pub fn emergency_cancel() {
+    TASK_GEN.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    TASK_PAUSED.store(false, std::sync::atomic::Ordering::SeqCst);
+    PAUSE_QUEUED.store(false, std::sync::atomic::Ordering::SeqCst);
 }
 
 /// Worth saying out loud while working? Not the same thing twice, and not

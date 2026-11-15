@@ -237,6 +237,8 @@ fn watch_esc_key() {
     let mut esc_was = false;
     let mut q_was = false;
     let mut stop_was = false;
+    let mut escapes=crate::rescue::EscapeSequence::default();
+    let started=std::time::Instant::now();
     loop {
         std::thread::sleep(std::time::Duration::from_millis(40));
         // Air/Eye control's emergency stop, watched here too: this watcher
@@ -251,16 +253,19 @@ fn watch_esc_key() {
         }
         stop_was = stop_now;
         let esc = down(VK_ESCAPE.0 as i32);
+        if escapes.event(esc,crate::automation::pressed_esc_just_now(),started.elapsed().as_millis() as u64) {
+            if let Some(app)=ESC_APP.get(){crate::rescue::dispatch(app);}
+        }
         let q = down(0x51) && down(VK_CONTROL.0 as i32) && down(VK_SHIFT.0 as i32);
         let esc_pressed = esc && !esc_was;
         let q_pressed = q && !q_was;
         esc_was = esc;
         q_was = q;
         if q_pressed && !key_repeat_of_last_stop() {
-            crate::brain::cancel_task();
             if let Some(app) = ESC_APP.get() {
                 eprintln!("[hotkey] Ctrl+Shift+Q (key watch) — emergency stop");
-                stop_everything(app);
+                crate::rescue::dispatch(app);
+                let app=app.clone();std::thread::spawn(move||stop_everything(&app));
             }
             continue;
         }
@@ -298,6 +303,18 @@ unsafe extern "system" fn esc_hook(
         keybd_event, GetAsyncKeyState, KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP, VK_CONTROL, VK_ESCAPE, VK_LWIN, VK_MENU, VK_RWIN, VK_SHIFT,
     };
     use windows::Win32::UI::WindowsAndMessaging::{CallNextHookEx, KBDLLHOOKSTRUCT, LLKHF_INJECTED, WM_KEYDOWN, WM_KEYUP, WM_SYSKEYDOWN, WM_SYSKEYUP};
+    if code >= 0 {
+        let key=&*(lparam.0 as *const KBDLLHOOKSTRUCT);
+        let msg=wparam.0 as u32;
+        if key.vkCode==VK_ESCAPE.0 as u32 && matches!(msg,WM_KEYDOWN|WM_SYSKEYDOWN|WM_KEYUP|WM_SYSKEYUP) {
+            static SEQUENCE:parking_lot::Mutex<crate::rescue::EscapeSequence>=parking_lot::Mutex::new(crate::rescue::EscapeSequence::new());
+            static START:std::sync::OnceLock<std::time::Instant>=std::sync::OnceLock::new();
+            let ours=key.flags.0&LLKHF_INJECTED.0!=0&&key.dwExtraInfo==enigo::EVENT_MARKER as usize;
+            let now=START.get_or_init(std::time::Instant::now).elapsed().as_millis() as u64;
+            let trigger=SEQUENCE.lock().event(matches!(msg,WM_KEYDOWN|WM_SYSKEYDOWN),ours,now);
+            if trigger { if let Some(app)=ESC_APP.get(){crate::rescue::dispatch(app);} }
+        }
+    }
     // The talk key, when Windows wouldn't give it to Izuki (see VOICE_HOOK):
     // press = listen (the orb and waveform come up), let go = done, and the
     // key itself is kept (so Windows doesn't also switch keyboard language).
@@ -375,9 +392,10 @@ unsafe extern "system" fn esc_hook(
         let key = &*(lparam.0 as *const KBDLLHOOKSTRUCT);
         let ctrl = (GetAsyncKeyState(VK_CONTROL.0 as i32) as u16 & 0x8000) != 0;
         let shift = (GetAsyncKeyState(VK_SHIFT.0 as i32) as u16 & 0x8000) != 0;
-        if key.vkCode == 0x51 && ctrl && shift && !key_repeat_of_last_stop() {
-            crate::brain::cancel_task();
+        let ours=key.flags.0&LLKHF_INJECTED.0!=0&&key.dwExtraInfo==enigo::EVENT_MARKER as usize;
+        if key.vkCode == 0x51 && ctrl && shift && !ours && !key_repeat_of_last_stop() {
             if let Some(app) = ESC_APP.get() {
+                crate::rescue::dispatch(app);
                 let app = app.clone();
                 std::thread::spawn(move || {
                     eprintln!("[hotkey] Ctrl+Shift+Q (hook backup) — emergency stop");
@@ -657,6 +675,16 @@ fn halt(app: &AppHandle) {
 /// (Esc only reaches Izuki while it's busy, and never over admin windows
 /// like Task Manager; a registered hotkey always does).
 pub fn stop_everything(app: &AppHandle) {
+    crate::rescue::dispatch(app);
+    static CLEANING:AtomicBool=AtomicBool::new(false);
+    if CLEANING.compare_exchange(false,true,Ordering::SeqCst,Ordering::SeqCst).is_err(){return;}
+    let app=app.clone();
+    if std::thread::Builder::new().name("izuki-stop-all".into()).spawn(move||{
+        struct Done;impl Drop for Done{fn drop(&mut self){CLEANING.store(false,Ordering::SeqCst);}}
+        let _done=Done;stop_everything_inner(&app);
+    }).is_err(){CLEANING.store(false,Ordering::SeqCst);}
+}
+fn stop_everything_inner(app:&AppHandle) {
     // Eye control in use: this is its emergency stop too (Air saved as off).
     crate::airsafe::stop_if_eye("Ctrl+Shift+Q / Stop");
     halt(app);

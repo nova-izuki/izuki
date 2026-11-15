@@ -25,6 +25,12 @@ pub fn request_abort() {
     ABORT.store(true, Ordering::SeqCst);
 }
 
+/// Emergency escape cannot wait behind an input worker's bookkeeping lock.
+pub fn emergency_abort() {
+    ABORT.store(true, Ordering::SeqCst);
+    if let Some(mut at) = ABORT_AT.try_lock() { *at = Some(Instant::now()); }
+}
+
 /// Forget a stop that's older than `age` — for work nobody is watching
 /// start (a watcher firing), which shouldn't fail forever because the
 /// user once pressed stop, but must still honour a stop pressed just now.

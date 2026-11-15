@@ -26,6 +26,29 @@ static OVERLAY_CLICKABLE: AtomicBool = AtomicBool::new(false);
 /// dropped back to its click-through "follow" state. Kept in step with the
 /// webview's `izuki://orb` events by [`track_orb`].
 static ORB_UP: AtomicBool = AtomicBool::new(false);
+static RESCUE: crate::rescue_core::Latch = crate::rescue_core::Latch::new();
+
+/// Stop late task/orb/follow events from raising a rescued overlay again.
+pub fn suppress_for_rescue() {
+    RESCUE.hide();
+    OVERLAY_SHOWN.store(false, Ordering::SeqCst);
+    OVERLAY_CLICKABLE.store(false, Ordering::SeqCst);
+    ORB_UP.store(false, Ordering::SeqCst);
+}
+pub fn rescue_epoch()->usize {RESCUE.epoch()}
+pub fn resume_after_rescue(epoch:usize)->Result<()> {
+    if RESCUE.resume(epoch) {Ok(())}else{Err(anyhow!("A newer emergency stop cancelled this restore."))}
+}
+fn rescue_check() -> Result<()> {
+    if RESCUE.hidden() { Err(anyhow!("Izuki's overlay is hidden after emergency recovery. Use Restore overlay in the tray.")) } else { Ok(()) }
+}
+fn checked_show(window:&WebviewWindow)->Result<()> {
+    rescue_check()?;
+    window.show()?;
+    // A main-thread dispatch may have waited while emergency hiding ran.
+    if let Err(error)=rescue_check() { let _=window.hide(); return Err(error); }
+    Ok(())
+}
 
 /// Follow the orb's state, so hiding the overlay never takes the orb with it
 /// (it used to vanish the moment a task finished).
@@ -90,7 +113,7 @@ pub fn orb_closed() {
 }
 
 pub fn overlay_shown() -> bool {
-    OVERLAY_SHOWN.load(Ordering::Relaxed)
+    OVERLAY_SHOWN.load(Ordering::Relaxed) && !RESCUE.hidden()
 }
 
 /// WebView2 flags for *both* windows — they share one browser environment,
@@ -305,6 +328,11 @@ pub fn ensure_overlay(app: &AppHandle) -> Result<WebviewWindow> {
 
     fit_to_desktop(&w)?;
     grant_media(&w);
+    #[cfg(windows)]
+    if !crate::rescue_native::register(w.hwnd()?.0 as isize) {
+        let _=w.destroy();
+        return Err(anyhow!("Windows could not register the overlay's native emergency escape."));
+    }
     // Idle overlays must not eat clicks meant for the app underneath.
     w.set_ignore_cursor_events(true).ok();
     Ok(w)
@@ -320,11 +348,12 @@ pub fn fit_to_desktop(window: &WebviewWindow) -> Result<()> {
 }
 
 pub fn show_overlay(app: &AppHandle, interactive: bool) -> Result<WebviewWindow> {
+    rescue_check()?;
     let w = ensure_overlay(app)?;
     fit_to_desktop(&w)?;
     w.set_ignore_cursor_events(!interactive).ok();
     w.set_always_on_top(true).ok();
-    w.show()?;
+    checked_show(&w)?;
     OVERLAY_SHOWN.store(true, Ordering::Relaxed);
     if interactive {
         w.set_focus().ok();
@@ -337,6 +366,7 @@ pub fn show_overlay(app: &AppHandle, interactive: bool) -> Result<WebviewWindow>
 /// at all — it's the minimal always-on hand, so this hands off to
 /// [`show_follow`] instead of actually hiding the window.
 pub fn hide_overlay(app: &AppHandle) -> Result<()> {
+    if RESCUE.hidden() { return Ok(()); }
     // The orb is up: back to the plain click-through state, orb and all.
     let follow = stays_up(&crate::state::store().settings()) || ORB_UP.load(Ordering::Relaxed);
     if let Some(w) = app.get_webview_window(OVERLAY_LABEL) {
@@ -361,11 +391,12 @@ pub fn stays_up(s: &crate::settings::Settings) -> bool {
 /// with no toolbar or prompt bar — the "you don't need the app open" mode.
 /// Safe to call whether or not the overlay already exists or is visible.
 pub fn show_follow(app: &AppHandle) -> Result<()> {
+    rescue_check()?;
     let w = ensure_overlay(app)?;
     fit_to_desktop(&w)?;
     w.set_ignore_cursor_events(true).ok();
     w.set_always_on_top(true).ok();
-    w.show()?;
+    checked_show(&w)?;
     OVERLAY_SHOWN.store(true, Ordering::Relaxed);
 
     let b = capture::virtual_bounds();
@@ -389,11 +420,12 @@ pub fn show_follow(app: &AppHandle) -> Result<()> {
 /// path the full draw overlay uses, which already reverts the window
 /// afterward — nothing extra to clean up here.
 pub fn begin_quickdraw(app: &AppHandle) -> Result<()> {
+    rescue_check()?;
     let w = ensure_overlay(app)?;
     fit_to_desktop(&w)?;
     w.set_ignore_cursor_events(false).ok();
     w.set_always_on_top(true).ok();
-    w.show()?;
+    checked_show(&w)?;
     OVERLAY_SHOWN.store(true, Ordering::Relaxed);
     w.set_focus().ok();
 
@@ -446,6 +478,7 @@ fn may_take_pointer(hit: bool, task: bool, acting: bool, shielded: bool) -> bool
 /// over one. Deliberately never takes focus: hovering the bubble must not
 /// yank the keyboard away from whatever you're typing in.
 pub fn set_overlay_hit(app: &AppHandle, hit: bool, task: bool) -> Result<()> {
+    if RESCUE.hidden() {OVERLAY_CLICKABLE.store(false,Ordering::SeqCst);return Ok(());}
     // While Izuki's own hands are working, its orb and bubbles never catch
     // the click it's making — see `Acting`. The Task Stage is the exception:
     // it must stay reachable so a person can Pause or Stop. It is shielded
@@ -516,7 +549,7 @@ pub fn set_wheel_target(on: bool) {
 /// Without the "can actually scroll" part the wheel was taken from the app
 /// behind even when there was nothing to scroll here, so nothing moved at all.
 pub fn wheel_wanted() -> bool {
-    OVERLAY_SHOWN.load(Ordering::Relaxed)
+    overlay_shown()
         && OVERLAY_CLICKABLE.load(Ordering::Relaxed)
         && WHEEL_TARGET.load(Ordering::Relaxed)
         && !ACTING.load(std::sync::atomic::Ordering::SeqCst)
@@ -584,6 +617,7 @@ pub fn ensure_caption_visible(app: &AppHandle) -> Result<()> {
 }
 
 pub fn set_overlay_interactive(app: &AppHandle, interactive: bool) -> Result<()> {
+    rescue_check()?;
     let w = app
         .get_webview_window(OVERLAY_LABEL)
         .ok_or_else(|| anyhow!("the overlay is not open"))?;
