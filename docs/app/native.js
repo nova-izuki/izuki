@@ -523,9 +523,18 @@
       }
       const tap = text.match(/^(?:tap|press|click) (.+)$/);
       if (tap) {
+        // Android accepting a press isn't proof it did anything (a WebView
+        // button can take the action and ignore it): compare the screen.
+        const look = (s) => `${s?.app || ""}|${(s?.items || []).slice(0, 40).map((i) => `${i.kind}:${i.text}${i.focused ? "*" : ""}${i.on ? "+" : ""}`).join("|")}`;
+        const before = look(await window.IzukiNative.screen());
         const done = await window.IzukiNative.act({ op: "tapText", text: tap[1] });
-        if (done?.done) return `Tapped ${done.matched && done.matched.toLowerCase() !== tap[1] ? `“${done.matched}”` : tap[1]}.`;
-        return window.IzukiNative.why(done, `“${tap[1]}”`) || failed;
+        const name = done?.matched && done.matched.toLowerCase() !== tap[1] ? `“${done.matched}”` : tap[1];
+        if (!done?.done) return window.IzukiNative.why(done, `“${tap[1]}”`) || failed;
+        for (let i = 0; i < 5; i++) {
+          await new Promise((r) => setTimeout(r, 350));
+          if (look(await window.IzukiNative.screen()) !== before) return `Tapped ${name}.`;
+        }
+        return `I pressed ${name}, but nothing on the screen changed — it may need another try.`;
       }
       const scroll = text.match(/^scroll (up|down)$/);
       if (scroll) {

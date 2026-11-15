@@ -47,6 +47,8 @@
   async function readScreen() {
     const n = needBridge();
     const screen = await n.screen();
+    // Stop pressed while the screen was being read: nothing more happens.
+    assertRunning();
     if (!screen) throw new Error("The phone screen isn't readable — unlock it and check Accessibility control.");
     return screen;
   }
@@ -121,6 +123,7 @@
   async function tapText(label) {
     const n = needBridge();
     const before = look(await readScreen().catch(() => null));
+    assertRunning();
     const result = await n.act({ op: "tapText", text: label });
     if (!result?.done) throw new Error(n.why?.(result, `“${label}”`) || `I couldn't find “${label}” on this screen.`);
     const pressed = result.matched && result.matched.toLowerCase() !== String(label).toLowerCase() ? `“${result.matched}”` : `“${label}”`;
@@ -141,7 +144,10 @@
     || screen?.items?.find((item) => item.kind === "box") || null;
   /** A control that opens search — never "Voice search" or the microphone. */
   const searchOpener = (screen) => {
-    const items = (screen?.items || []).filter((item) => item.kind !== "box" && !/\b(voice|mic|microphone|history|clear)\b/i.test(String(item.text || "")));
+    // Both the label and the view id: an unlabelled "voice_search" icon is still the microphone.
+    const items = (screen?.items || []).filter((item) => item.kind !== "box"
+      && !/\b(voice|mic|microphone|history|clear)\b/i.test(String(item.text || ""))
+      && !/(voice|mic)/i.test(String(item.id || "")));
     return items.find((item) => /^\s*search\s*$/i.test(String(item.text || "")))
       || items.find((item) => /\b(search|find)\b/i.test(String(item.text || "")) || /search/i.test(String(item.id || "")))
       || null;
@@ -156,6 +162,7 @@
       // A search icon is often the way in: open it, then wait for the field
       // it reveals. The old code typed at nothing ("open a search box first").
       const opener = searchOpener(screen);
+      assertRunning();
       if (opener) {
         const opened = await n.act({ op: "click", n: opener.n });
         if (opened?.done) add(`Opened ${opener.text ? `“${opener.text}”` : "search"}.`, "done");
@@ -164,11 +171,14 @@
       while (!box && Date.now() < until) {
         if (!(await sleep(400))) throw new Error("Stopped.");
         screen = await readScreen().catch(() => screen);
+        assertRunning();
         box = boxIn(screen);
       }
     }
     if (!box) throw new Error("I can't see a text box on this screen, and no Search button opened one. Open the search field, then say the request again.");
+    assertRunning();
     await n.act({ op: "click", n: box.n });
+    assertRunning();
     const result = await n.act({ op: "type", text, n: box.n });
     if (!result?.done) {
       throw new Error(n.why?.(result, "") || `I found the text box but couldn't type in it (${result?.reason || "Android gave no reason"}).`);
@@ -187,6 +197,7 @@
     const searchable = items.some((item) => /\b(search|go)\b/i.test(String(item.text || "")) || /search/i.test(String(item.id || "")));
     if (!searchable) throw new Error("I couldn't find a Search control on this screen, so I didn't press Enter.");
     const before = look(screen);
+    assertRunning();
     let result = await n.act({ op: "submit" });
     if (!result?.done) {
       for (const label of ["Search", "Go"]) {

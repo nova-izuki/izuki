@@ -177,7 +177,7 @@ export async function setUpWorkspace({windowId,getSource,getConnection,readTab,o
     relay:(connection,prompt,id)=>request("relay",{connection,id,prompt}),
     cancel:id=>request("cancelRelay",{id}).catch(()=>{}),
     relayStatus:()=>request("relayStatus").then(r=>r.running||[]).catch(()=>[]),
-    cancelTab:tabId=>request("cancelRelayTab",{tabId}).then(r=>!!r.stopped).catch(()=>false),
+    cancelTab:(tabId,requestId)=>request("cancelRelayTab",{tabId,requestId}).then(r=>!!r.stopped).catch(()=>false),
     command:async(question,source)=>{
       // The verb must be aimed at the quiz or the lab — the same rule as the
       // app's coach::verb_on and the Chat tab. "A verb anywhere, then the noun

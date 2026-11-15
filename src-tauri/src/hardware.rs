@@ -77,6 +77,7 @@ const MAKER_APPS: &[(&str, &str)] = &[
     ("E046963F.LenovoSettingsforEnterprise", "Lenovo Commercial Vantage"),
     ("E046963F.LenovoCompanion", "Lenovo Vantage"),
     ("B9ECED6F.ASUSPCAssistant", "MyASUS"),
+    ("DellInc.MyDell", "MyDell"),
     ("DellInc.DellPowerManager", "Dell Power Manager"),
     ("DellInc.DellOptimizer", "Dell Optimizer"),
     ("AD2F1837.HPPowerManager", "HP Power Manager"),
@@ -184,26 +185,44 @@ pub fn launch_target(asked: &str) -> Option<String> {
 
 const PACKAGES_KEY: &str = r"HKCU\Software\Classes\Local Settings\Software\Microsoft\Windows\CurrentVersion\AppModel\Repository\Packages";
 
-/// This PC, read once (a few quick registry reads, no PowerShell).
-pub fn device() -> &'static Device {
-    static DEVICE: OnceLock<Device> = OnceLock::new();
-    DEVICE.get_or_init(|| {
-        let (maker, model, family) = parse_bios(&reg_query(r"HKLM\HARDWARE\DESCRIPTION\System\BIOS"));
-        let listing = reg_query(PACKAGES_KEY);
-        // (display name, "Family!AppId") — the app id is the package key's own subkey.
-        let apps = parse_packages(&listing)
-            .into_iter()
-            .map(|(name, family)| {
-                let id = full_name(&listing, &family)
-                    .and_then(|full| app_id(&reg_query(&format!(r"{PACKAGES_KEY}\{full}"))))
-                    .unwrap_or_else(|| "App".to_string());
-                (name, format!("{family}!{id}"))
-            })
-            .collect();
-        let d = Device { maker, model, family, apps };
-        eprintln!("[hardware] {} · maker apps: {}", d.name(), if d.apps.is_empty() { "none".into() } else { d.apps.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>().join(", ") });
-        d
-    })
+/// The maker apps installed now: (display name, "Family!AppId"). The app id
+/// is the package key's own subkey ("App" almost always).
+fn installed_maker_apps() -> Vec<(String, String)> {
+    let listing = reg_query(PACKAGES_KEY);
+    parse_packages(&listing)
+        .into_iter()
+        .map(|(name, family)| {
+            let id = full_name(&listing, &family)
+                .and_then(|full| app_id(&reg_query(&format!(r"{PACKAGES_KEY}\{full}"))))
+                .unwrap_or_else(|| "App".to_string());
+            (name, format!("{family}!{id}"))
+        })
+        .collect()
+}
+
+/// This PC. The maker and model never change, so they're read once; the
+/// maker apps are re-read after a few minutes, so an app installed since
+/// (MyASUS, Vantage) isn't reported as missing from a stale list.
+pub fn device() -> Device {
+    static IDENTITY: OnceLock<(String, String, String)> = OnceLock::new();
+    static APPS: std::sync::Mutex<Option<(std::time::Instant, Vec<(String, String)>)>> = std::sync::Mutex::new(None);
+    let (maker, model, family) = IDENTITY
+        .get_or_init(|| parse_bios(&reg_query(r"HKLM\HARDWARE\DESCRIPTION\System\BIOS")))
+        .clone();
+    let apps = {
+        let mut cached = APPS.lock().unwrap_or_else(|e| e.into_inner());
+        match cached.as_ref() {
+            Some((at, apps)) if at.elapsed() < std::time::Duration::from_secs(300) => apps.clone(),
+            _ => {
+                let fresh = installed_maker_apps();
+                *cached = Some((std::time::Instant::now(), fresh.clone()));
+                fresh
+            }
+        }
+    };
+    let d = Device { maker, model, family, apps };
+    eprintln!("[hardware] {} · maker apps: {}", d.name(), if d.apps.is_empty() { "none".into() } else { d.apps.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>().join(", ") });
+    d
 }
 
 /// Where a battery charge limit lives on this PC: (the apps that have it, the path inside).
@@ -224,7 +243,10 @@ pub fn charge_limit_route(d: &Device) -> Option<Route> {
             path: "Device → Power → Conservation Mode (keeps the battery around 80% while plugged in)",
         },
         "asus" => Route { apps: &["MyASUS"], path: "Customization → Power & Performance → Battery Health Charging" },
-        "dell" => Route { apps: &["Dell Power Manager", "Dell Optimizer"], path: "Battery Settings → Custom: choose when charging starts and stops" },
+        "dell" => Route {
+            apps: &["MyDell", "Dell Power Manager", "Dell Optimizer"],
+            path: "MyDell: Power → Charging Mode → Custom (Dell Power Manager / Optimizer: Battery Settings → Custom) — choose when charging starts and stops",
+        },
         "hp" => Route {
             apps: &["HP Power Manager", "myHP"],
             path: "Battery health manager (on many HP laptops it's only in the BIOS: Advanced → Battery Health Manager)",
@@ -265,7 +287,7 @@ pub fn prompt_block(prompt: &str) -> String {
     if !about_hardware(prompt) {
         return String::new();
     }
-    block_for(device(), prompt)
+    block_for(&device(), prompt)
 }
 
 pub fn block_for(d: &Device, prompt: &str) -> String {

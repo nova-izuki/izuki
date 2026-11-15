@@ -64,8 +64,11 @@ assert.equal(busy.code, "busy");
 assert.equal(busy.state.tabId, 7);
 assert.match(busy.message, /still answering “Sum up this page”/);
 
-// "Stop that one": the tab is free at once and the first question ends as stopped.
-assert.equal(R.cancelTab(7), true);
+// "Stop that one" names the question it saw: a different (newer) one is left alone.
+assert.equal(R.cancelTab(7, "some-newer-request"), false);
+assert.equal(R.status().length, 1);
+// The one it saw: the tab is free at once and that question ends as stopped.
+assert.equal(R.cancelTab(7, busy.state.requestId), true);
 assert.equal(R.status().length, 0);
 const stopped = await first;
 assert.equal(stopped.name, "AbortError");

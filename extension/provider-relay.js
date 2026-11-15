@@ -93,9 +93,13 @@
       if(stopped.size>60)stopped.delete(stopped.values().next().value);
     },args:[requestId]}).catch(()=>{});
   }
-  /** Stop whatever question holds this AI tab (the panel's "Stop that one"). */
-  function cancelTab(tabId) {
-    const lock=tabLocks.get(tabId); if(!lock)return false;
+  /**
+   * Stop the question that holds this AI tab (the panel's "Stop that one").
+   * Only the one the panel saw: a newer question that took the tab since is
+   * left alone.
+   */
+  function cancelTab(tabId,requestId) {
+    const lock=tabLocks.get(tabId); if(!lock||(requestId&&lock.requestId!==requestId))return false;
     cancel(lock.requestId);
     // Free the tab now: the stopped request leaves at its next check.
     tabLocks.delete(tabId);

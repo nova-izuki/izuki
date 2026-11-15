@@ -5028,7 +5028,7 @@ fn submit_task(
                     p.summary = stop_report(
                         &snags_seen,
                         &uia::foreground_title(),
-                        crate::hardware::about_charge_limit(&prompt).then(|| crate::hardware::device()),
+                        crate::hardware::about_charge_limit(&prompt).then(crate::hardware::device).as_ref(),
                     );
                     p.mood = Some("sympathetic".into());
                     final_word = Some(p.summary.clone());

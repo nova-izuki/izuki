@@ -478,12 +478,14 @@ ${page.text.slice(0, 9000)}` : ""}`;
       // How long it has been, and the tab it's happening in: "Asking Gemini…"
       // alone left people unsure whether anything was running at all.
       const askedAt = Date.now();
+      doing(wait, `Asking ${link.provider.name}…`);
+      showTabButton(wait, link.tabId, `Show ${link.provider.name}`);
       const showAsking = () => {
         const secs = Math.round((Date.now() - askedAt) / 1000);
-        doing(wait, `Asking ${link.provider.name}…${secs >= 3 ? ` ${secs} s` : ""}`);
-        showTabButton(wait, link.tabId, `Show ${link.provider.name}`);
+        // Only the words change: the bubble, its button and focus stay put.
+        const words = wait.querySelector(".doing");
+        if (words && secs >= 3) words.textContent = `Asking ${link.provider.name}… ${secs} s`;
       };
-      showAsking();
       const ticking = setInterval(() => { if (requests.active(request)) showAsking(); else clearInterval(ticking); }, 1000);
       let answer;
       try { answer = await workspace.relay(link,carried,request.id); }
@@ -553,7 +555,12 @@ ${page.text.slice(0, 9000)}` : ""}`;
         stopIt.type = "button"; stopIt.className = "icon"; stopIt.textContent = "Stop that one and ask this";
         stopIt.onclick = async () => {
           stopIt.disabled = true;
-          await workspace?.cancelTab?.(tabId);
+          const stopped = await workspace?.cancelTab?.(tabId, error.state.requestId);
+          if (!stopped) {
+            // It finished (or another question took the tab) meanwhile:
+            // asking again is still the right next step.
+            divider("That earlier question had already ended.");
+          }
           message.remove();
           void ask(question, sourceOverride);
         };
@@ -845,7 +852,12 @@ $("task-run")?.addEventListener("click", async () => {
       const d = divider(`${r.provider} is still answering ${r.label ? `“${r.label}”` : "an earlier question"} (started ${secs} s ago).`);
       const stopIt = document.createElement("button");
       stopIt.type = "button"; stopIt.className = "icon"; stopIt.textContent = "Stop it";
-      stopIt.onclick = async () => { stopIt.disabled = true; await workspace.cancelTab(r.tabId); d.textContent = `Stopped the earlier ${r.provider} question.`; };
+      stopIt.onclick = async () => {
+        stopIt.disabled = true;
+        const stopped = await workspace.cancelTab(r.tabId, r.requestId);
+        if (stopped) d.textContent = `Stopped the earlier ${r.provider} question.`;
+        else { stopIt.disabled = false; stopIt.textContent = "Couldn't stop it — try again"; }
+      };
       const look = document.createElement("button");
       look.type = "button"; look.className = "icon"; look.textContent = `Show ${r.provider}`;
       look.onclick = () => void showTab(r.tabId);
