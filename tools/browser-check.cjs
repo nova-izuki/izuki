@@ -170,7 +170,9 @@ const fixture = '<!doctype html><body><button id="target">Continue</button><form
           iconsVisible: [...document.querySelectorAll('header .tools > button svg')].every(svg => svg.getBoundingClientRect().width >= 17),
           separate: rects.every((r, i) => rects.slice(i + 1).every(s => r.right <= s.left || s.right <= r.left || r.bottom <= s.top || s.bottom <= r.top)),
           commands: ['go-drive', 'go-remote', 'go-lecture', 'go-touch'].every(id => !!document.querySelector('#tools-sheet #' + id)),
-          more: !!document.getElementById('more-tools')
+          more: !!document.getElementById('more-tools'),
+          sizes: rects.map(r => r.width.toFixed(1) + 'x' + r.height.toFixed(1)),
+          iconWidths: [...document.querySelectorAll('header .tools > button svg')].map(svg => svg.getBoundingClientRect().width.toFixed(1))
         };
       })()`);
       assert(toolbar.fits && toolbar.touchable && toolbar.iconsVisible && toolbar.separate && toolbar.commands && toolbar.more, phoneOS + ' toolbar must fit with separate touch targets and reachable commands at ' + width + ': ' + JSON.stringify(toolbar));

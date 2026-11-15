@@ -1084,6 +1084,10 @@ html[data-os="android"] .round.end i {
   html[data-os="android"] .app > header .tools { gap: 2px; }
   html[data-os="ios"] .app > header { padding-inline: 10px; }
   html[data-os="ios"] .app > header .tools { gap: 2px; }
+  html[data-os] .app > header .tools {
+    grid-template-columns: repeat(6, 44px);
+    justify-content: space-between;
+  }
   html[data-os] .app > header .tools > button { min-width: 44px; }
   html[data-os] .app > header .tools svg { width: 18px; min-width: 18px; height: 18px; }
   html[data-os="android"] .app > header .icon-btn,
