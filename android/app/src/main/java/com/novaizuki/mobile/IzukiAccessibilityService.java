@@ -350,7 +350,7 @@ public class IzukiAccessibilityService extends AccessibilityService {
   private static void press(AccessibilityNodeInfo node, String matched, boolean preferTouch, Consumer<JSONObject> done) {
     node.refresh();
     if (!node.isVisibleToUser()) { done.accept(result(false, null, "hidden")); return; }
-    try { node.performAction(AccessibilityNodeInfo.ACTION_SHOW_ON_SCREEN); } catch (Exception ignored) { }
+    try { node.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_SHOW_ON_SCREEN.getId()); } catch (Exception ignored) { }
     AccessibilityNodeInfo target = pressable(node);
     AccessibilityNodeInfo used = target != null ? target : node;
     // A WebView button may report itself disabled while its HTML parent is
