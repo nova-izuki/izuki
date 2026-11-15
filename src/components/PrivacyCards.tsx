@@ -175,11 +175,24 @@ export function SitesCard() {
   const blocked = useIzuki((s) => s.settings.sites_blocked);
   const patch = useIzuki((s) => s.patchSettings);
   const [typed, setTyped] = useState("");
+  const [note, setNote] = useState<{ text: string; bad: boolean } | null>(null);
   const host = hostOf(typed);
-  const set = (nextAllowed: string[], nextBlocked: string[]) => patch({ sites_allowed: nextAllowed, sites_blocked: nextBlocked });
-  const allow = (h: string) => set([...allowed.filter((x) => x !== h), h], blocked.filter((x) => x !== h));
-  const block = (h: string) => set(allowed.filter((x) => x !== h), [...blocked.filter((x) => x !== h), h]);
-  const forget = (h: string) => set(allowed.filter((x) => x !== h), blocked.filter((x) => x !== h));
+  // One site at a time, made on the stored lists (a rule said by voice
+  // meanwhile is never undone), and the lists shown are the ones that came
+  // back: never a rule that isn't in force.
+  const change = (op: "allow" | "block" | "forget", h: string) => {
+    setNote(null);
+    void api
+      .sitesChange(op, h)
+      .then((r) => {
+        patch({ sites_allowed: r.allowed, sites_blocked: r.blocked });
+        if (r.note) setNote({ text: r.note, bad: false });
+      })
+      .catch((e) => setNote({ text: `That wasn't saved (${String(e).replace(/^Error:\s*/, "")}). Try again.`, bad: true }));
+  };
+  const allow = (h: string) => change("allow", h);
+  const block = (h: string) => change("block", h);
+  const forget = (h: string) => change("forget", h);
   const list = (title: string, sites: string[], empty: string) => (
     <div>
       <p className="mb-1.5 text-[10.5px] font-semibold uppercase tracking-[0.08em] text-izk-muted">{title}</p>
@@ -209,6 +222,11 @@ export function SitesCard() {
         </ul>
         {list("You said yes to", allowed, "None yet.")}
         {list("Never", blocked, "None.")}
+        {note && (
+          <p role={note.bad ? "alert" : "status"} className={`text-[11px] ${note.bad ? "text-izk-danger" : "text-izk-muted"}`}>
+            {note.text}
+          </p>
+        )}
         <form
           className="flex flex-wrap items-center gap-2"
           onSubmit={(e) => {

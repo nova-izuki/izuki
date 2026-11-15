@@ -2122,6 +2122,29 @@ pub fn loading(keep: bool) -> Option<&'static str> {
     None
 }
 
+/// The address in the address bar of exactly the window in front (never a
+/// window Izuki is holding behind it), read through accessibility with no
+/// extension needed: the site rule's second witness. Nothing if another
+/// window came to the front while it was read.
+#[cfg(windows)]
+pub fn foreground_web_address() -> Option<String> {
+    use std::time::{Duration, Instant};
+    use uiautomation::UIAutomation;
+    let hwnd = foreground_hwnd()?;
+    let automation = UIAutomation::new().or_else(|_| UIAutomation::new_direct()).ok()?;
+    let walker = automation.get_control_view_walker().ok()?;
+    let root = automation.element_from_handle(hwnd.into()).ok()?;
+    let mut found = Vec::new();
+    collect(&automation, &walker, root, hwnd, 1500, Instant::now() + Duration::from_millis(700), 120, &mut found);
+    let url = web_address(&found)?;
+    (foreground_hwnd() == Some(hwnd)).then(|| if url.contains("://") { url } else { format!("https://{url}") })
+}
+
+#[cfg(not(windows))]
+pub fn foreground_web_address() -> Option<String> {
+    None
+}
+
 /// The address in the browser's address bar, if it's a real web page (not
 /// a new tab or the browser's own settings).
 fn web_address(controls: &[Control]) -> Option<String> {

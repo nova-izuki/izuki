@@ -2290,6 +2290,24 @@ pub async fn air_target(app: AppHandle, nx: f64, ny: f64) -> Option<crate::air::
     blocking(move || crate::air::target_norm(nx, ny, overlay)).await.ok().flatten()
 }
 
+/// Settings → Privacy: one change to the site rules ("allow", "block" or
+/// "forget" one site), made on the stored lists so nothing said or pressed
+/// meanwhile is undone (full settings saves never touch them). Both lists as
+/// they now are, and what changed.
+#[tauri::command]
+pub fn sites_change(op: String, host: String) -> Result<serde_json::Value, String> {
+    use crate::siteaccess::Ask;
+    let host = crate::siteaccess::site_name(&host).ok_or("That doesn't look like a site name (like chase.com).")?;
+    let ask = match op.as_str() {
+        "allow" => Ask::Allow(host),
+        "block" => Ask::Block(host),
+        "forget" => Ask::Forget(host),
+        _ => return Err("Unknown change.".into()),
+    };
+    let (s, note) = crate::siteaccess::change(ask).ok_or("Izuki is still starting. Try again in a moment.")?;
+    Ok(serde_json::json!({ "allowed": s.sites_allowed, "blocked": s.sites_blocked, "note": note }))
+}
+
 /// Eye Control: where a steady look settles — the control under it, or the
 /// nearest one within 6% of the screen's width. It aims the drawn eye
 /// cursor; the mouse still only follows under the eye safety rules.

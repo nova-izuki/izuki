@@ -200,14 +200,28 @@ pub fn parse(said: &str) -> Option<Ask> {
 
 /// Carry out a site request and say what changed.
 pub fn handle(ask: Ask) -> String {
-    let Some(store) = crate::state::try_store() else { return "I can't change that just now — try again in a moment.".into() };
-    let mut s = store.settings();
-    let reply = apply(&mut s, &ask);
-    if !matches!(ask, Ask::List) {
-        store.set_settings(s);
-        crate::state::settings_changed_elsewhere();
+    change(ask).map(|(_, reply)| reply).unwrap_or_else(|| "I can't change that just now — try again in a moment.".into())
+}
+
+/// One change to the site rules, made on the stored lists (never a stale
+/// copy): the settings after it, and what to say. `None`: no store yet.
+pub fn change(ask: Ask) -> Option<(Settings, String)> {
+    let store = crate::state::try_store()?;
+    if matches!(ask, Ask::List) {
+        let mut s = store.settings();
+        let reply = apply(&mut s, &ask);
+        return Some((s, reply));
     }
-    reply
+    let (s, reply) = store.change_sites(|s| apply(s, &ask));
+    crate::state::settings_changed_elsewhere();
+    Some((s, reply))
+}
+
+/// A site name as typed in Settings ("www.Chase.com/login" → "chase.com"),
+/// or `None` when it isn't one.
+pub fn site_name(typed: &str) -> Option<String> {
+    let host = host_of(typed.trim());
+    (host.contains('.') && !typed.contains('@') && host.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-')).then_some(host)
 }
 
 /// The change itself, on a copy of the settings (testable).

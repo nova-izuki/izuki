@@ -124,6 +124,17 @@ mem.shareHistory([{ role: "user", content: "play lofi" }], "chat-b");
 mem.remember("user", "spoken to the orb");
 mem.forgetHistory("chat-a");
 is("every line that chat shared goes, partial ones too", shape(), ["user:play lofi", "user:spoken to the orb"]);
+fresh();
+mem.shareHistory([{ role: "user", content: "same words" }], "chat-a");
+mem.shareHistory([{ role: "user", content: "same words" }], "chat-b");
+mem.forgetHistory("chat-a");
+is("the same line in another chat stays", shape(), ["user:same words"]);
+fresh();
+mem.remember("user", "heard at the orb");
+mem.shareHistory([{ role: "user", content: "heard at the orb" }], "chat-c");
+is("a line the chat took from the orb isn't doubled", count(), 1);
+mem.forgetHistory("chat-c");
+is("and goes with that chat", count(), 0);
 mem.forgetHistory(null);
 is("Clear all empties it", count(), 0);
 

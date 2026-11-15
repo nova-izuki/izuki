@@ -765,8 +765,10 @@ fn execute_step(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) 
     // Keys that only leave (close the tab, go back, Esc…) stay free; keys
     // that act on the page (Enter, Space, paste…) follow the same rule.
     let acting_key = step.action == Intent::Key && !crate::siteaccess::leaving_key(step.key.as_deref().unwrap_or_default());
-    if !dry_run && (clicking || acting_key || matches!(step.action, Intent::Type | Intent::Drag)) {
-        if let Some(url) = crate::ext::snapshot_url_cached() {
+    // Every step that presses the mouse counts: a copy triple-clicks, a pen
+    // stroke holds the button down.
+    if !dry_run && (clicking || acting_key || matches!(step.action, Intent::Type | Intent::Drag | Intent::Copy | Intent::Stroke)) {
+        if let Some(url) = crate::ext::live_url()? {
             crate::siteaccess::gate(&url)?;
         }
     }

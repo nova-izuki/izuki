@@ -70,12 +70,15 @@ export function shareHistory(turns: Turn[], chat?: string): void {
     .map((t) => ({ role: t.role, content: (t.content ?? "").trim(), chat }))
     .filter((t) => t.content && (t.role === "user" || t.role === "assistant"));
   if (!incoming.length) return;
-  const seen = new Set(history.map((t) => `${t.role}\u0000${t.content}`));
+  // Per chat: the same line in two chats is two lines, so deleting one chat
+  // never takes the other's. A line the orb heard that this chat now holds
+  // (it opened on the shared thread) becomes this chat's, not a second copy.
   for (const t of incoming) {
-    const key = `${t.role}\u0000${t.content}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    history.push(t);
+    const same = history.filter((h) => h.role === t.role && h.content === t.content);
+    if (same.some((h) => (h.chat ?? "") === (t.chat ?? ""))) continue;
+    const untagged = t.chat ? same.find((h) => !h.chat) : undefined;
+    if (untagged) untagged.chat = t.chat;
+    else history.push(t);
   }
   // Shared, so it counts as just now — otherwise the 15-minute reset would wipe
   // a thread the user is still typing into.

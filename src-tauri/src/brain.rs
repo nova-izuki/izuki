@@ -810,7 +810,7 @@ fn merge_page(controls: &mut Vec<uia::Control>, page_text: &mut String, page: cr
             Some(h) if !h.is_empty() => h.chars().take(80).collect(),
             _ => e.name.clone(),
         };
-        listed.push((next, e.dom_id.clone()));
+        listed.push((next, e.dom_id.clone(), e.name.clone()));
         controls.push(uia::Control {
             id: next,
             kind: e.kind.clone(),
