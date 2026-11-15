@@ -138,6 +138,9 @@ pub fn focus_over() {
 /// Bring the veil up at `level` (or change its darkness), in turn. A new
 /// veil counts only once its window is really on screen.
 fn begin(turn: parking_lot::MutexGuard<'_, ()>, level: Level) -> Result<()> {
+    // A late Focus-mode or dim request must not recreate the veil after an
+    // emergency stop. Restore overlay clears this latch explicitly.
+    crate::overlay::rescue_check()?;
     if RUNNING.load(Ordering::SeqCst) {
         TARGET.store(level.alpha(), Ordering::SeqCst);
         STOPPING.store(false, Ordering::SeqCst);

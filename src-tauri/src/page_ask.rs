@@ -169,6 +169,9 @@ pub fn ask(app: &AppHandle, id: u64, question: &str, history: &[Turn], files: &[
     let send = |p: Piece| {
         let _ = app.emit(EVENT, p);
     };
+    if let Some(text)=crate::rescue::handle(question) {
+        return send(Piece {id,text,done:true,error:None,page:None});
+    }
     let read = if backend_web_request(question) {
         Some(Read { title: "Requested web research".into(), url: String::new(), text: "No requested website has been fetched yet. Use the backend SEARCH and READ tools to get real page content. This request does not require a screenshot or an open browser.".into(), linked: String::new() })
     } else if on_screen { None } else { Some(read_page(question)).filter(|r| !r.text.trim().is_empty()) };

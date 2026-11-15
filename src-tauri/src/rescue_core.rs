@@ -122,7 +122,13 @@ pub fn request(said: &str) -> Option<Request> {
     {
         return Some(Request::Hide);
     }
-    if own && hide && (text.contains("my screen") || text.contains("the screen")) {
+    // "Nova is covering my screen", not "Izuki, stop recording my screen"
+    // or "Nova, close the screen share": only covering intent resets the UI.
+    let covering = ["covering", "blocking", "stuck"]
+        .iter()
+        .any(|w| words.contains(w))
+        || text.contains("get rid");
+    if own && covering && (text.contains("my screen") || text.contains("the screen")) {
         return Some(Request::Hide);
     }
     None
@@ -262,6 +268,8 @@ mod tests {
             "if the screen went black reset it",
             "close the overlay",
             "screen capture example\nremove the black screen",
+            "Izuki, stop recording my screen",
+            "Nova, close the screen share",
         ] {
             assert_eq!(request(text), None, "{text}");
         }

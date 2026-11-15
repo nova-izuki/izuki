@@ -19,6 +19,29 @@ The owner resumed Codex to continue Claude's interrupted `claude/overlay-escape`
 - Rust source parsing: passed. Full Tauri library/default and devvision suites are delegated to Windows CI: this PC has approximately 3 GB free and no reusable target cache, so a new full Rust build would exhaust its disk. Their result remains pending until CI completes.
 - CodeRabbit CLI review: in progress; findings and final CI evidence will be added before merge.
 
+## CodeRabbit follow-up (2026-11-15)
+
+- The emergency stop time is now an atomic millisecond timestamp, so it is
+  recorded even when an input worker holds the old bookkeeping lock; a stale
+  watcher cannot clear a stop pressed seconds ago.
+- The dim veil's `begin` now checks the overlay rescue latch before clearing
+  `STOPPING` or creating a window. A late Focus-mode/dim request after an
+  emergency stop is refused, so the veil cannot reappear.
+- The final screen-hide phrase rule now requires covering/blocking/stuck (or
+  “get rid”), not any word from the broad hide list. “Izuki, stop recording my
+  screen” and “Nova, close the screen share” stay ordinary requests; both are
+  negative tests.
+- The frozen-window probe holds the test window frozen until the test sends
+  an explicit `release`, with a bounded 15-second fallback, instead of relying
+  on a fixed 1200 ms sleep.
+- Page asks now run the same native rescue request check as chat, so “remove
+  the black screen” works from either chat surface. Cleanup emits the stop
+  events before cancelling the task.
+
+`rescue_core` pure tests: **5 passed, 0 failed** (including the two new
+negative phrases). The full Rust check is running in the background; Windows CI
+remains the final compile/test gate.
+
 ## Practical limits
 
 The probe verifies actual Windows window operations, including a deliberately unresponsive window. It does not reproduce a graphics-driver transparency fault inside the installed WebView2 app, prove the current cause of the owner's black screen, or verify the new keys in the packaged app. The existing physical-PC checklist remains necessary for that final check. A frozen Windows window thread may not process an asynchronous hide until it recovers; no unrelated application is terminated to work around that.

@@ -118,9 +118,9 @@ fn cleanup(app: &AppHandle) {
                 }
             }
             let _done = Done;
-            crate::brain::cancel_task();
             let _ = app.emit(crate::events::STOP_SPEAKING, ());
             let _ = app.emit(crate::events::OVERLAY_CLOSE, ());
+            crate::brain::cancel_task();
         })
         .is_err()
     {

@@ -39,7 +39,7 @@ pub fn rescue_epoch()->usize {RESCUE.epoch()}
 pub fn resume_after_rescue(epoch:usize)->Result<()> {
     if RESCUE.resume(epoch) {Ok(())}else{Err(anyhow!("A newer emergency stop cancelled this restore."))}
 }
-fn rescue_check() -> Result<()> {
+pub fn rescue_check() -> Result<()> {
     if RESCUE.hidden() { Err(anyhow!("Izuki's overlay is hidden after emergency recovery. Use Restore overlay in the tray.")) } else { Ok(()) }
 }
 fn checked_show(window:&WebviewWindow)->Result<()> {

@@ -9,7 +9,8 @@
 use anyhow::{anyhow, Result};
 use enigo::{Axis, Button, Coordinate, Direction, Enigo, Key, Keyboard, Mouse, Settings};
 use rand::Rng;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 use crate::model::{ActionStep, Intent};
@@ -17,25 +18,39 @@ use crate::uia;
 
 /// Flipped by the panic hotkey; every loop checks it between steps.
 static ABORT: AtomicBool = AtomicBool::new(false);
-/// When the last stop was asked for.
-static ABORT_AT: parking_lot::Mutex<Option<Instant>> = parking_lot::Mutex::new(None);
+/// When the last stop was asked for, as milliseconds from process start.
+/// An atomic means the emergency path can never skip recording the stop
+/// behind a busy lock; a missing timestamp would look stale to a watcher.
+static ABORT_AT: AtomicU64 = AtomicU64::new(0);
+static ABORT_CLOCK: OnceLock<Instant> = OnceLock::new();
+
+fn stop_clock_ms() -> u64 {
+    let start = ABORT_CLOCK.get_or_init(Instant::now);
+    u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX - 1) + 1
+}
 
 pub fn request_abort() {
-    *ABORT_AT.lock() = Some(Instant::now());
+    // Timestamp first, then the flag: a concurrent stale check that sees the
+    // old 0 must also see ABORT=false and leave it alone.
+    ABORT_AT.store(stop_clock_ms(), Ordering::SeqCst);
     ABORT.store(true, Ordering::SeqCst);
 }
 
 /// Emergency escape cannot wait behind an input worker's bookkeeping lock.
 pub fn emergency_abort() {
+    ABORT_AT.store(stop_clock_ms(), Ordering::SeqCst);
     ABORT.store(true, Ordering::SeqCst);
-    if let Some(mut at) = ABORT_AT.try_lock() { *at = Some(Instant::now()); }
 }
 
 /// Forget a stop that's older than `age` — for work nobody is watching
 /// start (a watcher firing), which shouldn't fail forever because the
 /// user once pressed stop, but must still honour a stop pressed just now.
 pub fn clear_stale_abort(age: Duration) {
-    if ABORT_AT.lock().is_none_or(|at| at.elapsed() > age) {
+    if !ABORT.load(Ordering::SeqCst) {
+        return;
+    }
+    let at = ABORT_AT.load(Ordering::SeqCst);
+    if at == 0 || stop_clock_ms().saturating_sub(at) > age.as_millis() as u64 {
         clear_abort();
     }
 }

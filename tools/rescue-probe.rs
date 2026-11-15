@@ -54,12 +54,29 @@ mod probe {
             let veil=unsafe{make("IzukiDimTheRest","",true)};
             let config=unsafe{make("Tauri Window","Izuki",false)};
             ready_tx.send((overlay,veil,config)).unwrap();
-            loop {
+            let mut stop=false;
+            while !stop {
                 match command.try_recv(){
-                    Ok("quit")=>break,
-                    Ok("freeze")=>{marked.store(true,Ordering::SeqCst);std::thread::sleep(Duration::from_millis(1200));marked.store(false,Ordering::SeqCst);},
+                    Ok("quit")=>{stop=true;},
+                    Ok("freeze")=>{
+                        // Hold the UI thread until the test has completed its
+                        // bounded hide and explicitly releases it. A fixed
+                        // sleep could expire while the test was descheduled.
+                        marked.store(true,Ordering::SeqCst);
+                        let until=Instant::now()+Duration::from_secs(15);
+                        while Instant::now()<until {
+                            match command.try_recv(){
+                                Ok("release")=>break,
+                                Ok("quit")=>{stop=true;break;},
+                                _=>{},
+                            }
+                            pump();std::thread::sleep(Duration::from_millis(3));
+                        }
+                        marked.store(false,Ordering::SeqCst);
+                    },
                     _=>{},
                 }
+                if stop {break;}
                 pump();std::thread::sleep(Duration::from_millis(3));
             }
             unsafe{for handle in [overlay,veil,config]{DestroyWindow(handle as Hwnd);}}
@@ -79,6 +96,7 @@ mod probe {
         assert!(started.elapsed()<Duration::from_millis(1000),"rescue blocked behind the frozen UI thread");assert_eq!(stuck.remaining,1);
         let report=crate::rescue_core::report(&stuck,None,Some(false));assert!(report.contains("Windows did not confirm"));assert!(!report.contains("Hid and checked"));
         println!("PASS: frozen UI dispatch returns a bounded, honest blocker; Explorer is never restarted");
+        command_tx.send("release").unwrap();
         let until=Instant::now()+Duration::from_secs(3);while visible(overlay)&&Instant::now()<until{std::thread::sleep(Duration::from_millis(10));}assert!(!visible(overlay));
         println!("PASS: pending native hide completes when the UI recovers, without an AI retry");
         command_tx.send("quit").unwrap();ui.join().unwrap();assert_eq!(unsafe{IsWindow(overlay as Hwnd)},0);
