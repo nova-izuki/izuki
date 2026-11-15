@@ -514,7 +514,7 @@ const QUIZ_PROMPT: &str = "QUIZ OR TEST IN PROGRESS: the student answers it. Exp
 /// remains a separate mode; answering never authorizes a click or submission.
 pub(crate) fn direct_answer_requested(prompt: &str) -> bool {
     let latest = prompt.split("\n\n(The conversation just before,").next().unwrap_or(prompt);
-    let s = latest.to_lowercase();
+    let s = latest.replace('’', "'").to_lowercase();
     // The front-end wraps the request in instructions that say "do not click
     // or submit". Those prohibitions must not look like a request to act.
     // When the wrapper quotes the person, judge the action words from that
@@ -6280,6 +6280,7 @@ mod speed_tests {
         assert!(super::direct_answer_requested("Answer the question on my screen directly."));
         assert!(super::direct_answer_requested("which option is correct?"));
         assert!(!super::direct_answer_requested("Coach me but don't answer the question"));
+        assert!(!super::direct_answer_requested("Don’t answer the question; explain it instead"));
         // How the owner actually asks, not a list of exact sentences.
         assert!(super::direct_answer_requested("help me ans the quiz and explain"));
         assert!(super::direct_answer_requested("help me answer this"));

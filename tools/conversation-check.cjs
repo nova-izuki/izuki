@@ -212,6 +212,7 @@ for (const t of ["read my emails", "what's in my inbox", "check my outlook"]) is
 fresh();
 is("a refusal of the answer is not a direct-answer request", mem.wantsDirectAnswer("Don't answer the question; explain it instead"), false);
 is("a curly-apostrophe refusal is respected too", mem.wantsDirectAnswer("Don’t answer the question; explain it instead"), false);
+is("asking to skip the working is still an answer", mem.wantsDirectAnswer("Answer question 5, don't show your work"), true);
 is("a normal answer request is still direct", mem.wantsDirectAnswer("answer it"), true);
 is("a mission-add stays a mission", mem.MISSION_ADD.test("add to my missions: answer question 5"), true);
 
