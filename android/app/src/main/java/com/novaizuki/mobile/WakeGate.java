@@ -231,9 +231,34 @@ final class WakeGate {
 
   /** Did they say the wake phrase? `clipped` when the first moment may be missing. */
   static boolean isWake(String heard, boolean clipped) {
+    return isWake(heard, clipped, "");
+  }
+
+  /**
+   * The same, with the person's own phrase as well ("hey jarvis"). "Hey Nova"
+   * and "Hey Izuki" always work too. A clipped start may have lost the
+   * phrase's first word, so then the rest at the very start counts.
+   */
+  static boolean isWake(String heard, boolean clipped, String custom) {
     if (heard == null) return false;
-    String t = heard.toLowerCase(Locale.ROOT).trim();
+    String t = heard.toLowerCase(Locale.ROOT).replaceAll("[^\\p{L}\\p{N}' ]", " ").replaceAll("\\s+", " ").trim();
     if (t.isEmpty()) return false;
-    return WAKE.matcher(t).find() || (clipped && CLIPPED.matcher(t).find());
+    if (WAKE.matcher(t).find() || (clipped && CLIPPED.matcher(t).find())) return true;
+    String phrase = cleanPhrase(custom);
+    if (phrase.isEmpty()) return false;
+    if ((" " + t + " ").contains(" " + phrase + " ")) return true;
+    int space = phrase.indexOf(' ');
+    return clipped && space > 0 && (t + " ").startsWith(phrase.substring(space + 1) + " ");
+  }
+
+  /**
+   * A phrase the person may choose: 2–4 words, letters only, up to 32
+   * characters. "" when it isn't usable (too short to be safe, or odd).
+   */
+  static String cleanPhrase(String raw) {
+    if (raw == null) return "";
+    String p = raw.toLowerCase(Locale.ROOT).replaceAll("[^\\p{L}' ]", " ").replaceAll("\\s+", " ").trim();
+    int words = p.isEmpty() ? 0 : p.split(" ").length;
+    return words >= 2 && words <= 4 && p.length() <= 32 ? p : "";
   }
 }

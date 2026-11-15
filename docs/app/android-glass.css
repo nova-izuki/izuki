@@ -903,6 +903,72 @@ html[data-os="android"] .panel textarea:focus {
   opacity: 1;
 }
 
+/* A ready row's own action (Test, Show it) is quieter than a fix. */
+.health-fix.quiet {
+  border-color: rgba(255, 255, 255, 0.1);
+  background: transparent;
+  color: #a9b8d6;
+}
+
+.health-row {
+  align-items: flex-start;
+}
+
+.health-row .health-dot { margin-top: 4px; }
+
+.health-row.restricted {
+  border-color: rgba(255, 209, 140, 0.32);
+  background: rgba(255, 209, 140, 0.05);
+}
+
+.health-done {
+  flex: none;
+  align-self: center;
+  color: var(--ag-good);
+  font-size: 10.5px;
+  font-weight: 800;
+}
+
+.health-steps {
+  margin: 6px 0 2px;
+  padding-left: 18px;
+  color: var(--ag-ink);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.health-steps li + li { margin-top: 3px; }
+
+.health-more {
+  margin-top: 6px;
+  font-size: 11px;
+}
+
+.health-more summary {
+  color: #ffe0ac;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.health-more p {
+  margin: 5px 0 0;
+  color: var(--ag-muted);
+}
+
+.health-more .health-fix { margin-top: 6px; }
+
+.health-checked {
+  color: #7d8aa5;
+  white-space: nowrap;
+}
+
+/* Small phones: the button moves under its words instead of squeezing them. */
+@media (max-width: 380px) {
+  .health-row { flex-wrap: wrap; }
+  .health-row .health-copy { flex-basis: calc(100% - 22px); }
+  .health-row > .health-fix { margin-left: 18px; }
+}
+
 .health-actions {
   display: flex;
   flex-wrap: wrap;
@@ -1204,3 +1270,24 @@ html[data-os="android"] .round.end i {
     background-color: var(--ag-glass-solid);
   }
 }
+
+/* ------------------------------------------------- one shape for the top row */
+/* The owner's choice: every top button takes the Call button's oval, in the
+   browser, on Android and on iPhone. Each keeps its own colour; only the
+   shape is shared. */
+.app > header .icon-btn,
+.app > header .call-btn { border-radius: 999px; }
+.app > header .tools > .icon-btn { width: 54px; }
+html[data-os] .app > header .tools > .icon-btn,
+html[data-os] .app > header .tools > .call-btn {
+  width: 100%;
+  max-width: 64px;
+  border-radius: 999px;
+}
+@media (max-width: 360px) {
+  html[data-os] .app > header .tools { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 4px; }
+  .app > header .tools > .icon-btn { width: 46px; }
+}
+/* Readiness steps stay small next to their row (the panel's list size is bigger). */
+html[data-os="android"] .panel .health-steps li,
+html[data-os="android"] .panel .health-more p { font-size: 11.5px; line-height: 1.45; }

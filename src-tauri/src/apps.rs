@@ -137,6 +137,11 @@ pub fn find_app(name: &str) -> Option<String> {
     if let Some((_, target)) = BUILT_IN.iter().find(|(n, _)| *n == asked) {
         return Some((*target).to_string());
     }
+    // The laptop maker's Store app ("Lenovo Commercial Vantage", "MyASUS"):
+    // no Start-menu file to find, so its AppsFolder entry instead.
+    if let Some(target) = crate::hardware::launch_target(&asked) {
+        return Some(target);
+    }
     best.map(|(_, p)| p.to_string_lossy().into_owned())
 }
 

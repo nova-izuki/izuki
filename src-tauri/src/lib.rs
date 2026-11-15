@@ -79,6 +79,7 @@ pub mod money;
 pub mod coach;
 pub mod cite;
 pub mod lessons;
+pub mod hardware;
 pub mod budget;
 pub mod selfknow;
 pub mod shop;

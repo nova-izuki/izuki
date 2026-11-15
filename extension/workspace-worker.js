@@ -158,6 +158,13 @@
     }
     if(op==="relay")return answer(message.connection,message.prompt,message.id);
     if(op==="cancelRelay"){root.IzukiProviderRelay.cancel(message.id);return {ok:true};}
+    // What each AI tab is busy with, and "Stop that one" for a question the
+    // panel lost track of (it was closed or reloaded while asking).
+    if(op==="relayStatus")return {ok:true,running:root.IzukiProviderRelay.status()};
+    if(op==="cancelRelayTab"){
+      if(!Number.isSafeInteger(message.tabId))throw Error("Which AI tab should stop?");
+      return {ok:true,stopped:root.IzukiProviderRelay.cancelTab(message.tabId)};
+    }
     if(op==="float")return float(windowId);
     if(op==="dock"){
       // Closing only a popup this worker created never closes the source browser.

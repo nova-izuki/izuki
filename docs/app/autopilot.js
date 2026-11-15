@@ -91,20 +91,43 @@
     }
     return null;
   }
+  /** What the screen looks like, cheaply: enough to tell whether an action changed it. */
+  const look = (screen) => `${screen?.app || ""}|${(screen?.items || []).slice(0, 40).map((i) => `${i.kind}:${i.text}${i.focused ? "*" : ""}`).join("|")}`;
+
+  /** Wait (briefly) for the screen to differ from `before`; the new screen, or null. */
+  async function changedFrom(before, timeout = 2500) {
+    const until = Date.now() + timeout;
+    while (Date.now() < until) {
+      if (!(await sleep(350))) throw new Error("Stopped.");
+      const now = await readScreen().catch(() => null);
+      if (now && look(now) !== before) return now;
+    }
+    return null;
+  }
+
   async function openApp(name) {
     const n = needBridge();
     const opened = await n.launch(name);
     if (!opened?.name) throw new Error(`I couldn't find ${name} on this phone.`);
+    // "Opened" only once Android shows that app in front (a slow phone can
+    // take seconds; the old fixed wait typed into a splash screen).
+    const shown = opened.id && n.waitForApp ? await n.waitForApp(opened.id, 9000) : null;
+    assertRunning();
+    if (shown === false) throw new Error(`I asked Android to open ${opened.name}, but it didn't come to the front.`);
     add(`Opened ${opened.name}.`, "done");
-    await sleep(900);
+    await sleep(shown ? 500 : 1200);
     return opened;
   }
   async function tapText(label) {
     const n = needBridge();
+    const before = look(await readScreen().catch(() => null));
     const result = await n.act({ op: "tapText", text: label });
-    if (!result?.done) throw new Error(`I couldn't find “${label}” on this screen.`);
-    add(`Tapped “${label}”.`, "done");
-    await sleep(450);
+    if (!result?.done) throw new Error(n.why?.(result, `“${label}”`) || `I couldn't find “${label}” on this screen.`);
+    const pressed = result.matched && result.matched.toLowerCase() !== String(label).toLowerCase() ? `“${result.matched}”` : `“${label}”`;
+    // Android accepting the press isn't proof: look for the screen to react.
+    const after = await changedFrom(before, 2000);
+    if (after) add(`Tapped ${pressed}.`, "done");
+    else add(`Pressed ${pressed}, but nothing on screen changed — it may need another look.`, "warn");
   }
   async function tapNumber(n) {
     const result = await needBridge().act({ op: "click", n });
@@ -112,50 +135,58 @@
     add("Pressed it.", "done");
     await sleep(450);
   }
+
+  /** A text box on this screen: the focused one, else the first. */
+  const boxIn = (screen) => screen?.items?.find((item) => item.kind === "box" && item.focused)
+    || screen?.items?.find((item) => item.kind === "box") || null;
+  /** A control that opens search — never "Voice search" or the microphone. */
+  const searchOpener = (screen) => {
+    const items = (screen?.items || []).filter((item) => item.kind !== "box" && !/\b(voice|mic|microphone|history|clear)\b/i.test(String(item.text || "")));
+    return items.find((item) => /^\s*search\s*$/i.test(String(item.text || "")))
+      || items.find((item) => /\b(search|find)\b/i.test(String(item.text || "")) || /search/i.test(String(item.id || "")))
+      || null;
+  };
+
   async function typeText(text) {
     const n = needBridge();
-    // Find a text field on this screen, focus it, then set the words. If the
-    // app uses the already-focused field, n = 0 still works.
+    // Find a text field on this screen, focus it, then set the words.
     let screen = await readScreen();
-    const findBox = () => screen.items?.find((item) => item.kind === "box" && item.focused)
-      || screen.items?.find((item) => item.kind === "box");
-    let box = findBox();
+    let box = boxIn(screen);
     if (!box) {
-      await sleep(500);
-      screen = await readScreen();
-      box = findBox();
-    }
-    // A search icon can be the way in: open it, then look for the field it
-    // just revealed. The old code gave up and typed at nothing.
-    if (!box) {
-      const opener = screen.items?.find((item) => item.kind !== "box" && /\b(search|find)\b/i.test(String(item.text || "")));
+      // A search icon is often the way in: open it, then wait for the field
+      // it reveals. The old code typed at nothing ("open a search box first").
+      const opener = searchOpener(screen);
       if (opener) {
         const opened = await n.act({ op: "click", n: opener.n });
-        if (opened?.done) {
-          await sleep(600);
-          screen = await readScreen();
-          box = findBox();
-        }
+        if (opened?.done) add(`Opened ${opener.text ? `“${opener.text}”` : "search"}.`, "done");
+      }
+      const until = Date.now() + 4000;
+      while (!box && Date.now() < until) {
+        if (!(await sleep(400))) throw new Error("Stopped.");
+        screen = await readScreen().catch(() => screen);
+        box = boxIn(screen);
       }
     }
-    if (!box) throw new Error("I can't see a text box on this screen. Open the search field first, then say the request again.");
+    if (!box) throw new Error("I can't see a text box on this screen, and no Search button opened one. Open the search field, then say the request again.");
     await n.act({ op: "click", n: box.n });
     const result = await n.act({ op: "type", text, n: box.n });
     if (!result?.done) {
-      const why = result?.reason === "password" ? "that field is a password box" : result?.reason || "Android gave no reason";
-      throw new Error(`I found the text box but couldn't type in it (${why}).`);
+      throw new Error(n.why?.(result, "") || `I found the text box but couldn't type in it (${result?.reason || "Android gave no reason"}).`);
     }
-    add(`Typed “${text}”.`, "done");
+    if (result.verified === false) add(`Typed “${text}”, but the box didn't show it back — check it.`, "warn");
+    else add(`Typed “${text}”.`, "done");
     await sleep(250);
   }
   async function submit() {
     const n = needBridge();
     const screen = await readScreen();
     const items = Array.isArray(screen.items) ? screen.items : [];
-    // Only submit where the screen itself shows a Search/Go control. Pressing
-    // Enter in a chat box would send a message, which Autopilot must never do.
-    const searchable = items.some((item) => /\b(search|go)\b/i.test(String(item.text || "")));
+    // Only submit where the screen itself shows a Search/Go control or a
+    // search box. Pressing Enter in a chat box would send a message, which
+    // Autopilot must never do.
+    const searchable = items.some((item) => /\b(search|go)\b/i.test(String(item.text || "")) || /search/i.test(String(item.id || "")));
     if (!searchable) throw new Error("I couldn't find a Search control on this screen, so I didn't press Enter.");
+    const before = look(screen);
     let result = await n.act({ op: "submit" });
     if (!result?.done) {
       for (const label of ["Search", "Go"]) {
@@ -163,9 +194,10 @@
         if (result?.done) break;
       }
     }
-    if (!result?.done) throw new Error("I couldn't find the Search or Enter control.");
-    add("Pressed Enter.", "done");
-    await sleep(700);
+    if (!result?.done) throw new Error(n.why?.(result, "") || "I couldn't find the Search or Enter control.");
+    const after = await changedFrom(before, 3500);
+    if (after) add("Searched — the results are on screen.", "done");
+    else add("Pressed Enter, but the screen didn't change yet — have a look.", "warn");
   }
   async function scroll(dir, times) {
     const n = needBridge();
@@ -173,7 +205,10 @@
     for (let i = 0; i < count; i++) {
       assertRunning();
       const result = await n.act({ op: "scroll", dir });
-      if (!result?.done) throw new Error("This screen doesn't scroll.");
+      if (!result?.done) {
+        if (i > 0 && /at-(end|top)/.test(String(result?.reason || ""))) break; // reached the end: that's done
+        throw new Error(n.why?.(result, "") || "This screen doesn't scroll.");
+      }
     }
     add(`Scrolled ${dir}${count > 1 ? ` ${count} times` : ""}.`, "done");
     await sleep(350);
@@ -219,7 +254,8 @@
         title: `Open ${app}, then search for ${query}`,
         steps: [
           { label: `Open ${app}`, run: () => openApp(app) },
-          { label: `Search for ${query}`, run: async () => { await tapText("Search").catch(() => {}); await typeText(query); await submit(); } },
+          // typeText opens the app's search field itself (never Voice search).
+          { label: `Search for ${query}`, run: async () => { await typeText(query); await submit(); } },
         ],
       };
     }

@@ -296,6 +296,24 @@ function divider(text) {
 }
 
 /** The waiting bubble says what's happening ("Searching the web for …"), not just dots. */
+/** Bring an AI tab (and its window) to the front. */
+async function showTab(tabId) {
+  const tab = await chrome.tabs.get(tabId).catch(() => null);
+  if (!tab) return false;
+  await chrome.tabs.update(tabId, { active: true }).catch(() => {});
+  await chrome.windows.update(tab.windowId, { focused: true }).catch(() => {});
+  return true;
+}
+
+/** A "Show Gemini" button inside a progress bubble (kept across redraws). */
+function showTabButton(wait, tabId, label) {
+  if (!Number.isSafeInteger(tabId) || wait.querySelector(".show-tab")) return;
+  const b = document.createElement("button");
+  b.type = "button"; b.className = "icon show-tab"; b.textContent = label;
+  b.onclick = () => void showTab(tabId);
+  wait.appendChild(b);
+}
+
 function doing(wait, text) {
   // Polled every 800 ms: only redrawn when it says something new.
   const now = String(text || "");
@@ -457,8 +475,19 @@ ${page.text.slice(0, 9000)}` : ""}`;
       request.carried = carried;
       if(!link.ready)throw Error("Connect before sharing with this AI tab.");
       if(!workspace)throw Error("The browser workspace didn't start. Reload the extension (chrome://extensions), then try again.");
-      doing(wait, `Asking ${link.provider.name}…`);
-      const answer = await workspace.relay(link,carried,request.id);
+      // How long it has been, and the tab it's happening in: "Asking Gemini…"
+      // alone left people unsure whether anything was running at all.
+      const askedAt = Date.now();
+      const showAsking = () => {
+        const secs = Math.round((Date.now() - askedAt) / 1000);
+        doing(wait, `Asking ${link.provider.name}…${secs >= 3 ? ` ${secs} s` : ""}`);
+        showTabButton(wait, link.tabId, `Show ${link.provider.name}`);
+      };
+      showAsking();
+      const ticking = setInterval(() => { if (requests.active(request)) showAsking(); else clearInterval(ticking); }, 1000);
+      let answer;
+      try { answer = await workspace.relay(link,carried,request.id); }
+      finally { clearInterval(ticking); }
       if (!requests.active(request)) return false;
       const card=bubble("assistant",answer.text);
       if(answer.text)followUps(card,source);
@@ -516,6 +545,23 @@ ${page.text.slice(0, 9000)}` : ""}`;
   } catch (error) {
     if (requests.active(request) && error.name !== "AbortError") {
       const message = bubble("assistant", error.message || "Izuki couldn't answer that request.", true);
+      // The AI tab is busy with another question (often one asked before the
+      // panel was closed or reloaded): say what, and offer to stop it.
+      if (error.code === "busy" && Number.isSafeInteger(error.state?.tabId)) {
+        const tabId = error.state.tabId;
+        const stopIt = document.createElement("button");
+        stopIt.type = "button"; stopIt.className = "icon"; stopIt.textContent = "Stop that one and ask this";
+        stopIt.onclick = async () => {
+          stopIt.disabled = true;
+          await workspace?.cancelTab?.(tabId);
+          message.remove();
+          void ask(question, sourceOverride);
+        };
+        const look = document.createElement("button");
+        look.type = "button"; look.className = "icon"; look.textContent = `Show ${error.state.provider || "the AI tab"}`;
+        look.onclick = () => void showTab(tabId);
+        message.append(stopIt, look);
+      }
       if (request.carried) {
         const copy = document.createElement("button");
         copy.type = "button"; copy.className = "icon"; copy.textContent = "Copy question for this AI";
@@ -790,6 +836,22 @@ $("task-run")?.addEventListener("click", async () => {
     beforeRun:()=>{cancelAsk();cancelDesktopTask();},onError:error=>bubble("assistant",error.message,true),
     onHistory:items=>{history=cleanHistory(items);save();log.replaceChildren();for(const m of history)bubble(m.role,m.content);if(!history.length)hello();}}); }
   catch(error){divider(error.message);}
+  // A question asked before this panel opened (it was closed or reloaded)
+  // may still hold an AI tab: say so, with Stop and Show, instead of the
+  // next question failing with "answering another request".
+  void workspace?.relayStatus?.().then((list) => {
+    for (const r of list) {
+      const secs = Math.max(1, Math.round((Date.now() - r.startedAt) / 1000));
+      const d = divider(`${r.provider} is still answering ${r.label ? `“${r.label}”` : "an earlier question"} (started ${secs} s ago).`);
+      const stopIt = document.createElement("button");
+      stopIt.type = "button"; stopIt.className = "icon"; stopIt.textContent = "Stop it";
+      stopIt.onclick = async () => { stopIt.disabled = true; await workspace.cancelTab(r.tabId); d.textContent = `Stopped the earlier ${r.provider} question.`; };
+      const look = document.createElement("button");
+      look.type = "button"; look.className = "icon"; look.textContent = `Show ${r.provider}`;
+      look.onclick = () => void showTab(r.tabId);
+      d.append(" ", stopIt, look);
+    }
+  });
   ping();
   setInterval(ping, 15000);
   pending();

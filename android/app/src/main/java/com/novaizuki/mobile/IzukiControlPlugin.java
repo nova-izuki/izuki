@@ -201,6 +201,24 @@ public class IzukiControlPlugin extends Plugin {
     call.resolve(wakeInfo());
   }
 
+  /**
+   * The person's own wake phrase ("hey jarvis"), besides "Hey Nova". 2–4
+   * words; an empty phrase goes back to just "Hey Nova". The listener reads
+   * it on its next check, so no restart (and no microphone blip) is needed.
+   */
+  @PluginMethod
+  public void setWakePhrase(PluginCall call) {
+    String raw = call.getString("phrase", "");
+    String clean = WakeGate.cleanPhrase(raw);
+    if (raw != null && !raw.trim().isEmpty() && clean.isEmpty()) {
+      call.reject("Use 2 to 4 words, letters only — for example “hey jarvis”.");
+      return;
+    }
+    getContext().getSharedPreferences("izuki_native", Context.MODE_PRIVATE).edit()
+        .putString(IzukiWakeService.KEY_PHRASE, clean).apply();
+    call.resolve(wakeInfo());
+  }
+
   /** The listener's real state (OFF, ARMED, PAUSED, ERROR…), not just the switch. */
   private JSObject wakeInfo() {
     JSObject result;

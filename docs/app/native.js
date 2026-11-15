@@ -227,6 +227,55 @@
     async repairStatus() {
       try { return (await control()?.repairStatus?.()) || null; } catch { return null; }
     },
+    /** Phone Readiness: what Android reports for each capability (newer APKs). */
+    async readiness() {
+      const p = control();
+      try { return (await (p?.readiness ? p.readiness() : p?.repairStatus?.())) || null; } catch { return null; }
+    },
+    /** The developer diagnostics: states, versions, recent wake transitions. No screen text. */
+    async diagnostics() {
+      try { return (await control()?.diagnostics?.()) || null; } catch { return null; }
+    },
+    /** Android asks once whether Izuki may run in the background (for "Hey Nova"). */
+    async requestBatteryExemption() {
+      const p = control();
+      try {
+        if (p?.requestBatteryExemption) { await p.requestBatteryExemption(); return true; }
+        if (p?.openBatterySettings) { await p.openBatterySettings(); return true; }
+      } catch {}
+      return false;
+    },
+    /**
+     * Android 13+ asks for notifications at runtime: ask with Android's own
+     * prompt first, and only send the person to Settings when it was refused.
+     * Resolves "granted", "denied" or "unavailable".
+     */
+    async requestNotifications() {
+      const local = plugin();
+      if (!local?.requestPermissions) return "unavailable";
+      try {
+        let p = await local.checkPermissions();
+        if (p.display === "granted") return "granted";
+        p = await local.requestPermissions();
+        return p.display === "granted" ? "granted" : "denied";
+      } catch { return "unavailable"; }
+    },
+    /** Izuki came back to the front (often from Android Settings). */
+    onResume(callback) {
+      const p = control();
+      if (!p?.addListener) return null;
+      try { return p.addListener("resume", () => { try { callback?.(); } catch {} }); } catch { return null; }
+    },
+    /** Android connected or dropped Izuki's accessibility service. */
+    onControl(callback) {
+      const p = control();
+      if (!p?.addListener) return null;
+      try { return p.addListener("control", (data) => { try { callback?.(!!data?.connected); } catch {} }); } catch { return null; }
+    },
+    /** Where the floating orb is and why it isn't showing. */
+    async orbStatus() {
+      try { return (await control()?.orbStatus?.()) || null; } catch { return null; }
+    },
     /** The phone's accessibility screen: {app, items, w, h, locked}. */
     async screen() {
       try { return (await control()?.screen()) || null; } catch { return null; }
@@ -239,6 +288,51 @@
     async gesture(args) {
       try { return (await control()?.gesture(args)) || null; } catch { return null; }
     },
+    /**
+     * Wait until Android shows `pkg` in front (true), or give up (false).
+     * null when it can't be checked (no package id from an older APK, or
+     * control off) — then nobody should claim either way.
+     */
+    async waitForApp(pkg, ms = 8000) {
+      if (!pkg || !control()?.screen) return null;
+      const until = Date.now() + ms;
+      while (Date.now() < until) {
+        let s = null;
+        try { s = await control().screen(); }
+        catch (e) {
+          // Control off or the phone locked: this can't be checked, so don't claim either way.
+          if (/off|locked/i.test(String(e?.message || e))) return null;
+          s = null;
+        }
+        if (s && s.app === pkg && Array.isArray(s.items) && s.items.length) return true;
+        await new Promise((r) => setTimeout(r, 350));
+      }
+      return false;
+    },
+    /** Plain words for why a phone action didn't happen ({reason} from the native side). */
+    why(result, what = "") {
+      const reason = String(result?.reason || "");
+      const thing = what || "that";
+      switch (reason) {
+        case "off": return "Android control is off. Turn it on in Settings → Phone → Phone readiness.";
+        case "not-found": return `I couldn't find ${thing} on this screen.`;
+        case "needs-person": return `That control${result?.matched ? ` (“${result.matched}”)` : ""} sends, pays, buys or deletes — tap it yourself.`;
+        case "disabled": return `${what ? what[0].toUpperCase() + what.slice(1) : "That control"} is greyed out right now.`;
+        case "hidden": return `${what || "That control"} is off the screen. Scroll to it first.`;
+        case "no-box": return "There's no text box selected on this screen. Open the search field first.";
+        case "password": return "That's a password box — I never type passwords.";
+        case "refused": return "Android didn't accept the typing in that box.";
+        case "nothing-scrolls": return "Nothing on this screen scrolls.";
+        case "at-end": return "That's already the bottom of the list.";
+        case "at-top": return "That's already the top of the list.";
+        case "cancelled": return "Android cancelled the touch (something else on screen took it).";
+        case "unconfirmed": return "I sent the touch, but Android never confirmed it.";
+        case "stale": return "The screen changed before I could press it. Try again.";
+        case "no-window": return "I can't read this screen (it may be protected).";
+        case "no-search-control": return "I couldn't find a Search key here.";
+        default: return "";
+      }
+    },
     /** Open an installed app by name. */
     async launch(name) {
       try { return (await control()?.launch({ name, orb: orbOverApps })) || null; } catch { return null; }
@@ -247,15 +341,21 @@
     async navigate(to) {
       try { return (await control()?.navigate({ to: String(to || "").trim(), orb: orbOverApps })) || null; } catch { return null; }
     },
-    /** The floating glass orb over other apps: listen, think, talk, or idle. */
-    async orb(state = "idle", text = "") {
+    /**
+     * The floating glass orb over other apps: listen, think, talk, rest or
+     * idle. Listen/think/talk are leases (`lease` ms, default 20 s): send them
+     * again while they stay true, or the orb falls back to resting.
+     */
+    async orb(state = "idle", text = "", lease) {
       if (!control() || platform() === "web") return false;
       const mode = String(state || "idle");
       // "Keep the glass orb over other apps" is the one gate for every
       // producer, including Maps and Drive. Idle is always allowed so turning
       // the setting off can take an existing orb away.
       if (!orbOverApps && mode !== "idle" && mode !== "hide") return false;
-      try { await control().orb({ state: mode, text: String(text || "") }); return true; } catch { return false; }
+      const args = { state: mode, text: String(text || "") };
+      if (Number.isFinite(lease)) args.lease = Math.max(0, Math.round(lease));
+      try { await control().orb(args); return true; } catch { return false; }
     },
     /** Installed launchable apps: [{ name, id }]. */
     async apps() {
@@ -280,6 +380,13 @@
     async wake(on) {
       try { return (await control()?.wake({ on: !!on })) || null; }
       catch (error) { return { error: String(error?.message || error || "wake_failed") }; }
+    },
+    /** The person's own wake phrase besides "Hey Nova" ("" clears it). {phrase} or {error}. */
+    async setWakePhrase(phrase) {
+      const p = control();
+      if (!p?.setWakePhrase) return { error: "Update the Android companion to choose your own wake phrase." };
+      try { return (await p.setWakePhrase({ phrase: String(phrase || "").trim() })) || {}; }
+      catch (error) { return { error: String(error?.message || error || "That phrase can't be used.") }; }
     },
     /** A phrase from a wake that arrived before the page was ready. */
     async takeWake() {
@@ -407,29 +514,37 @@
       const open = text.match(/^open (.+)$/);
       if (open) {
         const app = await window.IzukiNative.launch(open[1]);
-        return app?.name ? `Opened ${app.name}. Tap the orb to come back to me.` : null;
+        if (!app?.name) return null;
+        // Opening is only "opened" once Android shows that app in front.
+        const shown = await window.IzukiNative.waitForApp?.(app.id, 6000);
+        return shown === false
+          ? `I asked Android to open ${app.name}, but it hasn't come to the front yet.`
+          : `Opened ${app.name}. Tap the orb to come back to me.`;
       }
       const tap = text.match(/^(?:tap|press|click) (.+)$/);
       if (tap) {
         const done = await window.IzukiNative.act({ op: "tapText", text: tap[1] });
-        return done?.done ? `Tapped ${tap[1]}.` : failed;
+        if (done?.done) return `Tapped ${done.matched && done.matched.toLowerCase() !== tap[1] ? `“${done.matched}”` : tap[1]}.`;
+        return window.IzukiNative.why(done, `“${tap[1]}”`) || failed;
       }
       const scroll = text.match(/^scroll (up|down)$/);
       if (scroll) {
         const done = await window.IzukiNative.act({ op: "scroll", dir: scroll[1] });
-        return done?.done ? `Scrolled ${scroll[1]}.` : failed;
+        if (done?.done) return `Scrolled ${scroll[1]}.`;
+        return window.IzukiNative.why(done, "") || failed;
       }
       const search = text.match(/^search(?: for)? (.+)$/);
       if (search) {
         const typed = await window.IzukiNative.act({ op: "type", text: search[1], n: 0 });
-        if (!typed?.done) return failed;
-        await window.IzukiNative.act({ op: "submit" });
-        return `Searched for ${search[1]}.`;
+        if (!typed?.done) return window.IzukiNative.why(typed, "") || failed;
+        const sent = await window.IzukiNative.act({ op: "submit" });
+        return sent?.done ? `Searched for ${search[1]}.` : `I typed “${search[1]}”, but couldn't find a Search key to press.`;
       }
       const type = text.match(/^type (.+)$/);
       if (type) {
         const done = await window.IzukiNative.act({ op: "type", text: type[1], n: 0 });
-        return done?.done ? `Typed ${type[1]}.` : failed;
+        if (done?.done) return done.verified === false ? `I typed ${type[1]}, but the box didn't show it back to me — check it.` : `Typed ${type[1]}.`;
+        return window.IzukiNative.why(done, "") || failed;
       }
       if (/^(read|what'?s on) (?:the |my )?screen$/.test(text)) {
         const screen = await window.IzukiNative.screen();

@@ -33,4 +33,11 @@ assert.equal(P.findTarget(strip, "pl-swipe-zone").x, 0, "a view id also finds it
 assert.equal(P.center({ x: 0, y: 0, w: 0, h: 50 }), null, "zero-width targets are not tapped");
 assert.equal(P.center(null), null);
 
+// Page pixels → screen pixels, measured from a target both sides can see.
+const m = P.screenMap({ left: 10, top: 100, width: 100, height: 40 }, { x: 50, y: 400, w: 300, h: 120 });
+assert.equal(m.scale, 3, "screen pixels per page pixel");
+assert.equal(m.x + 10 * m.scale, 50, "the target maps back onto its own left edge");
+assert.equal(m.y + 100 * m.scale, 400, "and its own top");
+assert.equal(P.screenMap(null, { x: 1, y: 1, w: 1, h: 1 }), null);
+
 console.log("Autopilot sheet: target lookup and coordinate mapping pass.");

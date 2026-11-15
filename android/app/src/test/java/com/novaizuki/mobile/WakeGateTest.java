@@ -126,6 +126,19 @@ public class WakeGateTest {
     assertFalse(WakeGate.isWake(null, true));
   }
 
+  @Test public void theirOwnPhrase() {
+    assertEquals("hey jarvis", WakeGate.cleanPhrase("  Hey, Jarvis! "));
+    assertEquals("too short to be safe", "", WakeGate.cleanPhrase("jarvis"));
+    assertEquals("", WakeGate.cleanPhrase("one two three four five"));
+    assertEquals("", WakeGate.cleanPhrase(null));
+    assertTrue(WakeGate.isWake("hey jarvis what's the time", false, "hey jarvis"));
+    assertTrue("Hey Nova keeps working", WakeGate.isWake("hey nova", false, "hey jarvis"));
+    assertFalse(WakeGate.isWake("jarvis what's the time", false, "hey jarvis"));
+    assertTrue("a clipped start may lose the first word", WakeGate.isWake("jarvis what's the time", true, "hey jarvis"));
+    assertFalse("only as whole words", WakeGate.isWake("they jarvised it", false, "hey jarvis"));
+    assertFalse("an unusable phrase never wakes", WakeGate.isWake("computer", false, "computer"));
+  }
+
   @Test public void levels() {
     assertEquals(-96, WakeGate.levelDb(new short[320], 320), 0.001);
     double loud = WakeGate.levelDb(tone(0.5, 320), 320);

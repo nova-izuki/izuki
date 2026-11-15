@@ -65,6 +65,12 @@ public class IzukiWakeService extends Service implements RecognitionListener {
   private static final int NOTIFY_ID = 7311;
   private static final String PREFS = "izuki_native";
   static final String KEY_WAKE = "wake_on";
+  /** The person's own wake phrase, besides "Hey Nova" (see WakeGate.cleanPhrase). */
+  static final String KEY_PHRASE = "wake_phrase";
+
+  static String phrase(Context context) {
+    return WakeGate.cleanPhrase(context.getSharedPreferences(PREFS, MODE_PRIVATE).getString(KEY_PHRASE, ""));
+  }
 
   private static final int RATE = 16000;
   private static final int FRAME = 320; // 20 ms
@@ -200,6 +206,7 @@ public class IzukiWakeService extends Service implements RecognitionListener {
       out.put("micOpen", micOpen());
       out.put("appInFront", appInFront);
       out.put("lastError", lastError);
+      out.put("phrase", phrase(context));
       out.put("lastErrorAt", lastErrorAt);
       if (s != null) {
         long now = SystemClock.elapsedRealtime();
@@ -634,7 +641,7 @@ public class IzukiWakeService extends Service implements RecognitionListener {
     ArrayList<String> words = results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
     if (words != null) {
       for (String text : words) {
-        if (WakeGate.isWake(text, clipped)) { onWake(text); return; }
+        if (WakeGate.isWake(text, clipped, phrase(this))) { onWake(text); return; }
       }
       if (!words.isEmpty()) synchronized (gate) { gate.worked(); }
     }
