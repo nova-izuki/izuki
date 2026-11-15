@@ -4908,12 +4908,15 @@ fn submit_task(
             final_word = Some(said);
             break;
         }
-        // This task's own direct results only; anything else is stale.
-        let said: Vec<String> = std::mem::take(&mut *DIRECT_SAID.lock())
-            .into_iter()
-            .filter(|(t, _)| *t == working.0)
-            .map(|(_, s)| s)
-            .collect();
+        // This task's own direct results only. Another task's stay where
+        // they are for it (an older loop still draining must never take a
+        // newer task's result); the next task start clears what's left.
+        let said: Vec<String> = {
+            let mut all = DIRECT_SAID.lock();
+            let (mine, others): (Vec<_>, Vec<_>) = std::mem::take(&mut *all).into_iter().partition(|(t, _)| *t == working.0);
+            *all = others;
+            mine.into_iter().map(|(_, s)| s).collect()
+        };
         if !said.is_empty() {
             let note = format!(
                 "Your direct step(s) returned this. It is real data from this PC: base what you say on it, quote it, \
