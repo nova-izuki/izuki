@@ -459,6 +459,9 @@ pub struct Look {
     /// A GRADED quiz or test with answer choices on screen (assess.rs): the
     /// student picks. A practice page the page itself calls practice isn't.
     pub test_page: bool,
+    /// A quiz the page itself calls practice, with choices on screen: Izuki
+    /// may answer it on the page when asked.
+    pub practice_page: bool,
     /// Where each answer choice is on screen (a mark there marks the choice).
     pub choice_rects: Vec<Rect>,
 }
@@ -490,7 +493,8 @@ impl Look {
             .collect();
         let options: Vec<String> = chosen.iter().map(|c| c.name.trim().to_lowercase()).collect();
         let choice_rects = chosen.iter().map(|c| c.rect).collect();
-        Look { test_page: kind == crate::assess::Kind::Graded && options.len() >= 2, options, choice_rects }
+        let choices = options.len() >= 2;
+        Look { test_page: kind == crate::assess::Kind::Graded && choices, practice_page: kind == crate::assess::Kind::Practice && choices, options, choice_rects }
     }
 }
 
@@ -538,6 +542,12 @@ pub(crate) fn direct_answer_requested(prompt: &str) -> bool {
         || matches!(s.trim().trim_end_matches(['?', '!', '.']), "answer" | "answer it" | "answer this" | "ans")
 }
 
+/// "Answer this" on a practice quiz (the page says so): done on the page,
+/// then said in a line. It used to
+/// get DIRECT_ANSWER_PROMPT's "explanation-only" on every page, so Izuki named
+/// the answer and never clicked it, even where acting was allowed.
+const ANSWER_ON_PAGE_PROMPT: &str = "The user asked you to answer what's on the page, and it is not a graded quiz or test, so do it on the page: click the right choice or type the answer into its box (by its control number), then say in one short line which you picked and why. If several questions are visible, answer the one they mean (the first unanswered one if that's unclear). Never press Submit, Finish or Send unless they said so in this request.\n";
+
 const DIRECT_ANSWER_PROMPT: &str = "The user explicitly asked for the answer. Answer the visible factual question directly: answer first, with the option label only when clearly visible, then a short explanation. Do not refuse to name a factual answer or turn this into a walkthrough. Do not guess unreadable choices. If you are not certain of the fact, say which part you are unsure about instead of stating it confidently — being wrong costs them marks, and saying it is probably B but they should check whether X applies is far more use than a confident wrong letter. This is an explanation-only request: do not select, click, type or submit answers. Do not offer to save Notes.\n";
 
 /// On a quiz or test page: what Izuki says never names the right choice and
@@ -563,6 +573,9 @@ fn keep_answers_out(plan: &mut VisionPlan, steps: &mut Vec<ActionStep>, look: &L
     }
 }
 
+/// Added to an answer named on a graded quiz.
+const GRADED_NOT_CLICKED: &str = "(I didn't click it: this looks like a graded quiz, so you pick the answer yourself. If the page says it's practice, I can pick answers with you.)";
+
 fn apply_answer_mode(plan: &mut VisionPlan, steps: &mut Vec<ActionStep>, look: &Look, prompt: &str) {
     // Only a quiz or test needs the answer kept out of Izuki's hands. On an
     // ordinary page this used to throw away the scroll that reaches the
@@ -584,6 +597,11 @@ fn apply_answer_mode(plan: &mut VisionPlan, steps: &mut Vec<ActionStep>, look: &
                 && !look.options.contains(&name)
         });
         plan.ask = None;
+        // Said, never clicked — and the reply says so, or "Option D" reads
+        // as if it had been picked on the page.
+        if !plan.summary.trim().is_empty() && !plan.summary.contains(GRADED_NOT_CLICKED) {
+            plan.summary = format!("{} {GRADED_NOT_CLICKED}", plan.summary.trim());
+        }
     } else {
         keep_answers_out(plan, steps, look);
     }
@@ -980,6 +998,7 @@ fn ask_model(
     let title = if tab_mode && !tab_title.is_empty() { tab_title } else { uia::foreground_title() };
     let look = Look::of(&controls, &page_text, &title);
     let on_a_test = look.test_page;
+    let on_practice = look.practice_page;
     LOOK.with(|l| *l.borrow_mut() = look);
     let req = VisionRequest {
         image_jpeg,
@@ -999,7 +1018,14 @@ fn ask_model(
             + &crate::voices::prompt_block()
             + &crate::lessons::prompt_block(&uia::foreground_app(), crate::ext::snapshot_url_cached().as_deref())
             + crate::selfknow::PROMPT
-            + if direct_answer_requested(&session.prompt) { DIRECT_ANSWER_PROMPT } else if on_a_test { QUIZ_PROMPT } else { "" }
+            + match (on_a_test, direct_answer_requested(&session.prompt)) {
+                (true, true) => DIRECT_ANSWER_PROMPT,
+                (true, false) => QUIZ_PROMPT,
+                // Practice: answered on the page. Anywhere else, "answer this"
+                // is left to the request itself (it may mean "tell me").
+                (false, true) if on_practice => ANSWER_ON_PAGE_PROMPT,
+                _ => "",
+            }
             + if wants_pointing(&session.prompt) { POINTING_PROMPT } else { "" },
         windows: uia::open_windows(14),
         page_text,
@@ -4919,6 +4945,17 @@ fn submit_task(
             honest = Some(plan.summary.clone());
         }
     }
+    // Asked to do something on the screen and nothing was done at all: the
+    // answer alone must not read as if it had been ("Option D" is not a
+    // click). "Already open" and the like are left as they are.
+    if honest.is_none() && all_steps.is_empty() && crate::companion::asks_to_do(&prompt) {
+        let said = plan.summary.trim().to_lowercase();
+        if !said.is_empty() && !said.contains("already") && !said.contains("didn't click") && !said.contains("didn’t click") && !said.contains("i didn't") {
+            eprintln!("[agent] a do-request ended with no action — saying so");
+            plan.summary = format!("{} (I didn't click or type anything on the screen for this.)", plan.summary.trim());
+            honest = Some(plan.summary.clone());
+        }
+    }
     if settings.autosave_flows && completed && alive() && !all_steps.is_empty() && !prompt.starts_with("Explain this video frame on my screen.") {
         let thumbnail = frame.downscaled(360).to_jpeg_data_url(58).ok();
         let app_name = uia::foreground_app();
@@ -6063,6 +6100,7 @@ mod speed_tests {
         let mut steps = vec![serde_json::from_value(serde_json::json!({"action":"click","x":10,"y":10})).unwrap()];
         super::apply_answer_mode(&mut plan, &mut steps, &look, "give me the answer");
         assert!(plan.summary.starts_with("B. Botnet."));
+        assert!(plan.summary.contains("didn't click it"), "the reply says the answer wasn't picked on the page");
         assert!(steps.is_empty(), "an answer request cannot authorize page actions");
     }
 
@@ -6319,7 +6357,7 @@ mod speed_tests {
         assert!(Look::of(&controls, "Question 3 of 20", "uCertify").test_page);
         assert!(Look::of(&controls, "", "Test 3 - Network Security").test_page, "\"Test\" at the very start");
         // Said and drawn on a quiz page: the question explained, the answer kept out.
-        let look = Look { options: vec!["a. phishing".into(), "b. personally identifiable information".into()], test_page: true, choice_rects: vec![Rect { x: 100, y: 300, w: 400, h: 30 }] };
+        let look = Look { options: vec!["a. phishing".into(), "b. personally identifiable information".into()], test_page: true, practice_page: false, choice_rects: vec![Rect { x: 100, y: 300, w: 400, h: 30 }] };
         let mut plan = VisionPlan { summary: "This one is about data that can identify someone. The answer is B, personally identifiable information.".into(), ..Default::default() };
         let mark = |words: &str| step(serde_json::json!({ "action": "draw", "shape": "underline", "x": 10, "y": 10, "text_to_type": words }));
         let mut steps = vec![mark("personally identifiable information"), mark("identify a person")];
@@ -6362,6 +6400,7 @@ mod speed_tests {
         // The page says practice: Izuki can pick, like on any page.
         let practice = Look::of(&controls, "Self-check: question 2 of 5", "Practice Quiz: Chapter 3");
         assert!(!practice.test_page, "a practice page isn't a test");
+        assert!(practice.practice_page, "and \"answer this\" there is done on the page");
         let mut steps = vec![click("B. PII"), click("Check answer"), click("Next")];
         assert!(guard_steps_with(&mut steps, "answer these practice questions", false, "chrome", &practice).is_none());
         assert_eq!(steps.len(), 3, "every step stays on practice");
