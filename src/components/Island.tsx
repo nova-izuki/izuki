@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { AnimatePresence, motion } from "motion/react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { AlarmClock, Camera, Check, GripHorizontal, Mic, Pause, Pencil, Play, Settings2, SkipBack, SkipForward, Sparkles, Square, X } from "lucide-react";
 import { api, CAMERA_PICTURE_KEY, emit, EV, IS_TAURI, on } from "../lib/ipc";
 import { workArea } from "../lib/floating";
@@ -151,6 +151,12 @@ export function Island({
   wave = "auto",
   look = "default",
   size = "normal",
+  opacity = 94,
+  blur = 0,
+  accent = "#22d3ee",
+  shadow = true,
+  animated = true,
+  autoExpand = false,
   visualizing = false,
   onVisualize,
   onPlaying,
@@ -170,12 +176,26 @@ export function Island({
   look?: string;
   /** "small", "normal" or "large" (setting island_size). */
   size?: string;
+  /** Glass opacity, percent. */
+  opacity?: number;
+  /** Glass blur in px (0 for the low-power default). */
+  blur?: number;
+  /** Accent colour for the rim and glow. */
+  accent?: string;
+  /** Draw the soft shadow. */
+  shadow?: boolean;
+  /** Springy transitions; off is calm/low-power. */
+  animated?: boolean;
+  /** Open into the task panel when a task starts. */
+  autoExpand?: boolean;
   /** Music mode is showing (the orb flowing with the music). */
   visualizing?: boolean;
   onVisualize?: () => void;
   /** Music started or stopped on the PC. */
   onPlaying?: (playing: boolean) => void;
 }) {
+  const reducedMotion = useReducedMotion();
+  const calm = !animated || !!reducedMotion;
   const [status, setStatus] = useState<IslandStatus>({ media: null, fullscreen: false, suggestions: [], context: "" });
   const [peek, setPeek] = useState<Suggestion | null>(null);
   const peeked = useRef(new Map<string, number>());
@@ -612,6 +632,15 @@ export function Island({
             ? { kind: "activity", a: update }
             : { kind: "rest" };
 
+  // A task can open the panel once, when it starts. Turning the setting off
+  // keeps the compact progress notch; closing it by hand stays closed.
+  const taskActive = live.kind === "working" || live.kind === "approval";
+  const wasTaskActive = useRef(false);
+  useEffect(() => {
+    if (autoExpand && taskActive && !wasTaskActive.current && !openRef.current) setOpen(true);
+    wasTaskActive.current = taskActive;
+  }, [autoExpand, taskActive]);
+
   // Your character reacts beside the Island (IslandPal): it points at what
   // needs you and cheers when a task or your missions finish.
   const [palCue, setPalCue] = useState<PalCue | null>(null);
@@ -643,21 +672,25 @@ export function Island({
 
   const scale = islandScale(size);
   const fitted = fitIslandPosition(position, scale);
+  // A notch is attached to the edge, not floating six pixels under it. Once
+  // it is dragged away it keeps its own place like the other styles.
+  const attached = look === "notch" && docked && !free;
+  const top = attached ? workArea().top : fitted.y;
   return (
     <>
     <IslandPal cue={palCue} pill={pill} away={palAway} />
     <div
       className="pointer-events-none fixed z-[60] flex justify-center"
-      style={{ left: fitted.x - ISLAND_WIDTH / 2, width: ISLAND_WIDTH, top: fitted.y, transform: scale !== 1 ? `scale(${scale})` : undefined, transformOrigin: "top center" }}
+      style={{ left: fitted.x - ISLAND_WIDTH / 2, width: ISLAND_WIDTH, top, transform: scale !== 1 ? `scale(${scale})` : undefined, transformOrigin: "top center" }}
     >
       <motion.div
         ref={pill}
         layout
         data-izk-hit={open ? "" : undefined}
-        transition={{ type: "spring", stiffness: 520, damping: 38, mass: 0.8 }}
+        transition={calm ? { duration: 0 } : { type: "spring", stiffness: 520, damping: 38, mass: 0.8 }}
         className={
           "izk-island relative overflow-hidden text-white " +
-          (open ? "pointer-events-auto" : "pointer-events-none") +
+          (open ? (look === "notch" ? "pointer-events-none" : "pointer-events-auto") : "pointer-events-none") +
           // At rest: the always-on pill, or fully hidden until your mouse
           // reaches the top edge (or something's happening). Pulled out of
           // the dock it stays where you put it and is always there.
@@ -666,9 +699,18 @@ export function Island({
           // Lit up while Izuki is really listening, thinking or working.
           (busy || orb === "listening" || orb === "speaking" || live.kind === "missions" ? " izk-island-active" : "") +
           (look !== "default" ? ` izk-theme-${look}` : "") +
-          (docked ? " izk-island-docked" : "")
+          (docked ? " izk-island-docked" : "") +
+          (live.kind === "rest" && !open ? " izk-island-resting" : "") +
+          (!shadow ? " izk-island-flat" : "") +
+          (blur > 0 ? " izk-island-blurred" : "") +
+          (calm ? " izk-island-calm" : "")
         }
-        style={{ borderRadius: look === "squircle" ? (open ? 16 : 11) : open ? 28 : 22 }}
+        style={{
+          borderRadius: look === "squircle" ? (open ? 16 : 11) : open ? 28 : 22,
+          "--izk-island-alpha": String(Math.min(1, Math.max(0.5, opacity / 100))),
+          "--izk-island-blur": `${Math.min(24, Math.max(0, blur))}px`,
+          "--izk-island-accent": accent,
+        } as CSSProperties}
         // Esc closes it from anywhere inside (not just the Ask box).
         onKeyDown={(e) => {
           if (e.key === "Escape" && menu) setMenu(null);
@@ -689,6 +731,12 @@ export function Island({
           setOpen(false);
         }}
       >
+        {look === "notch" && (
+          <>
+            <span aria-hidden className="izk-notch-shell" />
+            <span aria-hidden data-izk-hit="" className="izk-notch-hit" />
+          </>
+        )}
         {menu && (
           <IslandMenu
             at={menu}
@@ -710,7 +758,12 @@ export function Island({
         )}
         <AnimatePresence mode="popLayout" initial={false}>
           {open ? (
-            <motion.div key="open" {...fade} className="relative z-10 w-[372px] max-w-[calc(100vw-32px)] p-3.5">
+            <motion.div
+              key="open"
+              {...fade}
+              className={`relative z-10 w-[372px] max-w-[calc(100vw-32px)] p-3.5 ${look === "notch" ? "izk-notch-content" : ""}`}
+              style={look === "notch" ? { paddingLeft: 14, paddingRight: 14, paddingBottom: 14 } : undefined}
+            >
               <Expanded
                 live={live}
                 media={media}
@@ -739,7 +792,7 @@ export function Island({
                 due={due}
                 remote={remote}
                 scale={scale}
-                maxH={(typeof window === "undefined" ? 800 : window.innerHeight) - fitted.y - 16}
+                maxH={(typeof window === "undefined" ? 800 : window.innerHeight) - top - 16}
               />
             </motion.div>
           ) : live.kind === "rest" ? (
@@ -749,9 +802,15 @@ export function Island({
             // whether it's there at rest, not how big it is — growing it into
             // a pill made something that sits over everything all day far too
             // loud.
-            <motion.div key="rest" {...fade} className="h-[5px] w-[72px]" />
+            <motion.div
+              key="rest"
+              {...fade}
+              className={look === "notch" ? "izk-notch-rest flex h-[32px] w-[148px] items-center justify-center" : "h-[5px] w-[72px]"}
+            >
+              {look === "notch" && <span aria-hidden className="izk-notch-rest-dot" />}
+            </motion.div>
           ) : (
-            <motion.div key={live.kind} {...fade} className="flex h-[34px] items-center gap-2.5 pl-1.5 pr-3">
+            <motion.div key={live.kind} {...fade} className={`flex h-[34px] items-center gap-2.5 pl-1.5 pr-3${look === "notch" ? " izk-notch-content" : ""}`}>
               <Compact live={live} dancing={dancing} wave={wave} />
             </motion.div>
           )}

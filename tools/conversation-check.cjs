@@ -155,6 +155,17 @@ is("teach me goes to the screen", mem.needsScreen("Teach me"), true);
 is("so does doing it together", mem.needsScreen("do it with me"), true);
 is("but an explicit background lesson stays in the background", mem.needsScreen("Teach me about firewalls in the background"), false);
 is("a plain question doesn't", mem.needsScreen("what is a firewall"), false);
+is("but 'answer this' is about the question on screen", mem.needsScreen("answer this"), true);
+is("and 'what's the answer to number 3' too", mem.needsScreen("what's the answer to number 3"), true);
+is("a general factual question still stays in chat", mem.needsScreen("what is the capital of France"), false);
+is("the answer request is recognised", mem.answersOnScreenQuestion("answer this question"), true);
+is("so is a short 'give ans'", mem.answersOnScreenQuestion("give me the answer"), true);
+is("and bare 'give ans'", mem.answersOnScreenQuestion("give ans"), true);
+is("and 'answer question 5'", mem.answersOnScreenQuestion("answer question 5"), true);
+is("and 'can you answer this'", mem.answersOnScreenQuestion("can you answer this"), true);
+is("and 'answer all of them'", mem.answersOnScreenQuestion("answer all of them"), true);
+is("an email is not a quiz answer", mem.answersOnScreenQuestion("answer my email"), false);
+is("the prompt never submits", /Do not .*submit/i.test(mem.answerOnScreenPrompt("answer this")), true);
 
 fresh();
 mem.remember("user", "what's the weather in Lagos");

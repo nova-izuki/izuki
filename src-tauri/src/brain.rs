@@ -1022,8 +1022,9 @@ fn ask_model(
                 (true, true) => DIRECT_ANSWER_PROMPT,
                 (true, false) => QUIZ_PROMPT,
                 // Practice: answered on the page. Anywhere else, "answer this"
-                // is left to the request itself (it may mean "tell me").
+                // is still a factual answer: say it, don't act on the page.
                 (false, true) if on_practice => ANSWER_ON_PAGE_PROMPT,
+                (false, true) => DIRECT_ANSWER_PROMPT,
                 _ => "",
             }
             + if wants_pointing(&session.prompt) { POINTING_PROMPT } else { "" }

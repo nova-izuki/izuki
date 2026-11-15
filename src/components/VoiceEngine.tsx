@@ -6,7 +6,7 @@ import { useDictation } from "../hooks/useDictation";
 import { isNoteStudyPrompt } from "../lib/notes";
 import { AIR_SLOTS, actionLabel, airBindings, parseAirVoice, slotLabel } from "../lib/airActions";
 import { autoFacts, matchLocalCommand, type LocalCommand } from "../lib/voiceCommands";
-import { answersInBackground, cancelChat, chatLane, directionsTask, looksLikeDirections, needsApps, needsScreen, recentHistory, remember, wantsBackground, wantsToWatch, type LaneResult } from "../lib/conversation";
+import { answerOnScreenPrompt, answersOnScreenQuestion, answersInBackground, cancelChat, chatLane, directionsTask, looksLikeDirections, needsApps, needsScreen, recentHistory, remember, wantsBackground, wantsToWatch, type LaneResult } from "../lib/conversation";
 import { speakable } from "../lib/speakable";
 import { parseInstant, type Instant } from "../lib/instant";
 import { isEcho, noteSaid, noteStillSaying } from "../lib/echo";
@@ -603,10 +603,9 @@ function chime(up = true) {
 /** "ans", "answer?", "what's the answer", "answer pls" — on its own, that's
  * the question on the screen. */
 function answerOnScreen(t: string): string {
-  const bare = t.trim().replace(/[?.!]+$/, "").toLowerCase();
-  return /^(?:(?:the|what'?s the|whats the|give me the|tell me the|say the)\s+)?answers?(?:\s+(?:it|this|that|please|pls|now|quick|fast))?$/.test(bare)
-    ? "Answer the question on my screen directly. Give the answer first (including the option label if clearly visible), then explain why in one or two sentences. If the question or options are unreadable, say what you need to see. Do not start a walkthrough, offer Notes, or click or submit anything."
-    : t;
+  // Bare "answer" and the many ways people point at the question in front of
+  // them ("answer this", "what's the answer to number 3", "give ans").
+  return answersOnScreenQuestion(t) ? answerOnScreenPrompt(t) : t;
 }
 
 // ---- teacher mode -----------------------------------------------------------
