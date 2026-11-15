@@ -49,6 +49,10 @@ public class MainActivity extends BridgeActivity {
     super.onResume();
     inFront = true;
     IzukiWakeService.foreground(this, true);
+    // Coming back from Settings must never leave a wake/page orb over the
+    // permission screen. The page redraws its own orb when it actually needs one.
+    IzukiAccessibilityService.orbFor("wake", "idle", "");
+    IzukiAccessibilityService.orbFor("page", "idle", "");
     IzukiControlPlugin.notifyResume();
   }
 

@@ -22,10 +22,17 @@
   let longTimer = null;
 
   /** The accessibility tree's copy of a test target. Pure and testable. */
-  function findTarget(screen, needle) {
+  function findTarget(screen, needle, widest = false) {
     const wanted = String(needle || "").toLowerCase();
     const items = Array.isArray(screen?.items) ? screen.items : [];
-    return items.find((item) => String(item?.text || "").toLowerCase().includes(wanted)) || null;
+    const matches = items.filter((item) =>
+      String(item?.text || "").toLowerCase().includes(wanted) ||
+      String(item?.id || "").toLowerCase().includes(wanted.replace(/\s+/g, "-")));
+    if (!matches.length) return null;
+    // A swipe strip can expose both the strip and its child text. The widest
+    // match is the thing a finger must actually drag across.
+    if (widest) matches.sort((a, b) => (Number(b.w) * Number(b.h)) - (Number(a.w) * Number(a.h)));
+    return matches[0];
   }
 
   /** Centre of an accessibility item in the phone's own pixels. */
@@ -265,12 +272,12 @@
     }
   }
 
-  async function targetOnScreen(bridge, id, needle) {
+  async function targetOnScreen(bridge, id, needle, widest = false) {
     const el = $(id);
     el?.scrollIntoView?.({ block: "center" });
-    await sleep(300);
+    await sleep(450);
     const screen = await bridge.screen?.();
-    return findTarget(screen, needle);
+    return findTarget(screen, needle, widest);
   }
 
   async function testTap(bridge) {
@@ -296,7 +303,7 @@
 
   async function testSwipe(bridge) {
     const zone = $("pl-swipe-zone");
-    const item = await targetOnScreen(bridge, "pl-swipe-zone", "swipe test");
+    const item = await targetOnScreen(bridge, "pl-swipe-zone", "swipe test", true);
     if (!zone || !item) return { ok: false, text: "The swipe strip was not listed by the screen reader." };
     zone.scrollLeft = 0;
     const y = Math.round(item.y + item.h / 2);

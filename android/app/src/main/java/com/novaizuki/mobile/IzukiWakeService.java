@@ -85,6 +85,8 @@ public class IzukiWakeService extends Service implements RecognitionListener {
   private long callHoldUntil;
   private long lastWake;
   private long lastWakeWall;
+  /** Guards against several on/resume calls re-arming a live listener. */
+  private long lastStartAt;
   private long retryAt;
   private long sessionStart;
   private int sessionCount;
@@ -279,6 +281,17 @@ public class IzukiWakeService extends Service implements RecognitionListener {
       fail(WakeGate.Failure.UNAVAILABLE, "Android's speech recognition isn't available on this phone.");
       return;
     }
+    long now = SystemClock.elapsedRealtime();
+    // The listener is already running: a repeated on/resume must not cancel
+    // the session or reopen the microphone. That cancel/reopen pair was the
+    // "connecting / disconnecting" sound the old app made over and over.
+    if (state == WakeGate.State.ARMED || state == WakeGate.State.HEARING || state == WakeGate.State.PAUSED) {
+      showState();
+      return;
+    }
+    if (state == WakeGate.State.QUIET) { arm(); return; }
+    if (now - lastStartAt < 1500 && state != WakeGate.State.ERROR) return;
+    lastStartAt = now;
     if (state == WakeGate.State.OFF) move(WakeGate.State.STARTING);
     if (state == WakeGate.State.ERROR) {
       gate.reset();

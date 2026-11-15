@@ -188,10 +188,17 @@ public class IzukiAccessibilityService extends AccessibilityService {
    */
   private static AccessibilityNodeInfo appRoot(IzukiAccessibilityService service) {
     AccessibilityNodeInfo root = service.getRootInActiveWindow();
-    boolean ours = root != null && root.getPackageName() != null
-        && service.getPackageName().contentEquals(root.getPackageName()) && !MainActivity.inFront;
-    if (root != null && !ours) return root;
     try {
+      // The active window can be Izuki's own non-focusable orb. Never read the
+      // orb as "the screen": find the focused application window under it.
+      if (root != null) {
+        int id = root.getWindowId();
+        boolean overlay = false;
+        for (AccessibilityWindowInfo w : service.getWindows()) {
+          if (w.getId() == id && w.getType() == AccessibilityWindowInfo.TYPE_ACCESSIBILITY_OVERLAY) { overlay = true; break; }
+        }
+        if (!overlay) return root;
+      }
       for (AccessibilityWindowInfo w : service.getWindows()) {
         if (w.getType() != AccessibilityWindowInfo.TYPE_APPLICATION) continue;
         if (!w.isFocused() && !w.isActive()) continue;
@@ -200,6 +207,19 @@ public class IzukiAccessibilityService extends AccessibilityService {
       }
     } catch (Exception ignored) { }
     return root;
+  }
+
+  /** Android's own Settings / permission screens: the orb is never shown over them. */
+  private static boolean settingsInFront(IzukiAccessibilityService service) {
+    try {
+      AccessibilityNodeInfo root = service.getRootInActiveWindow();
+      CharSequence pkg = root == null ? null : root.getPackageName();
+      if (pkg == null) return false;
+      String p = pkg.toString().toLowerCase(Locale.ROOT);
+      return p.equals("com.android.settings") || p.contains(".settings") || p.contains("permissioncontroller");
+    } catch (Exception e) {
+      return false;
+    }
   }
 
   /** The app in front and what's on screen: [{n, text, kind, x, y, w, h, focused, id}]. */
@@ -259,13 +279,21 @@ public class IzukiAccessibilityService extends AccessibilityService {
     if (node.isPassword()) return;
     String label = labelOf(node);
     boolean acts = node.isClickable() || node.isFocusable() || node.isEditable() || node.isCheckable() || node.isScrollable();
-    if (!label.isEmpty() || (acts && node.isEditable())) {
+    boolean scrollable = node.isScrollable();
+    // Icon-only buttons and scroll strips often have no text. They are still
+    // controls: list them with bounds so Autopilot can reach them.
+    if (label.isEmpty() && (scrollable || (acts && node.isClickable()))) {
+      String id = node.getViewIdResourceName();
+      label = scrollable ? "Scrollable area"
+          : id != null && !id.isEmpty() ? id.substring(id.indexOf('/') + 1) : "Control";
+    }
+    if (!label.isEmpty()) {
       Rect r = new Rect();
       node.getBoundsInScreen(r);
       JSONObject it = new JSONObject();
       it.put("n", listed.size() + 1);
       it.put("text", label.length() > 120 ? label.substring(0, 120) : label);
-      it.put("kind", node.isEditable() ? "box" : node.isCheckable() ? "switch" : (node.isClickable() || node.isFocusable()) ? "button" : "text");
+      it.put("kind", node.isEditable() ? "box" : node.isCheckable() ? "switch" : scrollable ? "scroll" : (node.isClickable() || node.isFocusable()) ? "button" : "text");
       it.put("x", r.left); it.put("y", r.top); it.put("w", r.width()); it.put("h", r.height());
       if (node.isFocused() || node.isAccessibilityFocused()) it.put("focused", true);
       if (node.isChecked()) it.put("on", true);
@@ -319,28 +347,37 @@ public class IzukiAccessibilityService extends AccessibilityService {
    * Android. A click that was performed is never repeated as a tap: doing it
    * twice could toggle a switch back or press the next screen's button.
    */
-  private static void press(AccessibilityNodeInfo node, String matched, Consumer<JSONObject> done) {
+  private static void press(AccessibilityNodeInfo node, String matched, boolean preferTouch, Consumer<JSONObject> done) {
     node.refresh();
     if (!node.isVisibleToUser()) { done.accept(result(false, null, "hidden")); return; }
+    try { node.performAction(AccessibilityNodeInfo.ACTION_SHOW_ON_SCREEN); } catch (Exception ignored) { }
     AccessibilityNodeInfo target = pressable(node);
     AccessibilityNodeInfo used = target != null ? target : node;
-    if (!used.isEnabled()) { JSONObject r = result(false, null, "disabled"); put(r, "matched", matched); done.accept(r); return; }
-    if (target != null && target.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
-      JSONObject r = result(true, "action", null);
-      put(r, "matched", matched);
-      done.accept(r);
-      return;
+    // A WebView button may report itself disabled while its HTML parent is
+    // pressable, so only refuse when both the label and the target are off.
+    if (!used.isEnabled() && !node.isEnabled()) { JSONObject r = result(false, null, "disabled"); put(r, "matched", matched); done.accept(r); return; }
+    if (!preferTouch) {
+      if (target != null && target.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+        JSONObject r = result(true, "action", null);
+        put(r, "matched", matched);
+        done.accept(r);
+        return;
+      }
+      // TV cards are often "focus then OK".
+      node.performAction(AccessibilityNodeInfo.ACTION_FOCUS);
+      if (used.performAction(AccessibilityNodeInfo.ACTION_SELECT) || node.performAction(AccessibilityNodeInfo.ACTION_SELECT)) {
+        JSONObject r = result(true, "select", null);
+        put(r, "matched", matched);
+        done.accept(r);
+        return;
+      }
     }
-    // TV cards are often "focus then OK".
-    node.performAction(AccessibilityNodeInfo.ACTION_FOCUS);
-    if (node.performAction(AccessibilityNodeInfo.ACTION_SELECT)) {
-      JSONObject r = result(true, "select", null);
-      put(r, "matched", matched);
-      done.accept(r);
-      return;
-    }
+    // Tap the label itself, not a huge ancestor card: the touch lands inside
+    // the real control and bubbles to its row. Fall back to the parent only
+    // when the label has no usable bounds.
     Rect b = new Rect();
-    used.getBoundsInScreen(b);
+    node.getBoundsInScreen(b);
+    if (b.isEmpty()) used.getBoundsInScreen(b);
     if (b.isEmpty()) { JSONObject r = result(false, null, "no-bounds"); put(r, "matched", matched); done.accept(r); return; }
     gesture("tap", b.exactCenterX(), b.exactCenterY(), 0, 0, 60, (touch) -> {
       put(touch, "matched", matched);
@@ -349,12 +386,20 @@ public class IzukiAccessibilityService extends AccessibilityService {
     });
   }
 
+  /** The companion is a WebView: native click actions there are less reliable than a real tap. */
+  private static boolean preferTouch(AccessibilityNodeInfo node, IzukiAccessibilityService service) {
+    if (node == null) return false;
+    String cls = node.getClassName() == null ? "" : node.getClassName().toString().toLowerCase(Locale.ROOT);
+    String pkg = node.getPackageName() == null ? "" : node.getPackageName().toString();
+    return cls.contains("webview") || pkg.equals(service.getPackageName());
+  }
+
   /** Press thing number n from the last screen read. */
   static void click(int n, Consumer<JSONObject> done) {
     AccessibilityNodeInfo node = item(n);
     if (active == null) { off(done); return; }
     if (node == null) { done.accept(result(false, null, "stale")); return; }
-    press(node, labelOf(node), done);
+    press(node, labelOf(node), preferTouch(node, active), done);
   }
 
   /** Move the TV's focus to thing number n (the highlight, as with the remote). */
@@ -486,12 +531,11 @@ public class IzukiAccessibilityService extends AccessibilityService {
     IzukiAccessibilityService service = active;
     if (service == null) { off(done); return; }
     if (query == null || query.trim().isEmpty()) { done.accept(result(false, null, "no-label")); return; }
-    AccessibilityNodeInfo root = appRoot(service);
-    if (root == null) { done.accept(result(false, null, "no-window")); return; }
     String q = query.trim();
     List<AccessibilityNodeInfo> nodes = new ArrayList<>();
     List<String> labels = new ArrayList<>();
-    gatherLabels(root, 0, nodes, labels);
+    for (AccessibilityNodeInfo root : rootsFor(service)) gatherLabels(root, 0, nodes, labels);
+    if (labels.isEmpty()) { done.accept(result(false, null, "no-window")); return; }
     int best = ControlState.bestLabel(labels, q);
     if (best < 0) { done.accept(result(false, null, "not-found")); return; }
     String matched = labels.get(best);
@@ -501,7 +545,25 @@ public class IzukiAccessibilityService extends AccessibilityService {
       done.accept(r);
       return;
     }
-    press(nodes.get(best), matched, done);
+    press(nodes.get(best), matched, preferTouch(nodes.get(best), service), done);
+  }
+
+  /** The active window plus dialogs/permission sheets that own their own window. */
+  private static List<AccessibilityNodeInfo> rootsFor(IzukiAccessibilityService service) {
+    List<AccessibilityNodeInfo> roots = new ArrayList<>();
+    try {
+      AccessibilityNodeInfo activeRoot = appRoot(service);
+      if (activeRoot != null) roots.add(activeRoot);
+      for (AccessibilityWindowInfo w : service.getWindows()) {
+        if (w.getType() != AccessibilityWindowInfo.TYPE_APPLICATION && w.getType() != AccessibilityWindowInfo.TYPE_SYSTEM) continue;
+        AccessibilityNodeInfo r = w.getRoot();
+        if (r == null) continue;
+        boolean seen = false;
+        for (AccessibilityNodeInfo old : roots) if (old.getWindowId() == r.getWindowId()) { seen = true; break; }
+        if (!seen) roots.add(r);
+      }
+    } catch (Exception ignored) { }
+    return roots;
   }
 
   private static void gatherLabels(AccessibilityNodeInfo node, int depth, List<AccessibilityNodeInfo> nodes, List<String> labels) {
@@ -532,7 +594,7 @@ public class IzukiAccessibilityService extends AccessibilityService {
     gatherLabels(root, 0, nodes, labels);
     for (String word : new String[] { "search", "go" }) {
       int best = ControlState.bestLabel(labels, word);
-      if (best >= 0 && ControlState.wholeWord(labels.get(best), word)) { press(nodes.get(best), labels.get(best), done); return; }
+      if (best >= 0 && ControlState.wholeWord(labels.get(best), word)) { press(nodes.get(best), labels.get(best), preferTouch(nodes.get(best), service), done); return; }
     }
     done.accept(result(false, null, "no-search-control"));
   }
@@ -680,6 +742,13 @@ public class IzukiAccessibilityService extends AccessibilityService {
     if (!"rest".equals(orbState)) showState("rest", "");
   };
   private static final Runnable captionOff = () -> { if (caption != null) caption.setVisibility(View.GONE); };
+  /** Settings can open after the page asked for the orb; take it down then. */
+  private static final Runnable settingsGuard = () -> {
+    IzukiAccessibilityService service = active;
+    if (service == null || orbView == null || !settingsInFront(service)) return;
+    orbOwner = null;
+    removeOrbNow();
+  };
 
   /** The page's own orb. Idle dismisses it; listen/think/talk are leased; rest stays. */
   static void orb(String state, String words, long leaseMs) {
@@ -714,9 +783,15 @@ public class IzukiAccessibilityService extends AccessibilityService {
         }
         return;
       }
+      // Never float Izuki's orb over Android's own Settings or permission
+      // screens: that is where the person turns Accessibility on, and a
+      // "Listening…" bubble there looks like Izuki is watching the setting.
+      if (settingsInFront(service)) { removeOrbNow(); return; }
       orbOwner = owner;
       if (orbView == null && !addOrb(service)) return;
       showState(state, words);
+      ui.removeCallbacks(settingsGuard);
+      ui.postDelayed(settingsGuard, 400);
       ui.removeCallbacks(leaseOver);
       if (leaseMs > 0) ui.postDelayed(leaseOver, leaseMs);
     });
@@ -866,14 +941,18 @@ public class IzukiAccessibilityService extends AccessibilityService {
     return out;
   }
 
-  /** Tapping the floating orb brings Izuki's page back and starts a voice turn. */
+  /**
+   * Tapping the floating orb brings Izuki's page back. It does not start a
+   * voice turn: tapping the orb used to fire a fake "Hey Nova" and left the
+   * page listening (and the orb up) behind Android Settings. The person taps
+   * the microphone when they want to talk.
+   */
   private static void openFromOrb() {
     IzukiAccessibilityService service = active;
     if (service == null) return;
+    hideOrb();
     Intent open = new Intent(service, MainActivity.class)
-      .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
-      .putExtra("izuki_wake_token", IzukiControlPlugin.beginWake("Hey Nova"));
-    IzukiControlPlugin.notifyWake("Hey Nova");
+      .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
     try { service.startActivity(open); } catch (Exception ignored) { }
   }
 
@@ -888,6 +967,7 @@ public class IzukiAccessibilityService extends AccessibilityService {
   private static void removeOrbNow() {
     ui.removeCallbacks(leaseOver);
     ui.removeCallbacks(captionOff);
+    ui.removeCallbacks(settingsGuard);
     IzukiAccessibilityService service = active;
     if (orbView != null && service != null) {
       try { ((WindowManager) service.getSystemService(WINDOW_SERVICE)).removeView(orbView); } catch (Exception ignored) { }

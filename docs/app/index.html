@@ -863,7 +863,7 @@
   };
   // The Android app can keep the same glass orb above other apps. On the page
   // it is hidden (the page has its own orb); when you leave for Photos or Maps
-  // it stays, and a tap brings Izuki back ready to listen.
+  // it stays, resting, and a tap brings Izuki back without starting a voice turn.
   let keepOrb = store.get("keepOrb", true);
   function syncNativeOrb() {
     const native = window.IzukiNative;
@@ -873,10 +873,14 @@
     if (!keepOrb) { void native.orb?.("idle"); return; }
     if (!document.hidden) { void native.orb?.("idle"); return; }
     const auto = !!window.IzukiAutopilot?.state?.running;
-    const mode = orbState || (auto ? "thinking" : keepOrb ? "listening" : "");
-    if (!mode) { void native.orb?.("idle"); return; }
-    const state = mode === "listening" ? "listen" : mode === "thinking" ? "think" : mode === "speaking" ? "talk" : "idle";
-    const words = state === "talk" ? "Tap to talk" : state === "think" ? "Working…" : "";
+    // Leaving the app is not listening. Only a real thinking/talking state
+    // survives in the background; otherwise the orb rests. The old fallback
+    // said "listening" for ever over Android Settings and the home screen.
+    const live = orbState === "thinking" || orbState === "speaking" ? orbState : "";
+    const mode = auto ? "thinking" : live;
+    if (!mode) { void native.orb?.("rest", "Tap to talk"); return; }
+    const state = mode === "thinking" ? "think" : mode === "speaking" ? "talk" : "rest";
+    const words = state === "talk" || state === "rest" ? "Tap to talk" : "Working…";
     void native.orb?.(state, words);
   }
   const setOrb = (mode) => {
