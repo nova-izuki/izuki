@@ -407,6 +407,11 @@ pub async fn instant_command(app: AppHandle, said: String) -> Option<String> {
     if let Some(reply) = crate::airsafe::voice(&said) {
         return Some(reply);
     }
+    // Commands are short. A long text is a prompt or a pasted page, never a
+    // command — and must never flip a setting by containing the right words.
+    if !crate::studylog::command_sized(&said) {
+        return None;
+    }
     // "Let Izuki use chase.com", "never let Izuki use reddit.com" (siteaccess.rs).
     if let Some(ask) = crate::siteaccess::parse(&said) {
         return Some(crate::siteaccess::handle(ask));
