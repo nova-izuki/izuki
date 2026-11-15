@@ -316,6 +316,7 @@ export function Slider({
   step = 1,
   onChange,
   suffix,
+  label,
 }: {
   value: number;
   min: number;
@@ -323,6 +324,8 @@ export function Slider({
   step?: number;
   onChange: (v: number) => void;
   suffix?: string;
+  /** Accessible name when the visible label is separate (as in a Row). */
+  label?: string;
 }) {
   const pct = ((value - min) / (max - min)) * 100;
   return (
@@ -333,6 +336,7 @@ export function Slider({
         max={max}
         step={step}
         value={value}
+        aria-label={label}
         onChange={(e) => onChange(Number(e.target.value))}
         className="izk-range h-[6px] w-[128px] cursor-pointer appearance-none rounded-full outline-none"
         style={{
