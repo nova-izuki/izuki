@@ -36,6 +36,15 @@ fn asks_for_lesson(said: &str) -> bool {
     COACH.iter().filter(|w| !w.contains("notes")).any(|w| s.contains(w))
 }
 
+/// Whether this really asks for the study guide, rather than just for the
+/// work to be done. "Do my assignment" / "finish my homework" used to be
+/// turned into "Step 1 of N" before the screen agent ever saw them; the
+/// person asked for action, not a lesson. Teaching words (and "save it to
+/// my notes") still start the coach.
+pub fn wants_guide(said: &str) -> bool {
+    !crate::notes::is_study_prompt(said) && (asks_for_lesson(said) || crate::notes::asks_to_save(said))
+}
+
 /// "teach me this assignment", "open my lab assignment and walk me through it and save notes".
 pub fn parse(said: &str) -> Option<Ask> {
     // A short question about an option is not an assignment walkthrough.
@@ -314,6 +323,16 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn doing_an_assignment_is_not_asking_to_be_taught() {
+        for said in ["teach me this assignment", "walk me through my lab", "help me with this homework", "save the assignment guide to my notes"] {
+            assert!(wants_guide(said), "{said} should start the guide");
+        }
+        for said in ["do my assignment", "finish the assignment", "complete this worksheet", "do my essay"] {
+            assert!(!wants_guide(said), "{said} is a job for the screen agent, not another guide");
+        }
+    }
 
     #[test]
     fn desktop_jobs_are_not_assignments() {

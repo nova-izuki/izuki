@@ -153,6 +153,8 @@ mem.remember("assistant", "Happy to. Want me to do it, do it with you, or teach 
 is("the three ways are offered as chips", mem.suggestions(), ["Teach me", "Do it with me", "Just do it", "Start over"]);
 is("teach me goes to the screen", mem.needsScreen("Teach me"), true);
 is("so does doing it together", mem.needsScreen("do it with me"), true);
+is("doing an assignment is a screen job, not just a lesson", mem.needsScreen("do my assignment"), true);
+is("the Do it button stays on the screen path", mem.needsScreen("[DO IT] On my screen, do this for me: do my assignment"), true);
 is("but an explicit background lesson stays in the background", mem.needsScreen("Teach me about firewalls in the background"), false);
 is("a plain question doesn't", mem.needsScreen("what is a firewall"), false);
 
