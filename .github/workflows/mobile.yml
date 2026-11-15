@@ -137,6 +137,9 @@ jobs:
             echo "A new preview key alone stops installed phones from updating. Set the repository variable IZUKI_PREVIEW_ROTATION=yes (path A) or IZUKI_PREVIEW_NEW_KEY_OUTRIGHT=yes (path B). See docs/ANDROID-SIGNING.md." >&2
             exit 1
           fi
+      # The wake listener's and Android control's rules (no Android needed).
+      - run: ./gradlew testDebugUnitTest
+        working-directory: android
       - run: ./gradlew assembleDebug
         working-directory: android
       - name: Rotate the preview signature to the private key (path A)

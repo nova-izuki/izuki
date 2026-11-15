@@ -109,4 +109,9 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- Updating itself: Android's installer asks the user to confirm. -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- Optional, for "Hey Nova" only: Android asks the person once whether
+         Izuki may run in the background. Phone Readiness offers it only while
+         the wake word is on. Note there is deliberately no SYSTEM_ALERT_WINDOW:
+         the floating orb is an accessibility overlay and doesn't need it. -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 </manifest>
