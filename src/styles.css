@@ -859,24 +859,136 @@ html[data-backdrop="tabbed"] .izk-card {
 .izk-island.izk-theme-notch:not(.izk-island-open) .izk-notch-content {
   padding: 8px 22px 0;
 }
+/* Closed: the compact live notch keeps the two outward C-curve shoulders.
+   This is a deliberate silhouette, not a rounded rectangle. */
 .izk-island.izk-theme-notch:not(.izk-island-open) .izk-notch-shell {
-  --notch-cut-x: 6%;
-  --notch-cut-y: 10px;
-  border-radius: 0 0 18px 18px;
+  --notch-cut-x: 9%;
+  --notch-cut-y: 20px;
+  border-radius: 0 0 24px 24px;
 }
 .izk-island.izk-theme-notch.izk-island-resting .izk-notch-shell {
-  --notch-cut-x: 4%;
-  --notch-cut-y: 7px;
-  border-radius: 0 0 17px 17px;
+  --notch-cut-x: 9%;
+  --notch-cut-y: 21px;
+  border-radius: 0 0 24px 24px;
 }
-.izk-notch-rest-dot {
+
+/* Level 1: compact live card. It sits inside the masked glass shell, so text
+   stays clear of the curved shoulders. */
+.izk-notch-mini {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 148px;
+  min-height: 92px;
+  padding: 11px 15px 10px;
+  text-align: left;
+}
+.izk-notch-mini-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+}
+.izk-notch-mini-orb {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--izk-island-accent, #22d3ee) 86%, white);
+  box-shadow: 0 0 9px color-mix(in srgb, var(--izk-island-accent, #22d3ee) 68%, transparent);
+}
+.izk-notch-mini-brand {
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.16em;
+  color: rgba(255, 255, 255, 0.64);
+}
+.izk-notch-mini-clock {
+  margin-left: auto;
+  font-size: 9.5px;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  color: rgba(255, 255, 255, 0.5);
+  font-variant-numeric: tabular-nums;
+}
+.izk-notch-mini-line {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.28;
+  letter-spacing: -0.01em;
+  color: rgba(255, 255, 255, 0.94);
+}
+.izk-notch-mini-meta {
+  overflow: hidden;
+  font-size: 9.5px;
+  line-height: 1.2;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: rgba(255, 255, 255, 0.52);
+}
+.izk-notch-mini.is-alert .izk-notch-mini-orb {
+  background: #fbbf24;
+  box-shadow: 0 0 9px rgba(251, 191, 36, 0.6);
+}
+.izk-notch-mini.is-done .izk-notch-mini-orb {
+  background: #34d399;
+  box-shadow: 0 0 9px rgba(52, 211, 153, 0.55);
+}
+.izk-notch-ring {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  margin-left: auto;
+}
+.izk-notch-ring svg {
   display: block;
   width: 22px;
-  height: 2px;
-  border-radius: 999px;
-  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--izk-island-accent, #22d3ee) 72%, white), transparent);
-  box-shadow: 0 0 10px color-mix(in srgb, var(--izk-island-accent, #22d3ee) 55%, transparent);
-  opacity: 0.75;
+  height: 22px;
+}
+.izk-notch-ring-track,
+.izk-notch-ring-arc {
+  fill: none;
+  stroke-width: 2.4;
+}
+.izk-notch-ring-track {
+  stroke: rgba(255, 255, 255, 0.14);
+}
+.izk-notch-ring-arc {
+  stroke: color-mix(in srgb, var(--izk-island-accent, #22d3ee) 84%, white);
+  stroke-linecap: round;
+}
+/* Light glass is frostier, so give its text local grounding. The scrim gets
+   stronger as the glass gets more transparent: at the 50% floor it is a real
+   contrast layer, while at the default 94% it is almost invisible. */
+.izk-island.izk-island-light .izk-notch-mini,
+.izk-island.izk-island-light .izk-notch-content {
+  isolation: isolate;
+  text-shadow: 0 1px 2px rgba(5, 10, 18, 0.5);
+}
+.izk-island.izk-island-light .izk-notch-mini::before,
+.izk-island.izk-island-light .izk-notch-content::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  pointer-events: none;
+  background: rgba(7, 11, 19, calc((1 - var(--izk-island-alpha, 0.96)) * 0.82));
+}
+.izk-island.izk-island-light .izk-notch-mini::before {
+  inset: 6px 8px;
+  border-radius: 16px;
+}
+.izk-island.izk-island-light .izk-notch-content::before {
+  inset: 2px 4px 4px;
+  border-radius: 22px;
 }
 
 /* Floating glass pill: detached from the edge, so it can be moved anywhere. */

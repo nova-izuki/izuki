@@ -694,6 +694,14 @@ export function Island({
   // it is dragged away it keeps its own place like the other styles.
   const attached = look === "notch" && docked && !free;
   const top = attached ? workArea().top : fitted.y;
+  // The full panel is deliberately capped on short screens. Without this it
+  // grew to almost the whole 720p desktop when opened. The compact notch is
+  // unaffected; only the expanded card scrolls inside this height.
+  const viewportH = typeof window === "undefined" ? 800 : window.innerHeight;
+  const panelMaxH =
+    look === "notch"
+      ? Math.min(viewportH - top - 16, Math.max(360, Math.min(620, viewportH * 0.66)))
+      : viewportH - top - 16;
   return (
     <>
     <IslandPal cue={palCue} pill={pill} away={palAway} />
@@ -812,23 +820,23 @@ export function Island({
                 due={due}
                 remote={remote}
                 scale={scale}
-                maxH={(typeof window === "undefined" ? 800 : window.innerHeight) - top - 16}
+                maxH={panelMaxH}
               />
             </motion.div>
+          ) : look === "notch" ? (
+            // The compact live notch from the reference: a small piece of
+            // real status under the top edge, not the whole panel. Hovering
+            // still opens the full Island; this is what the notch shows the
+            // rest of the time.
+            <motion.div key="notch-mini" {...fade}>
+              <NotchMini live={live} doing={doing} thinking={thinking} now={now} />
+            </motion.div>
           ) : live.kind === "rest" ? (
-            // At rest: the black pill of an iPhone's Dynamic Island (still —
-            // it sits over everything all day), or the faint sliver.
-            // The small sliver it has always been. "Always show" decides
-            // whether it's there at rest, not how big it is — growing it into
+            // At rest outside the notch look: the faint sliver. "Always show"
+            // decides whether it's there, not how big it is — growing it into
             // a pill made something that sits over everything all day far too
             // loud.
-            <motion.div
-              key="rest"
-              {...fade}
-              className={look === "notch" ? "izk-notch-rest flex h-[32px] w-[148px] items-center justify-center" : "h-[5px] w-[72px]"}
-            >
-              {look === "notch" && <span aria-hidden className="izk-notch-rest-dot" />}
-            </motion.div>
+            <motion.div key="rest" {...fade} className="h-[5px] w-[72px]" />
           ) : (
             <motion.div key={live.kind} {...fade} className={`flex h-[34px] items-center gap-2.5 pl-1.5 pr-3${look === "notch" ? " izk-notch-content" : ""}`}>
               <Compact live={live} dancing={dancing} wave={wave} calm={calm} />
@@ -891,6 +899,123 @@ function LiveBars({ color }: { color: string }) {
         <span key={i} className="w-[3px] rounded-full transition-[height] duration-75" style={{ height: `${3 + l * 15}px`, background: color }} />
       ))}
     </span>
+  );
+}
+
+type MiniStep = { current: number; total: number };
+
+/** Read a real step count out of the status line ("Step 2 of 5", "step 2/5"). */
+function readMiniStep(...parts: (string | null | undefined)[]): MiniStep | null {
+  const text = parts.filter(Boolean).join(" ");
+  const hit = /step\s+(\d+)\s*(?:of|\/)\s*(\d+)/i.exec(text);
+  if (!hit) return null;
+  const total = Math.max(1, Number.parseInt(hit[2], 10) || 1);
+  return { current: Math.min(total, Math.max(1, Number.parseInt(hit[1], 10) || 1)), total };
+}
+
+/** The compact notch's one-line status, built only from real Island events. */
+function notchMiniCopy(live: Live, doing: string | null, thinking: boolean): {
+  line: string;
+  meta: string;
+  active: boolean;
+  alert: boolean;
+  done: boolean;
+  step: MiniStep | null;
+} {
+  const step = readMiniStep(
+    live.kind === "working" ? live.text : null,
+    live.kind === "missions" ? live.now : null,
+    live.kind === "missions" ? live.step : null,
+    doing,
+  );
+  switch (live.kind) {
+    case "working":
+      return { line: live.text, meta: step ? `Step ${step.current} of ${step.total}` : "Working", active: true, alert: false, done: false, step };
+    case "missions":
+      return { line: live.now || "Starting mission…", meta: live.left > 0 ? `${live.left} more waiting` : "Mission running", active: true, alert: false, done: false, step };
+    case "listening":
+      return { line: "Listening…", meta: "Go ahead", active: true, alert: false, done: false, step: null };
+    case "speaking":
+      return { line: "Speaking…", meta: "Izuki", active: true, alert: false, done: false, step: null };
+    case "lesson":
+      return { line: live.text, meta: step ? `Step ${step.current} of ${step.total}` : "Lesson", active: true, alert: false, done: false, step };
+    case "approval":
+      return { line: `Waiting for your OK · ${live.app}`, meta: "Open to review", active: false, alert: true, done: false, step: null };
+    case "error":
+      return { line: live.message, meta: "Needs attention", active: false, alert: true, done: false, step: null };
+    case "sitedown":
+      return { line: `${live.name} is down`, meta: "Site check", active: false, alert: true, done: false, step: null };
+    case "finished":
+      return { line: "Done", meta: "Finished", active: false, alert: false, done: true, step: null };
+    case "music":
+      return { line: live.m.title, meta: live.m.artist || live.m.app, active: false, alert: false, done: false, step: null };
+    case "reminder":
+      return { line: live.r.text, meta: live.urgent ? "Soon" : until(live.r.at), active: false, alert: live.urgent, done: false, step: null };
+    case "due":
+      return { line: live.title, meta: `Due ${until(live.at)}`, active: false, alert: false, done: false, step: null };
+    case "focus":
+      return { line: `Focus · ${Math.ceil(live.secs / 60)} min left`, meta: "Focus mode", active: false, alert: false, done: false, step: null };
+    case "activity":
+      return { line: live.a.title, meta: live.a.detail || "Activity", active: false, alert: false, done: false, step: null };
+    case "lecture":
+      return { line: live.title, meta: `Recording · ${Math.floor(live.secs / 60)} min`, active: true, alert: false, done: false, step: null };
+    case "remote":
+      return { line: live.device || "Your phone", meta: live.controlling ? "Controlling this PC" : "Viewing your screen", active: false, alert: false, done: false, step: null };
+    case "suggest":
+      return { line: `${live.s.label}?`, meta: "Suggestion", active: false, alert: false, done: false, step: null };
+    default:
+      return { line: "Ask me anything", meta: thinking ? "Thinking" : "Hover to open", active: thinking, alert: false, done: false, step: null };
+  }
+}
+
+/** A real, static progress ring (no fake percentage, no idle animation). */
+function NotchRing({ step }: { step: MiniStep | null }) {
+  const pct = step ? Math.max(6, Math.min(100, (step.current / step.total) * 100)) : 28;
+  return (
+    <span
+      className="izk-notch-ring"
+      role="progressbar"
+      aria-label={step ? `Task progress, step ${step.current} of ${step.total}` : "Task in progress"}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={step ? Math.round((step.current / step.total) * 100) : undefined}
+      aria-valuetext={step ? `Step ${step.current} of ${step.total}` : "In progress"}
+    >
+      <svg viewBox="0 0 22 22" aria-hidden>
+        <circle className="izk-notch-ring-track" cx="11" cy="11" r="8.5" />
+        <circle
+          className="izk-notch-ring-arc"
+          cx="11"
+          cy="11"
+          r="8.5"
+          pathLength={100}
+          strokeDasharray={`${pct} 100`}
+          transform="rotate(-90 11 11)"
+        />
+      </svg>
+    </span>
+  );
+}
+
+/** Level 1 of the notch: a small, screen-attached live card. */
+function NotchMini({ live, doing, thinking, now }: { live: Live; doing: string | null; thinking: boolean; now: number }) {
+  const copy = notchMiniCopy(live, doing, thinking);
+  const time = new Date(now).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return (
+    <div
+      className={"izk-notch-mini" + (copy.alert ? " is-alert" : "") + (copy.done ? " is-done" : "")}
+      role="status"
+      aria-label={`IZUKI: ${copy.line}. ${copy.meta}`}
+      title={copy.line}
+    >
+      <div className="izk-notch-mini-head">
+        <span className="izk-notch-mini-orb" aria-hidden />
+        <span className="izk-notch-mini-brand">IZUKI</span>
+        {copy.active ? <NotchRing step={copy.step} /> : <span className="izk-notch-mini-clock">{time}</span>}
+      </div>
+      <div className="izk-notch-mini-line">{copy.line}</div>
+      <div className="izk-notch-mini-meta">{copy.meta}</div>
+    </div>
   );
 }
 
