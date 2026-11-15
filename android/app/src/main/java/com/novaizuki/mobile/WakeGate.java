@@ -222,6 +222,20 @@ final class WakeGate {
     }
   }
 
+  // ---- audio for voice match ----------------------------------------------
+
+  /** 16-bit mono PCM → a WAV file's bytes. */
+  static byte[] wav(short[] pcm, int rate) {
+    int data = pcm.length * 2;
+    java.nio.ByteBuffer b = java.nio.ByteBuffer.allocate(44 + data).order(java.nio.ByteOrder.LITTLE_ENDIAN);
+    b.put(new byte[] { 'R', 'I', 'F', 'F' }).putInt(36 + data).put(new byte[] { 'W', 'A', 'V', 'E' });
+    b.put(new byte[] { 'f', 'm', 't', ' ' }).putInt(16).putShort((short) 1).putShort((short) 1)
+        .putInt(rate).putInt(rate * 2).putShort((short) 2).putShort((short) 16);
+    b.put(new byte[] { 'd', 'a', 't', 'a' }).putInt(data);
+    for (short v : pcm) b.putShort(v);
+    return b.array();
+  }
+
   // ---- the phrase --------------------------------------------------------
 
   private static final Pattern WAKE = Pattern.compile("\\b(?:hey|hi|ok|okay|hay|hei)\\s+(?:nova|izuki)\\b");

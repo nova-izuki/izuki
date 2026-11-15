@@ -68,6 +68,25 @@ public class IzukiControlPlugin extends Plugin {
   private final ExecutorService work = Executors.newCachedThreadPool();
   private static volatile IzukiControlPlugin instance;
   private static volatile String pendingWake = "";
+  /** The wake phrase's audio (base64 WAV) for voice match, briefly. */
+  private static volatile String wakeAudio = "";
+  private static volatile long wakeAudioAt = 0;
+  /** The latest wake came from a voice (not a tap on the tile): voice match applies. */
+  private static volatile boolean wakeByVoice = false;
+
+  /** From the wake listener: its audio ("" when it has none). null: a tap, not a voice. */
+  static void setWakeAudio(String b64) {
+    wakeAudio = b64 == null ? "" : b64;
+    wakeByVoice = b64 != null;
+    wakeAudioAt = System.currentTimeMillis();
+  }
+
+  /** Fresh (under 30 s) wake audio, used once. */
+  private static String takeWakeAudio() {
+    String a = System.currentTimeMillis() - wakeAudioAt < 30_000 ? wakeAudio : "";
+    wakeAudio = "";
+    return a;
+  }
   private static String wakeToken = "";
   private AudioManager.OnAudioFocusChangeListener focusListener;
 
@@ -261,6 +280,9 @@ public class IzukiControlPlugin extends Plugin {
     JSObject result = new JSObject();
     result.put("phrase", pendingWake);
     pendingWake = "";
+    result.put("voice", wakeByVoice && System.currentTimeMillis() - wakeAudioAt < 30_000);
+    result.put("audio", takeWakeAudio());
+    wakeByVoice = false;
     call.resolve(result);
   }
 

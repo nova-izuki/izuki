@@ -51,6 +51,7 @@
 <script src="../shared/bugs.js" data-app="phone" data-version="2.1"></script>
 <script src="native.js"></script>
 <script src="readiness.js"></script>
+<script src="voicematch.js"></script>
 <script src="pairing.js"></script>
 <script src="orb.js"></script>
 <script src="edge-glow.js"></script>
@@ -644,6 +645,12 @@
         <label for="wake-phrase">Your own wake phrase (optional)</label>
         <div class="row" style="flex-wrap:nowrap;gap:8px"><input id="wake-phrase" type="text" maxlength="32" placeholder="hey jarvis" autocomplete="off" autocapitalize="off" spellcheck="false" style="flex:1;min-width:0"><button class="btn ghost" id="wake-phrase-save" type="button">Save</button></div>
         <p class="note" id="wake-phrase-note" style="margin-top:4px">2–4 words. “Hey Nova” always works too.</p>
+      </div>
+      <div class="field" id="voicematch" style="margin-top:10px">
+        <label>Voice match (optional)</label>
+        <p class="note" id="vm-status" style="margin-top:2px">Off. Teach Izuki your voice, and “Hey Nova” only starts things when it sounds like you — like a phone assistant that knows its owner.</p>
+        <div class="row" style="flex-wrap:wrap;gap:8px;margin-top:6px"><button class="btn ghost" id="vm-teach" type="button">Teach my voice</button><button class="btn ghost" id="vm-toggle" type="button" hidden>Turn off</button><button class="btn ghost" id="vm-forget" type="button" hidden>Forget my voice</button></div>
+        <p class="note" style="margin-top:6px">Three short recordings. Only a voice template stays on this phone — never the recordings or the words. The first time downloads the voice model (about 95 MB). It keeps the TV and other people from starting things; it isn't a lock.</p>
       </div>
       <label class="swatch" style="margin-top:10px"><input type="checkbox" id="keep-orb" checked> Keep the glass orb over other apps</label>
       <p class="note" style="margin-top:4px">When you open Photos, Maps or any other app, a small orb stays on top. Tap it to come back to Izuki and keep talking — it never acts until you ask. Needs Accessibility control.</p>
@@ -2258,6 +2265,18 @@
         return;
       }
     }
+    // Voice match: a wake that couldn't be checked checks the first command.
+    if (audio && wakeTurn) {
+      wakeTurn = false;
+      const heard = await window.IzukiVoiceMatch?.check?.(audio);
+      if (heard && !heard.ok) {
+        bubble("izuki", heard.why === "unclear"
+          ? "I couldn't hear that clearly enough to check it was you — say it again?"
+          : "That didn't sound like you, so I didn't act on it. (Voice match is on in Settings → Phone.)", { error: true });
+        if (talking) listen();
+        return;
+      }
+    }
     // Route spoken requests through the same rules as typed requests.
     if (audio) {
       if (!canHear()) { bubble("izuki", "To talk out loud here, add a free Gemini or Groq key in Settings — or type instead.", { error: true }); return; }
@@ -3592,6 +3611,59 @@
     }
   }
 
+  /** Voice match: what it is now, and teach / off / forget. */
+  function paintVoiceMatch(note = "") {
+    const box = $("voicematch"), status = $("vm-status"), teach = $("vm-teach"), toggle = $("vm-toggle"), forget = $("vm-forget");
+    if (!box || !window.IzukiVoiceMatch) { if (box) box.hidden = true; return; }
+    const vm = window.IzukiVoiceMatch.read();
+    const me = vm.profiles[vm.profiles.length - 1];
+    status.textContent = note || (!me
+      ? "Off. Teach Izuki your voice, and “Hey Nova” only starts things when it sounds like you — like a phone assistant that knows its owner."
+      : vm.enabled ? `On for ${me.name}'s voice. Other voices can't start Izuki with “Hey Nova”.` : `Off. ${me.name}'s voice is saved; turn it on to use it.`);
+    teach.textContent = me ? "Teach it again" : "Teach my voice";
+    toggle.hidden = !me;
+    toggle.textContent = vm.enabled ? "Turn off" : "Turn on";
+    forget.hidden = !me;
+    toggle.onclick = () => { window.IzukiVoiceMatch.setEnabled(!vm.enabled); paintVoiceMatch(); };
+    forget.onclick = () => { window.IzukiVoiceMatch.forget(me.id); paintVoiceMatch("Forgotten. Voice match is off."); };
+    teach.onclick = () => void teachVoice();
+  }
+
+  /** Three short recordings → a voice template (recordings are dropped right after). */
+  async function teachVoice() {
+    const teach = $("vm-teach");
+    teach.disabled = true;
+    const say = (t) => paintVoiceMatch(t);
+    let stream = null;
+    try {
+      say("Getting the voice model ready (about 95 MB the first time)…");
+      await window.IzukiVoiceMatch.prepare();
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const clips = [];
+      for (let i = 1; i <= 3; i++) {
+        say(`Recording ${i} of 3: say “Hey Nova, what's the weather today?” now…`);
+        clips.push(await new Promise((resolve, reject) => {
+          const rec = new MediaRecorder(stream);
+          const parts = [];
+          rec.ondataavailable = (e) => { if (e.data.size) parts.push(e.data); };
+          rec.onstop = () => resolve(new Blob(parts, { type: rec.mimeType || "audio/webm" }));
+          rec.onerror = () => reject(new Error("The recording stopped."));
+          rec.start();
+          setTimeout(() => { try { rec.stop(); } catch {} }, 3500);
+        }));
+        if (i < 3) { say("Got it. Next one in a moment…"); await new Promise((r) => setTimeout(r, 900)); }
+      }
+      say("Learning your voice…");
+      await window.IzukiVoiceMatch.enroll(userName() || "Me", clips);
+      paintVoiceMatch("Done. Voice match is on: “Hey Nova” only starts things for your voice.");
+    } catch (error) {
+      paintVoiceMatch(`Voice match wasn't set up: ${error?.message || error}`);
+    } finally {
+      stream?.getTracks?.().forEach((t) => t.stop());
+      teach.disabled = false;
+    }
+  }
+
   /** The diagnostics report as plain lines (also what "Copy report" copies). */
   async function showDiagnostics() {
     const out = $("diag-out");
@@ -3694,6 +3766,7 @@
     status.textContent = on
       ? (words[state] || (st.lastError ? `On, but not running: ${st.lastError}` : "On, but Android hasn't started the listener. Leave Izuki and come back, or turn it off and on."))
       : "Off. Turn it on to listen for “Hey Nova” while the app is in the background. Microphone and notifications are allowed.";
+    paintVoiceMatch();
     const phraseBox = $("wake-phrase"), phraseSave = $("wake-phrase-save"), phraseNote = $("wake-phrase-note");
     if (phraseBox && phraseSave) {
       if (document.activeElement !== phraseBox) phraseBox.value = st.phrase || "";
@@ -4449,8 +4522,27 @@
   // actually unlocked.
   let pendingWake = "";
   let lastWakeText = "", lastWakeAt = 0;
-  function startWake(phrase) {
+  // A wake whose own audio wasn't available (the speech service used its
+  // own microphone): the first spoken command is checked instead.
+  let wakeTurn = false;
+  async function startWake(phrase, extra = null) {
     if (talking) return;
+    const vm = window.IzukiVoiceMatch?.read?.();
+    if (vm?.enabled && extra?.voice) {
+      if (extra.audio) {
+        setStatus("Checking it's you…");
+        const heard = await window.IzukiVoiceMatch.check({ type: "audio/wav", b64: extra.audio });
+        setStatus("");
+        if (!heard.ok) {
+          setStatus(heard.why === "unclear"
+            ? "I heard “Hey Nova” but couldn't check the voice clearly. Say it again, a little closer."
+            : "That didn't sound like you, so I didn't start. (Voice match is on in Settings → Phone.)");
+          return;
+        }
+      } else {
+        wakeTurn = true;
+      }
+    }
     const fingerprint = String(phrase || "").trim().toLowerCase();
     // The service event and the intent that brings the app forward can both
     // carry the same phrase. One “Hey Nova” should start one thing.
@@ -4479,7 +4571,7 @@
     if (!pendingWake) return;
     const phrase = pendingWake;
     pendingWake = "";
-    startWake(phrase);
+    void startWake(phrase, window.IzukiNative?.takeWakeAudio?.());
   }
   window.IzukiNative?.onWake?.((data) => {
     pendingWake = String(data?.phrase || "Hey Nova");

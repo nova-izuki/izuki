@@ -69,6 +69,7 @@
   };
 
   let orbOverApps = true;
+  let wakeExtra = { audio: "", voice: false };
   window.IzukiNative = {
     installed: () => !!window.Capacitor?.isNativePlatform?.(),
     platform,
@@ -390,7 +391,17 @@
     },
     /** A phrase from a wake that arrived before the page was ready. */
     async takeWake() {
-      try { return String((await control()?.takeWake())?.phrase || ""); } catch { return ""; }
+      try {
+        const r = await control()?.takeWake();
+        wakeExtra = { audio: String(r?.audio || ""), voice: !!r?.voice };
+        return String(r?.phrase || "");
+      } catch { return ""; }
+    },
+    /** That wake's audio and whether it was a voice (not a tap), for voice match. Used once. */
+    takeWakeAudio() {
+      const extra = wakeExtra;
+      wakeExtra = { audio: "", voice: false };
+      return extra;
     },
     /** Step aside while a live call uses the microphone; the switch stays on. */
     async wakePause(minutes = 30) {

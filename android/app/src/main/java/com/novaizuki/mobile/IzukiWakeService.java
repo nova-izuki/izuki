@@ -111,7 +111,9 @@ public class IzukiWakeService extends Service implements RecognitionListener {
   private Thread reader;
   private volatile boolean reading;
   private volatile double level = -96;
-  private final short[] ring = new short[RATE]; // the last second, for the start of the phrase
+  // The last three seconds: one before speech for the recognizer, and the
+  // whole wake phrase for voice match.
+  private final short[] ring = new short[RATE * 3];
   private int ringAt;
   private boolean ringFull;
   private FileDescriptor feed; // the recognizer's audio, while a piped session runs
@@ -560,8 +562,11 @@ public class IzukiWakeService extends Service implements RecognitionListener {
         feedRead = pipe[0];
         feedWrite = pipe[1];
         feed = fd;
-        int count = ringFull ? ring.length : ringAt;
-        int start = ringFull ? ringAt : 0;
+        // Only the last second: more would overfill the pipe before the
+        // recognizer starts reading.
+        int have = ringFull ? ring.length : ringAt;
+        int count = Math.min(have, RATE);
+        int start = (ringAt - count + ring.length) % ring.length;
         byte[] bytes = new byte[count * 2];
         for (int i = 0; i < count; i++) {
           short v = ring[(start + i) % ring.length];
@@ -663,6 +668,9 @@ public class IzukiWakeService extends Service implements RecognitionListener {
     // Show the glass orb over the current app at once. It rests (it doesn't
     // claim to be listening): the page opens and does the listening.
     IzukiAccessibilityService.orbFor("wake", "rest", "Hey Nova — tap to talk", 30_000);
+    // Voice match on the page needs the phrase itself. Only a piped session
+    // kept the microphone stream running through it; otherwise there's none.
+    IzukiControlPlugin.setWakeAudio(piped ? wakeWav() : "");
     String token = IzukiControlPlugin.beginWake(phrase);
     IzukiControlPlugin.notifyWake(phrase);
     Intent open = new Intent(this, MainActivity.class)
@@ -670,6 +678,19 @@ public class IzukiWakeService extends Service implements RecognitionListener {
         .putExtra("izuki_wake_token", token);
     try { startActivity(open); } catch (Exception e) { log("Android didn't let Izuki open after the wake"); }
     main.postDelayed(handoffTimeout, 20_000);
+  }
+
+  /** The last three seconds as a base64 WAV (16 kHz, 16-bit mono), for voice match. */
+  private String wakeWav() {
+    short[] pcm;
+    synchronized (audio) {
+      int have = ringFull ? ring.length : ringAt;
+      int start = ringFull ? ringAt : 0;
+      pcm = new short[have];
+      for (int i = 0; i < have; i++) pcm[i] = ring[(start + i) % ring.length];
+    }
+    if (pcm.length < RATE / 2) return "";
+    return android.util.Base64.encodeToString(WakeGate.wav(pcm, RATE), android.util.Base64.NO_WRAP);
   }
 
   // ---- RecognitionListener ---------------------------------------------------------
