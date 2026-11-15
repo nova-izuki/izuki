@@ -1,4 +1,4 @@
-# Izuki phone checklist (1.0.213)
+# Izuki phone checklist (1.0.214)
 
 This is the acceptance pass for the Android companion. CI proves the APK
 compiles and that the JavaScript tests pass; it does not prove Android grants
@@ -8,7 +8,7 @@ update. Run this on a real phone before calling a phone release verified.
 Record the APK's SHA-256 first. A debug build from a different commit is not
 the build being tested.
 
-- Build: `1.0.213` / versionCode `213`
+- Build: `1.0.214` / versionCode `214`
 - APK:
 - SHA-256:
 - Phone / Android / OEM:
@@ -26,8 +26,8 @@ the build being tested.
 
 ## 10-minute smoke
 
-- [ ] Install 1.0.213 over the existing app. It opens without a crash and
-      **Settings → Phone** shows `1.0.213`.
+- [ ] Install 1.0.214 over the existing app. It opens without a crash and
+      **Settings → Phone** shows `1.0.214`.
 - [ ] The existing PC pairing still works; no re-pair was needed.
 - [ ] Enable Android control, then say “go home” and “go back”.
 - [ ] Enable the over-apps orb. It appears over one other app and tapping it
@@ -47,7 +47,7 @@ If any smoke item fails, the full pass does not start.
 Use the installed 1.0.212 build. Do not download the new APK by hand for this
 section.
 
-- [ ] **Settings → Phone → App updates** finds 1.0.213 and shows the APK size,
+- [ ] **Settings → Phone → App updates** finds 1.0.214 and shows the APK size,
       version and release notes.
 - [ ] The displayed file size is about 46 MB and the SHA-256 shown (if shown)
       matches the published release.
@@ -57,12 +57,12 @@ section.
       app does **not** say the update was installed.
 - [ ] Start again and complete the install. Android's installer opens; the
       preview-build warning is expected.
-- [ ] Return to Izuki. The installed version is now `1.0.213`; it is not still
+- [ ] Return to Izuki. The installed version is now `1.0.214`; it is not still
       reporting `1.0.212`.
 - [ ] No data was lost: chats, reminders, settings, face/orb choice and PC
       pairing are still there.
 - [ ] The updater now says the installed version is up to date.
-- [ ] Reboot the phone and confirm it still opens on 1.0.213.
+- [ ] Reboot the phone and confirm it still opens on 1.0.214.
 
 Repeat at least once from 1.0.211 if that build is available. If only 1.0.212
 is available, record that 1.0.211 was not tested.
@@ -73,7 +73,7 @@ is available, record that 1.0.211 was not tested.
       browser. The file is complete (no 0-byte or HTML error page).
 - [ ] Android accepts it over the installed preview only when the signer is the
       same. A signature-mismatch error is a release blocker.
-- [ ] The installed version changes to 1.0.213 and the app opens.
+- [ ] The installed version changes to 1.0.214 and the app opens.
 
 ## 2. Permissions and service health
 

@@ -590,6 +590,7 @@ pub fn run() {
             commands::cancel_task,
             commands::pause_task,
             commands::resume_task,
+            commands::rerun_task,
             commands::quit_app,
             commands::selftest_enabled,
             commands::open_app,

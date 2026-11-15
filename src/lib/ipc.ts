@@ -1374,6 +1374,8 @@ export const api = {
   pauseTask: () => call<boolean>("pause_task", undefined, () => false),
   /** Resume a paused task; false when nothing was paused. */
   resumeTask: () => call<boolean>("resume_task", undefined, () => false),
+  /** Replay the last completed multi-step plan from the Task Stage. */
+  rerunTask: () => call<boolean>("rerun_task", undefined, () => false),
   /** Developer self-test mode (IZUKI_SELFTEST=1). */
   selftestEnabled: () => call<string>("selftest_enabled", undefined, () => ""),
   /** Open a file Izuki made (the "Open" button on a result card). */
