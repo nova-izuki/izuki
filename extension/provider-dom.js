@@ -1,6 +1,10 @@
 (function(root) {
 async function typeIntoComposer(text, composerSelectors, sendSelectors, autoSend, expectedOrigin = "", requestId = "", deadline = 0) {
   if (expectedOrigin && location.origin !== expectedOrigin) return { ok: false, why: "changed-page" };
+  // A same-origin conversation change (new chat, switched thread) keeps the
+  // composer mounted but makes the question belong to a different page.
+  const currentUrl = () => (typeof location !== "undefined" ? location.href : "");
+  const initialUrl = currentUrl();
   // The relay stopped waiting for this call (it took too long, or Stop):
   // checked here and after every wait, before the box is touched again.
   const gone = () => (deadline && Date.now() > deadline) || Boolean(requestId && globalThis.__izukiStoppedRelay?.has(requestId));
@@ -23,14 +27,25 @@ async function typeIntoComposer(text, composerSelectors, sendSelectors, autoSend
   // earlier try (its Send failed or was swallowed) is Izuki's: it's replaced,
   // instead of every later question failing on "your tab has a draft".
   const squash = (s) => String(s || "").replace(/\s+/g, " ").trim();
-  const draft = squash(box.value || box.textContent);
+  const native = box.tagName === "TEXTAREA" || box.tagName === "INPUT";
+  // innerText preserves rendered paragraph/<br> boundaries. textContent
+  // would join <p>First</p><p>Second</p> into "FirstSecond" and reject an
+  // otherwise exact multiline paste (or mistake our leftover for a draft).
+  const inBox = () => squash(native ? box.value : (box.innerText ?? box.textContent));
+  const draft = inBox();
   const mine = squash(globalThis.__izukiTyped);
+  const current = () => (!expectedOrigin || location.origin === expectedOrigin)
+    && (!initialUrl || currentUrl() === initialUrl)
+    && box.isConnected && visible(box) && !box.disabled && !box.readOnly
+    && box.getAttribute("aria-disabled") !== "true"
+    && box.getAttribute("type") !== "password"
+    && composerSelectors.some((selector) => [...document.querySelectorAll(selector)].includes(box));
   // (Exactly Izuki's text: anything the person added or changed is theirs.)
   if (draft && !(mine && draft === mine)) return { ok: false, why: "draft" };
   if ([...document.querySelectorAll('button[data-testid="stop-button"],button[aria-label*="Stop generating" i],button[aria-label*="Stop response" i]')].some(visible)) return { ok: false, why: "busy" };
 
   box.focus();
-  const native = box.tagName === "TEXTAREA" || box.tagName === "INPUT";
+  if (!current()) return { ok: false, why: "changed-page" };
   // React tracks the value on the element; set it through the prototype
   // setter so its own onChange fires instead of being skipped.
   const setValue = (value) => {
@@ -60,8 +75,9 @@ async function typeIntoComposer(text, composerSelectors, sendSelectors, autoSend
       document.execCommand("delete");
       await new Promise((resolve) => setTimeout(resolve, 80));
       if (gone()) return { ok: false, why: "stopped" };
+      if (!current()) return { ok: false, why: "changed-page" };
     }
-    if (squash(box.value || box.textContent)) return { ok: false, why: "draft" };
+    if (inBox()) return { ok: false, why: "draft" };
   }
   if (!native) {
     // A contenteditable editor: paste, which Lexical and ProseMirror both
@@ -70,6 +86,8 @@ async function typeIntoComposer(text, composerSelectors, sendSelectors, autoSend
     const data = new DataTransfer();
     data.setData("text/plain", text);
     box.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }));
+    // A cancelled paste still owns any unchanged text it inserted.
+    globalThis.__izukiTyped = text;
     await new Promise((resolve) => setTimeout(resolve, 120));
     if (gone()) return { ok: false, why: "stopped" };
   }
@@ -78,21 +96,20 @@ async function typeIntoComposer(text, composerSelectors, sendSelectors, autoSend
   // frequently discarded on the next render. Pressing Send after that sends
   // an empty message — the panel would say "handed over" while nothing was
   // asked, which is the worst possible answer.
-  // Whichever the editor keeps its text in: a textarea's value, or the
-  // contenteditable's text. Some editors expose a stale `value` beside a
-  // filled editor, so an empty one is never taken over a full one.
-  const inBox = () =>
-    String(box.value ?? "").replace(/\s+/g, " ").trim() ||
-    String(box.textContent ?? "").replace(/\s+/g, " ").trim();
-  const probe = text.replace(/\s+/g, " ").trim().slice(0, 24);
-  const landed = () => Boolean(probe) && inBox().includes(probe);
+  const expected = squash(text);
+  const landed = () => Boolean(expected) && inBox() === expected;
+  if (!current()) return { ok: false, why: "changed-page" };
   if (!landed()) {
     if (gone()) return { ok: false, why: "stopped" };
+    if (inBox()) return { ok: false, why: "draft" };
+    globalThis.__izukiTyped = text;
     setValue(text);
     // An editor that re-renders from its own state throws a plain text node
     // away on the next frame. Give it that frame, then believe what's there.
     if (!native) await new Promise((resolve) => setTimeout(resolve, 120));
-    if (!landed()) return { ok: false, why: "no-text" };
+    if (gone()) return { ok: false, why: "stopped" };
+    if (!current()) return { ok: false, why: "changed-page" };
+    if (!landed()) return { ok: false, why: inBox() ? "draft" : "no-text" };
   }
 
   // Remembered as Izuki's, so a failed Send doesn't block the next question.
@@ -112,6 +129,8 @@ async function typeIntoComposer(text, composerSelectors, sendSelectors, autoSend
   if (button) {
     if (requestId && globalThis.__izukiStoppedRelay?.has(requestId)) return {ok:false,why:"stopped"};
     if (deadline && Date.now() > deadline) return { ok: false, why: "stopped" };
+    if (!current()) return { ok: false, why: "changed-page" };
+    if (!landed()) return { ok: false, why: "draft" };
     button.click();
     // Sent: whatever is in the box from now on is the person's.
     globalThis.__izukiTyped = "";

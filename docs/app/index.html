@@ -2167,7 +2167,10 @@
     requestStage = "";
   }
   function endRequest(why) {
-    if (!busy || requestEnd) return;
+    if (!busy) return;
+    // The person's Stop is newer than a watchdog timeout: it must override
+    // the pending timeout, so a late transcript can never resume listening.
+    if (requestEnd && !(why === "cancelled" && requestEnd === "timeout")) return;
     requestEnd = why;
     requestAbort?.abort();
     answered();
@@ -2304,7 +2307,14 @@
       finishRequest();
       busy = false; refreshSend(); setStatus("");
       // Stopped (or out of time) while hearing: a late transcript starts nothing.
-      if (stoppedHearing) { setOrb(""); return; }
+      if (stoppedHearing) {
+        setOrb("");
+        if (requestEnd === "timeout") {
+          bubble("izuki", endedSay(new Error("timeout")), { error: true });
+          if (talking) listen();
+        }
+        return;
+      }
       if (!said) { setOrb(""); if (talking) listen(); return; }
       liveHeard(said);
       return ask(said);
@@ -2951,6 +2961,15 @@
 
   function listen() {
     if (!talking || busy || manualPlayback) return;
+    // A wake whose own audio was unavailable leaves a voice check pending.
+    // Recognized text alone cannot prove the speaker, so force a recording
+    // through the same path that passes audio to ask().
+    if (wakeTurn) {
+      if (!canHear() || !window.MediaRecorder || !navigator.mediaDevices?.getUserMedia) {
+        return stopTalking("Voice match needs a recording. Add a free Gemini key in Settings, or turn voice match off.");
+      }
+      return record();
+    }
     if (useRecorder || !Rec || (isIOS && canHear())) return record();
     let final = "", heardAny = false, failed = "";
     try { recog = new Rec(); } catch { useRecorder = true; return record(); }
@@ -4561,6 +4580,11 @@
     const said = String(phrase || "").replace(/^.*?\b(?:hey|hi|ok|okay)[\s,]+(?:nova|izuki)\b[\s,]*/i, "").trim();
     if (!ready()) {
       setStatus("I heard “Hey Nova”. Add a free AI key or link your PC first.");
+      return;
+    }
+    if (said && wakeTurn) {
+      setStatus("Voice match is on: say it again so I can check it's you.");
+      openLive();
       return;
     }
     if (said) { void ask(said); return; }
