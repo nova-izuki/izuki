@@ -493,6 +493,7 @@ export async function setUpConnection({ ask, onFollowed, windowId = null }) {
   $("provider-tabs")?.addEventListener("change", (e) => {
     state.tabId = e.target.value ? Number(e.target.value) : null;
     state.ready = false;
+    window.dispatchEvent(new Event("izuki:connected"));
     remember();
   });
 

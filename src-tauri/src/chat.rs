@@ -1131,7 +1131,7 @@ fn run_tool(tool: &Tool, last_user: &str) -> String {
         // prompt: only once the person's own words said yes to it.
         Tool::Izuki(request) if crate::companion::elevates(request) && !crate::logins::agreed(last_user) => {
             eprintln!("[chat] held an administrator read the person hadn't agreed to");
-            Ok("Not read as administrator: ask the person first (Windows will show its own prompt), and only after they say yes, ask again with admin.".into())
+            Ok("That didn't work: not read as administrator. Ask the person first (Windows will show its own prompt), and only after they say yes, ask again with admin.".into())
         }
         // Deleting (emptying the Recycle Bin, clearing files) can't be undone:
         // only when the person's own words asked for exactly that.

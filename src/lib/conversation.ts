@@ -198,11 +198,12 @@ const PRACTICAL =
   /\b(teach me|walk me through|guide me|help me learn|show me how|do (it|this|that) with me|do it together|take turns|let me try|i'?ll do it myself)\b/i;
 
 export function needsScreen(text: string): boolean {
-  if (PRACTICAL.test(text)) return true;
-  // The user's say wins: "while I watch" / "on my screen" → the screen;
-  // "in the background" / "don't open anything" → behind the scenes.
-  if (wantsToWatch(text)) return true;
+  // The user's explicit preference wins: "teach me in the background" is
+  // still a background request, not permission to take over the screen.
   if (wantsBackground(text) || answersInBackground(text)) return false;
+  if (PRACTICAL.test(text)) return true;
+  // "While I watch" / "on my screen" means the screen.
+  if (wantsToWatch(text)) return true;
   return (SCREEN.test(text) && !/\b(remind me|set (a |an )?reminder)\b/i.test(text)) || looksLikeDirections(text);
 }
 

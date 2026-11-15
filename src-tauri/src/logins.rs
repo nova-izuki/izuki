@@ -176,11 +176,21 @@ const MONTHS: [&str; 12] = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Au
 /// "2026-11-14T21:13:05+0000 host …" or "Nov 14 21:13:05 host …" (the year
 /// from `year`): the time, and the rest of the line after the host.
 fn linux_time(line: &str, year: i32) -> Option<(String, &str)> {
+    use chrono::TimeZone;
     let first = line.split_whitespace().next()?;
     if first.len() >= 19 && first.as_bytes()[4] == b'-' && first.as_bytes()[10] == b'T' {
         let rest = line[first.len()..].trim_start();
         let rest = rest.split_once(' ').map(|(_, r)| r).unwrap_or("");
-        return Some((first[..19].to_string(), rest));
+        // journalctl is asked for --utc, but auth.log can carry an offset.
+        // Convert it, never just chop it off and call the clock UTC.
+        let at = chrono::DateTime::parse_from_str(first, "%Y-%m-%dT%H:%M:%S%z")
+            .map(|d| d.with_timezone(&chrono::Utc).format("%Y-%m-%dT%H:%M:%S").to_string())
+            .unwrap_or_else(|_| {
+                chrono::NaiveDateTime::parse_from_str(&first[..19], "%Y-%m-%dT%H:%M:%S")
+                    .map(|n| chrono::Utc.from_utc_datetime(&n).format("%Y-%m-%dT%H:%M:%S").to_string())
+                    .unwrap_or_else(|| first[..19].to_string())
+            });
+        return Some((at, rest));
     }
     let mut parts = line.splitn(5, ' ').filter(|p| !p.is_empty());
     let (mon, day, time) = (parts.next()?, parts.next()?, parts.next()?);
@@ -189,10 +199,19 @@ fn linux_time(line: &str, year: i32) -> Option<(String, &str)> {
     if time.len() != 8 {
         return None;
     }
+    let hh: u32 = time[0..2].parse().ok()?;
+    let mm: u32 = time[3..5].parse().ok()?;
+    let ss: u32 = time[6..8].parse().ok()?;
+    let naive = chrono::NaiveDate::from_ymd_opt(year, m, day)?.and_hms_opt(hh, mm, ss)?;
+    // A legacy syslog line has no zone: it's the machine's local clock.
+    let at = chrono::Local.from_local_datetime(&naive).earliest()
+        .map(|d| d.with_timezone(&chrono::Utc))
+        .unwrap_or_else(|| chrono::Utc.from_utc_datetime(&naive))
+        .format("%Y-%m-%dT%H:%M:%S").to_string();
     let after_time = line.find(time)? + time.len();
     let rest = line[after_time..].trim_start();
     let rest = rest.split_once(' ').map(|(_, r)| r).unwrap_or("");
-    Some((format!("{year:04}-{m:02}-{day:02}T{time}"), rest))
+    Some((at, rest))
 }
 
 fn word_after<'a>(s: &'a str, key: &str) -> Option<&'a str> {
@@ -204,7 +223,7 @@ pub fn parse_linux(log: &str, year: i32) -> Vec<Logon> {
     let mut out = Vec::new();
     // sshd says "Invalid user X from Y" and then, for a password try, "Failed
     // password for invalid user X from Y": one try, counted once.
-    let mut probes: Vec<(String, String, i64)> = Vec::new();
+    let mut probes: Vec<(String, String, i64, bool)> = Vec::new();
     for (n, line) in log.lines().enumerate() {
         let Some((at, rest)) = linux_time(line, year) else { continue };
         let record = format!("line {}", n + 1);
@@ -230,14 +249,22 @@ pub fn parse_linux(log: &str, year: i32) -> Vec<Logon> {
                 let invalid = body.contains(" for invalid user ");
                 let user = if invalid { word_after(body, " invalid user ") } else { word_after(body, " for ") }.unwrap_or("?");
                 let from = word_after(body, " from ").unwrap_or("");
-                let counted = invalid && probes.iter().any(|(u, f, t)| u == user && f == from && (seconds(&at) - t).abs() <= 10);
+                // One "Invalid user" line is one probe. It may explain only
+                // one following failure; several password attempts are still
+                // several attempts and must be counted.
+                let counted = invalid && {
+                    let probe = probes.iter_mut().find(|(u, f, t, used)| {
+                        !*used && u == user && f == from && (seconds(&at) - *t).abs() <= 10
+                    });
+                    if let Some((_, _, _, used)) = probe { *used = true; true } else { false }
+                };
                 if !counted {
                     push(&mut out, false, user, "ssh", Some(from).filter(|f| !f.is_empty()), Some(if invalid { "no such user" } else { "wrong password" }));
                 }
             } else if let Some(body) = rest.split_once("Invalid user ").map(|(_, b)| b) {
                 let user = body.split_whitespace().next().unwrap_or("?");
                 let from = word_after(body, " from ").unwrap_or("");
-                probes.push((user.to_string(), from.to_string(), seconds(&at)));
+                probes.push((user.to_string(), from.to_string(), seconds(&at), false));
                 push(&mut out, false, user, "ssh", Some(from).filter(|f| !f.is_empty()), Some("no such user"));
             }
         } else if rest.starts_with("login") && rest.contains("FAILED LOGIN") {
@@ -294,6 +321,16 @@ fn evidence(list: &[&Logon]) -> Vec<String> {
     lines
 }
 
+/// Who the account is, including its Windows domain: DOMAIN_Aob and
+/// DOMAIN_Bob are not the same person.
+fn account(l: &Logon) -> String {
+    if l.domain.is_empty() || l.domain == "-" {
+        l.user.to_lowercase()
+    } else {
+        format!("{}\\{}", l.domain.to_lowercase(), l.user.to_lowercase())
+    }
+}
+
 /// The patterns, oldest evidence first. `events` in any order.
 pub fn analyze(events: &[Logon]) -> Vec<Finding> {
     let mut sorted: Vec<&Logon> = events.iter().collect();
@@ -301,22 +338,35 @@ pub fn analyze(events: &[Logon]) -> Vec<Finding> {
     let mut out = Vec::new();
     let fails: Vec<&Logon> = sorted.iter().copied().filter(|l| !l.ok).collect();
 
-    // A burst of failures against one account, or from one place.
+    // A burst of failures against one account, or from one place. Parse
+    // each timestamp once and keep a moving window: Linux reads are not
+    // capped, so a busy auth log must not become quadratic.
     let mut by: BTreeMap<String, Vec<&Logon>> = BTreeMap::new();
     for f in &fails {
-        by.entry(format!("the account {}", f.user)).or_default().push(f);
+        by.entry(format!("the account {}", account(f))).or_default().push(f);
         if let Some(from) = &f.from {
             by.entry(from.clone()).or_default().push(f);
         }
     }
     let mut burst_seen = BTreeSet::new();
     for (who, list) in &by {
-        let best = (0..list.len())
-            .map(|i| list[i..].iter().take_while(|l| seconds(&l.at) - seconds(&list[i].at) <= WINDOW).count())
-            .max()
-            .unwrap_or(0);
+        let times: Vec<i64> = list.iter().map(|l| seconds(&l.at)).collect();
+        let (mut start, mut best, mut best_at) = (0usize, 0usize, 0usize);
+        for end in 0..list.len() {
+            while times[end] - times[start] > WINDOW {
+                start += 1;
+            }
+            let count = end - start + 1;
+            if count > best {
+                best = count;
+                best_at = start;
+            }
+        }
         if best >= 5 && burst_seen.insert(who.clone()) {
-            let users: BTreeSet<&str> = list.iter().map(|l| l.user.as_str()).collect();
+            // The evidence and the user count are about the burst that won,
+            // not every failure this account ever had.
+            let winning = &list[best_at..best_at + best];
+            let users: BTreeSet<&str> = winning.iter().map(|l| l.user.as_str()).collect();
             let what = if who.starts_with("the account") {
                 format!("{best} failed sign-ins to {who} within 10 minutes: someone (or something) kept trying passwords.")
             } else if users.len() >= 3 {
@@ -324,19 +374,25 @@ pub fn analyze(events: &[Logon]) -> Vec<Finding> {
             } else {
                 format!("{best} failed sign-ins from {who} within 10 minutes.")
             };
-            out.push(Finding { serious: true, what, evidence: evidence(list) });
+            out.push(Finding { serious: true, what, evidence: evidence(winning) });
         }
     }
 
-    // A success right after failures for the same account.
-    for (i, ok) in sorted.iter().enumerate().filter(|(_, l)| l.ok) {
-        let before: Vec<&Logon> = sorted[..i]
-            .iter()
-            .copied()
-            .filter(|l| !l.ok && l.user.eq_ignore_ascii_case(&ok.user) && seconds(&ok.at) - seconds(&l.at) <= WINDOW)
-            .collect();
+    // A success right after failures for the same account. Binary-search the
+    // account's sorted failures instead of rescanning every earlier event.
+    let mut failures_by: BTreeMap<String, Vec<&Logon>> = BTreeMap::new();
+    for f in &fails {
+        failures_by.entry(account(f)).or_default().push(f);
+    }
+    for ok in sorted.iter().copied().filter(|l| l.ok) {
+        let Some(list) = failures_by.get(&account(ok)) else { continue };
+        let ok_at = seconds(&ok.at);
+        let hi = list.partition_point(|l| seconds(&l.at) <= ok_at);
+        let lo = list.partition_point(|l| seconds(&l.at) < ok_at - WINDOW);
+        let before = &list[lo..hi];
         if before.len() >= 3 {
-            let mut list = before.clone();
+            // Keep room for the successful sign-in the finding talks about.
+            let mut list: Vec<&Logon> = before.iter().rev().take(3).rev().copied().collect();
             list.push(ok);
             out.push(Finding {
                 serious: true,
@@ -454,7 +510,7 @@ pub fn report(events: &[Logon], source: &str, days: u32) -> String {
 
 /// What reading the log came to.
 pub enum Read {
-    Events { source: String, events: Vec<Logon> },
+    Events { source: String, events: Vec<Logon>, capped: bool },
     /// Windows keeps it for administrators.
     NeedsAdmin,
     Unavailable(String),
@@ -463,7 +519,25 @@ pub enum Read {
 /// "today", "week", "month", or a number of days: how far back.
 pub fn days_from(said: &str) -> u32 {
     let s = said.to_lowercase();
-    if let Some(n) = s.split(|c: char| !c.is_ascii_digit()).find(|w| !w.is_empty()).and_then(|w| w.parse::<u32>().ok()) {
+    let tokens: Vec<&str> = s
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .collect();
+    // A number only means a range when its unit follows it: "24 hours" is a
+    // day, "Windows 11" is not eleven days, and "3 failed logins" is not three
+    // days. The old first-number scan got all three wrong.
+    for pair in tokens.windows(2) {
+        let Ok(n) = pair[0].parse::<u32>() else { continue };
+        let days = match pair[1] {
+            "hour" | "hours" => (n + 23) / 24,
+            "day" | "days" => n,
+            "week" | "weeks" => n.saturating_mul(7),
+            "month" | "months" => n.saturating_mul(30),
+            _ => continue,
+        };
+        return days.clamp(1, 90);
+    }
+    if let Ok(n) = s.trim().parse::<u32>() {
         return n.clamp(1, 90);
     }
     if s.contains("today") || s.contains("24") { 1 } else if s.contains("month") { 30 } else { 7 }
@@ -476,44 +550,56 @@ pub fn read(days: u32, as_admin: bool) -> Read {
     let ms = u64::from(days) * 86_400_000;
     let query = format!("*[System[(EventID=4624 or EventID=4625) and TimeCreated[timediff(@SystemTime) <= {ms}]]]");
     if as_admin {
-        // One Windows prompt, answered by the person: a fixed command (no
-        // words of anyone's in it) writes the events to Izuki's own folder.
+        // Two administrator reads share output names and a UAC prompt; only
+        // one may hold them at a time.
+        static ADMIN_READ: parking_lot::Mutex<()> = parking_lot::Mutex::new(());
+        let Some(_one_at_a_time) = ADMIN_READ.try_lock() else {
+            return Read::Unavailable("another administrator read is already waiting for approval".into());
+        };
         let Some(dir) = dirs::data_dir().map(|d| d.join("Izuki").join("investigate")) else { return Read::Unavailable("no data folder".into()) };
         let _ = std::fs::create_dir_all(&dir);
         let out = dir.join("security-logons.xml");
         let err = dir.join("security-logons.err");
         let done = dir.join("security-logons.done");
-        let script = dir.join("read-security.cmd");
         for f in [&out, &err, &done] {
             let _ = std::fs::remove_file(f);
         }
+        // The fixed command runs from an encoded, fixed command line. It is
+        // not written to a user-writable script that could be swapped while
+        // Windows' prompt is open (TOCTOU).
+        let q = |s: &str| format!("'{}'", s.replace('\'', "''"));
         let body = format!(
-            "@wevtutil qe Security /q:\"{query}\" /f:xml /rd:true /c:3000 > \"{}\" 2> \"{}\"\r\n@echo %errorlevel% > \"{}\"\r\n",
-            out.display(),
-            err.display(),
-            done.display()
+            "$q = {}\n& wevtutil qe Security \"/q:$q\" /f:xml /rd:true /c:3000 | Out-File -FilePath {} -Encoding utf8\n$code = $LASTEXITCODE\nSet-Content -Path {} -Encoding ascii -Value $code\n",
+            q(&query),
+            q(&out.display().to_string()),
+            q(&done.display().to_string())
         );
-        if std::fs::write(&script, body).is_err() {
-            return Read::Unavailable("couldn't prepare the read".into());
-        }
-        // (A single quote in the folder name is doubled for PowerShell.)
-        let path = script.display().to_string().replace('\'', "''");
+        let encoded: Vec<u8> = body.encode_utf16().flat_map(|c| c.to_le_bytes()).collect();
+        use base64::Engine;
+        let encoded = base64::engine::general_purpose::STANDARD.encode(encoded);
+        const START_PROCESS: &str = concat!("Start-", "Process");
+        const VERB_RUN_AS: &str = concat!("-Verb ", "RunAs");
+        let launch = format!(
+            "try {{ {} powershell {} -WindowStyle Hidden -Wait -ArgumentList '-NoProfile','-NonInteractive','-EncodedCommand',{} ; 'ok' }} catch {{ 'no' }}",
+            START_PROCESS, VERB_RUN_AS, encoded
+        );
         let ran = std::process::Command::new("powershell")
-            .args(["-NoProfile", "-NonInteractive", "-Command", &format!("Start-Process -FilePath '{path}' -Verb RunAs -WindowStyle Hidden -Wait")])
+            .args(["-NoProfile", "-NonInteractive", "-Command", &launch])
             .creation_flags(NO_WINDOW)
             .status();
         let xml = std::fs::read_to_string(&out).unwrap_or_default();
         let problem = std::fs::read_to_string(&err).unwrap_or_default();
         let finished = std::fs::read_to_string(&done).unwrap_or_default();
-        // No event export or helper script is left behind: this investigation
-        // keeps no copy of the Security log.
-        for f in [&out, &err, &done, &script] {
+        // No event export is left behind: this investigation keeps no copy
+        // of the Security log.
+        for f in [&out, &err, &done] {
             let _ = std::fs::remove_file(f);
         }
+        let capped = xml.matches("<Event ").count() >= 3000;
         // Only a read that really ran and said it finished counts: an empty
         // file is never taken for "nobody signed in".
         return match ran {
-            Ok(st) if st.success() && finished.trim() == "0" => Read::Events { source: "the Windows Security log".into(), events: parse_windows(&xml) },
+            Ok(st) if st.success() && finished.trim() == "0" => Read::Events { source: "the Windows Security log".into(), events: parse_windows(&xml), capped },
             Ok(st) if st.success() && !finished.is_empty() => Read::Unavailable(format!("the read as administrator failed: {}", problem.trim().chars().take(200).collect::<String>())),
             _ => Read::Unavailable("the administrator prompt was declined or closed, so the Security log wasn't read".into()),
         };
@@ -523,7 +609,11 @@ pub fn read(days: u32, as_admin: bool) -> Read {
         .creation_flags(NO_WINDOW)
         .output();
     match out {
-        Ok(o) if o.status.success() => Read::Events { source: "the Windows Security log".into(), events: parse_windows(&String::from_utf8_lossy(&o.stdout)) },
+        Ok(o) if o.status.success() => {
+            let xml = String::from_utf8_lossy(&o.stdout);
+            let capped = xml.matches("<Event ").count() >= 3000;
+            Read::Events { source: "the Windows Security log".into(), events: parse_windows(&xml), capped }
+        }
         Ok(o) => {
             let err = String::from_utf8_lossy(&o.stderr).to_lowercase();
             if err.contains("access is denied") || err.contains("unauthorized") || o.status.code() == Some(5) {
@@ -535,23 +625,24 @@ pub fn read(days: u32, as_admin: bool) -> Read {
         Err(e) => Read::Unavailable(e.to_string()),
     }
 }
-
 #[cfg(not(windows))]
 pub fn read(days: u32, _as_admin: bool) -> Read {
     let since = format!("-{days}d");
     let journal = std::process::Command::new("journalctl")
-        .args(["-q", "--no-pager", "-o", "short-iso", "--since", &since, "-t", "sshd", "-t", "login", "-t", "gdm-password", "-t", "lightdm", "-t", "sddm"])
+        .args(["-q", "--no-pager", "-o", "short-iso", "--utc", "--since", &since, "-t", "sshd", "-t", "login", "-t", "gdm-password", "-t", "lightdm", "-t", "sddm"])
         .output();
+    let cutoff = chrono::Utc::now().timestamp() - i64::from(days) * 86_400;
+    let within = |events: Vec<Logon>| events.into_iter().filter(|l| seconds(&l.at) >= cutoff).collect::<Vec<_>>();
     if let Ok(o) = journal {
         let text = String::from_utf8_lossy(&o.stdout).to_string();
         if o.status.success() && !text.trim().is_empty() {
-            return Read::Events { source: "the system journal".into(), events: parse_linux(&text, 0) };
+            return Read::Events { source: "the system journal".into(), events: within(parse_linux(&text, 0)), capped: false };
         }
     }
     for path in ["/var/log/auth.log", "/var/log/secure"] {
         if let Ok(text) = std::fs::read_to_string(path) {
             let year = chrono::Utc::now().format("%Y").to_string().parse().unwrap_or(2026);
-            return Read::Events { source: path.into(), events: parse_linux(&text, year) };
+            return Read::Events { source: path.into(), events: within(parse_linux(&text, year)), capped: false };
         }
     }
     Read::Unavailable("neither the journal nor /var/log/auth.log could be read (it may need sudo)".into())
@@ -581,7 +672,14 @@ pub fn asked(said: &str) -> Option<String> {
     // out of the Security log.
     let local = this_pc
         || has(&[" failed ", " suspicious ", " unusual ", " sign ins ", " signins ", " sign-ins ", " logons ", " login activity ", " sign-in activity ", " login history ", " anyone ", " someone "]);
-    let somewhere_else = has(&[" in to ", " into ", " on to ", " onto ", " me in "]) && !this_pc;
+    // A named service/device is not this PC's log, even when "failed" made
+    // the request look local ("any failed logins for Gmail today").
+    let service_target = has(&[
+        " gmail ", " outlook ", " blackboard ", " canvas ", " discord ", " slack ", " github ",
+        " facebook ", " instagram ", " reddit ", " twitter ", " steam ", " xbox ", " email ",
+        " bank ",
+    ]);
+    let somewhere_else = (has(&[" in to ", " into ", " on to ", " onto ", " me in "]) || service_target) && !this_pc;
     let ok = about && looking && local && !somewhere_else && crate::practical::mode_of(said) == crate::practical::Mode::Do && !crate::practical::offers(said);
     ok.then(|| said.to_string())
 }
@@ -613,7 +711,14 @@ pub fn ability(details: &str) -> String {
     let days = days_from(details);
     let admin = details.to_lowercase().contains("admin");
     match read(days, admin) {
-        Read::Events { source, events } => report(&events, &source, days),
+        Read::Events { source, events, capped } => {
+            let mut text = report(&events, &source, days);
+            if capped {
+                text.push_str("Coverage: the read stopped at 3,000 matching records. Older events in this range were not read; ask for a shorter range to see them.
+");
+            }
+            text
+        }
         Read::NeedsAdmin => format!("Windows keeps the Security log (who signed in, and failed tries) for administrators, and Izuki \
 isn't running as one. Ask the person: \"{}\" Only if they say yes, use [IZUKI: logins | the same days, admin]. \
 They could also open Event Viewer → Windows Logs → Security themselves. Nothing was read.", ASK_ADMIN),
@@ -651,6 +756,7 @@ mod tests {
     fn ok(at: &str, user: &str, how: &str, from: Option<&str>) -> Logon {
         Logon { at: at.into(), ok: true, user: user.into(), domain: String::new(), how: how.into(), from: from.map(String::from), workstation: None, why: None, record: format!("r{at}") }
     }
+    fn domain(mut l: Logon, d: &str) -> Logon { l.domain = d.into(); l }
 
     #[test]
     fn guessing_from_one_place_is_called_out_with_its_evidence() {
@@ -681,6 +787,37 @@ mod tests {
         assert!(r.contains("read-only") && r.contains("not proof of an attack"), "{r}");
         let empty = report(&[], "sample", 7);
         assert!(empty.contains("No 4624 or 4625 records") && empty.contains("auditing can be off"), "{empty}");
+    }
+
+    #[test]
+    fn the_same_name_in_another_domain_is_not_the_same_account() {
+        let ev = vec![
+            domain(fail("2026-11-14T09:00:00", "bob", "10.0.0.5", "wrong password"), "DOMAIN_A"),
+            domain(fail("2026-11-14T09:01:00", "bob", "10.0.0.5", "wrong password"), "DOMAIN_A"),
+            domain(fail("2026-11-14T09:02:00", "bob", "10.0.0.5", "wrong password"), "DOMAIN_A"),
+            domain(ok("2026-11-14T09:03:00", "bob", "network", Some("10.0.0.5")), "DOMAIN_B"),
+        ];
+        let f = analyze(&ev);
+        assert!(!f.iter().any(|f| f.what.contains("signed in after")), "a different domain is not the same account: {f:?}");
+    }
+
+    #[test]
+    fn burst_evidence_is_the_burst_not_older_isolated_failures() {
+        let mut ev: Vec<Logon> = (0..4).map(|i| fail(&format!("2026-11-14T01:0{i}:00"), "bob", "10.0.0.5", "wrong password")).collect();
+        ev.extend((0..5).map(|i| fail(&format!("2026-11-14T02:0{i}:00"), "bob", "10.0.0.5", "wrong password")));
+        let f = analyze(&ev);
+        let burst = f.iter().find(|f| f.what.contains("the account bob")).expect("the burst");
+        assert!(burst.evidence.iter().any(|e| e.contains("02:00:00")), "{burst:?}");
+        assert!(!burst.evidence.iter().any(|e| e.contains("01:0")), "old isolated failures are not the burst: {burst:?}");
+    }
+
+    #[test]
+    fn separate_password_attempts_are_not_swallowed_by_one_probe() {
+        let log = "Nov 14 03:00:00 lab sshd[1]: Invalid user bob from 203.0.113.9 port 50000
+Nov 14 03:00:01 lab sshd[1]: Failed password for invalid user bob from 203.0.113.9 port 50000 ssh2
+Nov 14 03:00:02 lab sshd[1]: Failed password for invalid user bob from 203.0.113.9 port 50000 ssh2";
+        let ev = parse_linux(log, 2026);
+        assert_eq!(ev.len(), 3, "one probe explains one failure, not the next attempt: {ev:#?}");
     }
 
     #[test]
@@ -731,6 +868,7 @@ Nov 14 08:21:00 lab CRON[700]: pam_unix(cron:session): session opened for user r
         assert!(asked("check sign-ins this week").is_some(), "the agent's own wording");
         assert!(asked("log in to blackboard").is_none());
         assert!(asked("who's logged in to discord").is_none());
+        assert!(asked("any failed logins for Gmail today").is_none(), "a named service is not this PC's log");
         assert!(asked("check my login for blackboard").is_none(), "a site's own login isn't this PC's log");
         assert!(asked("teach me how to check failed logins").is_none(), "a lesson, not the answer");
         assert!(asked("help me investigate suspicious login activity").is_none(), "asked how first");
@@ -744,5 +882,8 @@ Nov 14 08:21:00 lab CRON[700]: pam_unix(cron:session): session opened for user r
         assert_eq!(days_from("month, admin"), 30);
         assert_eq!(days_from("3 days"), 3);
         assert_eq!(days_from("400"), 90);
+        assert_eq!(days_from("failed logins in the last 24 hours"), 1, "hours are not days");
+        assert_eq!(days_from("Who signed in to Windows 11 this week?"), 7, "the 11 is not a range");
+        assert_eq!(days_from("3 failed logins today"), 1, "the 3 is a count, not days");
     }
 }

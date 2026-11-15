@@ -17,7 +17,7 @@
 
 use crate::model::{ActionStep, Intent};
 use parking_lot::Mutex;
-use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
 use std::time::{Duration, Instant};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -69,6 +69,8 @@ struct Session {
 static SESSION: Mutex<Session> = Mutex::new(Session { task: 0, mode: Mode::Do, next: None, last: None, yours: Vec::new(), mine: 0, at: None });
 /// A step is yours right now: Izuki is watching, not acting.
 static WAITING: AtomicBool = AtomicBool::new(false);
+/// Which task owns WAITING: an old waiter must not clear a newer one's turn.
+static WAITING_TASK: AtomicU64 = AtomicU64::new(0);
 /// Said or pressed during your turn: 1 = done, 2 = do it for me.
 static SIGNAL: AtomicU8 = AtomicU8::new(0);
 
@@ -121,10 +123,23 @@ fn continues(task: &str) -> bool {
 
 /// A task is starting (brain.rs `Working::on`). A continuation of a recent
 /// session keeps its mode and its record of who did what.
-pub fn begin(task: u64, said: &str) {
+pub fn begin(task: u64, said: &str, continuing: bool) {
     let mut s = SESSION.lock();
     let recent = s.at.is_some_and(|t| t.elapsed() < Duration::from_secs(30 * 60));
     let asked = mode_of(said);
+    // A resumed checkpoint carries the mode the person chose after the
+    // objective was written ("teach me instead"). `continuing` is explicit
+    // because the restored text is the original objective, not "keep going".
+    if continuing && (recent || s.task != 0) {
+        s.task = task;
+        s.at = Some(Instant::now());
+        // The resumed task starts before any person turn: an old waiter's
+        // signal must not be mistaken for this task's.
+        WAITING.store(false, Ordering::SeqCst);
+        WAITING_TASK.store(0, Ordering::SeqCst);
+        SIGNAL.store(0, Ordering::SeqCst);
+        return;
+    }
     if asked == Mode::Do && continues(said) && recent && s.mode != Mode::Do {
         s.task = task;
         s.at = Some(Instant::now());
@@ -132,6 +147,18 @@ pub fn begin(task: u64, said: &str) {
     }
     *s = Session { task, mode: asked, next: None, last: None, yours: Vec::new(), mine: 0, at: Some(Instant::now()) };
     WAITING.store(false, Ordering::SeqCst);
+    WAITING_TASK.store(0, Ordering::SeqCst);
+    SIGNAL.store(0, Ordering::SeqCst);
+}
+
+/// An instant command is Izuki's own action, not a teaching step. Without
+/// this, a scroll after a lesson kept `Teach` and waited for the person.
+pub fn reset_for_instant() {
+    // Start a clean Do session: an instant command must not inherit a
+    // lesson's mode, queued handoff or "you did N steps" wrap-up.
+    *SESSION.lock() = Session { task: 0, mode: Mode::Do, next: None, last: None, yours: Vec::new(), mine: 0, at: Some(Instant::now()) };
+    WAITING.store(false, Ordering::SeqCst);
+    WAITING_TASK.store(0, Ordering::SeqCst);
     SIGNAL.store(0, Ordering::SeqCst);
 }
 
@@ -274,20 +301,43 @@ pub fn waiting() -> bool {
 /// (typing gets longer to settle), or "I did it" / "do it for me". A look
 /// every second and a half, through accessibility: no screenshot, nothing
 /// uploaded while you work.
-pub fn wait_for_person(alive: &dyn Fn() -> bool, typing: bool) -> Turn {
+pub fn wait_for_person(alive: &dyn Fn() -> bool, typing: bool, beat: &dyn Fn()) -> Turn {
+    let owner = SESSION.lock().task;
     SIGNAL.store(0, Ordering::SeqCst);
+    WAITING_TASK.store(owner, Ordering::SeqCst);
     WAITING.store(true, Ordering::SeqCst);
-    let out = watch(alive, typing);
-    WAITING.store(false, Ordering::SeqCst);
-    SIGNAL.store(0, Ordering::SeqCst);
+    let out = watch(alive, typing, beat);
+    // A newer task may already own the turn: only its owner may clear it.
+    if WAITING_TASK.load(Ordering::SeqCst) == owner {
+        WAITING.store(false, Ordering::SeqCst);
+        WAITING_TASK.store(0, Ordering::SeqCst);
+    }
+    if owner == SESSION.lock().task {
+        SIGNAL.store(0, Ordering::SeqCst);
+    }
     out
 }
 
-fn watch(alive: &dyn Fn() -> bool, typing: bool) -> Turn {
-    let before = fingerprint();
+/// A UI Automation read can block inside a provider. One worker at a time,
+/// and the watch loop still checks Stop and the idle limit while it waits.
+static FP_BUSY: AtomicBool = AtomicBool::new(false);
+fn fingerprint_bounded(wait: Duration) -> Option<u64> {
+    if FP_BUSY.swap(true, Ordering::SeqCst) { return None; }
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let value = fingerprint();
+        FP_BUSY.store(false, Ordering::SeqCst);
+        let _ = tx.send(value);
+    });
+    rx.recv_timeout(wait).ok()
+}
+
+fn watch(alive: &dyn Fn() -> bool, typing: bool, beat: &dyn Fn()) -> Turn {
+    let mut before = fingerprint_bounded(Duration::from_secs(2));
     let started = Instant::now();
     let settle = Duration::from_millis(if typing { 2500 } else { 1200 });
     let mut changed: Option<(u64, Instant)> = None;
+    let mut last_beat = Instant::now();
     loop {
         for _ in 0..5 {
             if !alive() {
@@ -303,9 +353,14 @@ fn watch(alive: &dyn Fn() -> bool, typing: bool) -> Turn {
         if started.elapsed() > Duration::from_secs(15 * 60) {
             return Turn::Idle;
         }
-        let now = fingerprint();
+        if last_beat.elapsed() >= Duration::from_secs(10) {
+            last_beat = Instant::now();
+            beat();
+        }
+        let Some(now) = fingerprint_bounded(Duration::from_secs(2)) else { continue };
+        let Some(previous) = before else { before = Some(now); continue };
         match changed {
-            None if now != before => changed = Some((now, Instant::now())),
+            None if now != previous => changed = Some((now, Instant::now())),
             Some((last, _)) if now != last => changed = Some((now, Instant::now())),
             Some((_, since)) if since.elapsed() >= settle => return Turn::Done,
             _ => {}
@@ -352,6 +407,8 @@ pub fn heard(said: &str, task_running: bool) -> Option<String> {
         }
         "teach me instead" | "let me do the rest" | "ill do the rest" | "i want to do it myself" => {
             session.mode = Mode::Teach;
+            // A queued "you do this one" must not override this choice.
+            session.next = None;
             Some("Sure — your hands from here. I'll show you each step.".into())
         }
         "take turns" | "lets take turns" | "do it with me" => {
@@ -442,28 +499,28 @@ mod tests {
     #[test]
     fn turns_follow_the_mode_and_showing_is_always_izukis() {
         let _one = ONE.lock();
-        begin(1, "teach me how to open settings");
+        begin(1, "teach me how to open settings", false);
         assert_eq!(hands_for(&step(Intent::Click)), Hands::Person);
         assert_eq!(hands_for(&step(Intent::Point)), Hands::Izuki);
-        begin(2, "do it with me: open settings");
+        begin(2, "do it with me: open settings", false);
         assert_eq!(hands_for(&step(Intent::Click)), Hands::Izuki);
         record(Hands::Izuki, "opened Start");
         assert_eq!(hands_for(&step(Intent::Click)), Hands::Person);
         record(Hands::Person, "clicked Settings");
         assert_eq!(hands_for(&step(Intent::Key)), Hands::Izuki);
-        begin(3, "open settings");
+        begin(3, "open settings", false);
         assert_eq!(hands_for(&step(Intent::Click)), Hands::Izuki);
     }
 
     #[test]
     fn keep_going_keeps_a_teaching_session() {
         let _one = ONE.lock();
-        begin(10, "teach me how to use ipconfig");
+        begin(10, "teach me how to use ipconfig", false);
         record(Hands::Person, "opened the terminal");
-        begin(11, "keep going");
+        begin(11, "keep going", false);
         assert_eq!(mode(), Mode::Teach);
         assert_eq!(wrap_up().as_deref(), Some("You did that step yourself."));
-        begin(12, "open notepad");
+        begin(12, "open notepad", false);
         assert_eq!(mode(), Mode::Do);
         assert_eq!(wrap_up(), None);
     }
@@ -471,7 +528,7 @@ mod tests {
     #[test]
     fn hand_offs_by_voice_only_while_a_task_runs() {
         let _one = ONE.lock();
-        begin(20, "teach me how to rename a file");
+        begin(20, "teach me how to rename a file", false);
         assert_eq!(heard("you do this one", false), None);
         assert!(heard("you do this one", true).is_some());
         assert_eq!(hands_for(&step(Intent::Click)), Hands::Izuki, "the next step is Izuki's, once");

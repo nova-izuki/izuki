@@ -2653,9 +2653,15 @@ struct Working(u64);
 
 impl Working {
     fn on(task: &str) -> Self {
+        Self::on_with(task, false)
+    }
+
+    /// `continuing`: the checkpoint's restored objective is not a new
+    /// request; keep the practical mode the person chose after writing it.
+    fn on_with(task: &str, continuing: bool) -> Self {
         let id = WORK_SEQ.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
         *WORK_TASK.lock() = (id, task.to_string());
-        crate::practical::begin(id, task);
+        crate::practical::begin(id, task, continuing);
         Working(id)
     }
 
@@ -2773,7 +2779,19 @@ fn your_turn(app: &AppHandle, step: &ActionStep, what: &str, i: usize, total: us
         // Your hands now: Izuki's own buttons take clicks, Esc is the app's.
         let _yours = crate::overlay::yours(app);
         let _esc = crate::hotkey::yours();
-        crate::practical::wait_for_person(alive, step.action == Intent::Type)
+        // A real progress line every so often: the voice watchdog must not
+        // cancel a person who needs more than a minute for their step.
+        let beat = || {
+            let _ = app.emit(
+                events::STATUS,
+                StatusEvent {
+                    kind: "working",
+                    message: format!("Your turn · step {} of {total}", i + 1),
+                    detail: Some(format!("{what} Take your time — say \"I did it\" or \"do it for me\".")),
+                },
+            );
+        };
+        crate::practical::wait_for_person(alive, step.action == Intent::Type, &beat)
     };
     // What you did on your turn is yours, not "you grabbed the PC while I worked".
     *LAST_OWN.lock() = Some(std::time::Instant::now());
@@ -2879,9 +2897,17 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
                     if crate::practical::hands_for(step) == crate::practical::Hands::Person {
                         let what = crate::practical::say_what(step);
                         match your_turn(app, step, &what, i, steps.len(), alive) {
-                            crate::practical::Turn::HandBack => {}
+                            crate::practical::Turn::HandBack => {
+                                // The hand-back click is not the person
+                                // competing with Izuki: refresh the input
+                                // watermark before the step is performed.
+                                own.set(std::time::Instant::now());
+                            }
                             crate::practical::Turn::Done => {
                                 crate::practical::record(crate::practical::Hands::Person, &what);
+                                // The person's step is real progress too:
+                                // include it in the completed/evidence count.
+                                executed.set(i + 1);
                                 *STEP_SNAG.lock() = Some(format!("{} step {} of {}: {what}", crate::practical::YOUR_TURN_DONE, i + 1, steps.len()));
                                 return false;
                             }
@@ -3049,7 +3075,11 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
                                 return false;
                             }
                             executed.set(i + 1);
-                            crate::practical::record(crate::practical::Hands::Izuki, "");
+                            // Showing a control (point/draw/watch/hover) is
+                            // not an alternating action turn.
+                            if !matches!(step.action, Intent::Point | Intent::Draw | Intent::Watch | Intent::Hover) {
+                                crate::practical::record(crate::practical::Hands::Izuki, "");
+                            }
                             if step.action == Intent::Do {
                                 let mut said = DIRECT_SAID.lock();
                                 if said.len() < 4 {
@@ -3787,6 +3817,10 @@ pub fn run_instant(app: &AppHandle, store: &Arc<Store>, said: &str) -> Option<Vi
     if uia::screen_locked() {
         return None;
     }
+    // An instant command is Izuki's own action, not the person's next lesson
+    // step. Reset the practical mode first so a scroll after Teach does not
+    // wait for the person or leave `done` looking unconfirmed.
+    crate::practical::reset_for_instant();
     // Like any new task, this replaces one still running, and starts with no
     // earlier task's re-plan signal or final-action attempts.
     clear_replan_state();
@@ -3906,7 +3940,9 @@ fn submit_task(
     let resumes = resumes_waiting(&prompt);
     // A taken task is no longer waiting: its durable copy goes with it,
     // before any action can fail; a fresh stop writes a fresh checkpoint.
-    let (prompt, resumed) = match take_unfinished() {
+    let checkpoint = take_unfinished();
+    let resuming = resumes && checkpoint.is_some();
+    let (prompt, resumed) = match checkpoint {
         Some((task, done)) if resumes => (task, done),
         Some(t) => {
             // Something new — forget the old one.
@@ -4092,7 +4128,7 @@ fn submit_task(
     let _doing = crate::state::Doing::start(&prompt);
     // Izuki's last word, set when it stops on purpose (kept through finalizing).
     let mut final_word: Option<String> = None;
-    let working = Working::on(&prompt);
+    let working = Working::on_with(&prompt, resuming);
     // A new task starts with no failed-step debt and no final action blocked
     // by a previous task's attempt.
     clear_replan_state();

@@ -4,7 +4,7 @@ import { Check, ChevronDown, ChevronUp, Hand, Pause, Play, RotateCcw, Square } f
 import { api, EV, on } from "../lib/ipc";
 import type { StatusEvent } from "../lib/types";
 
-type Step = { current: number; total: number; before: boolean };
+type Step = { current: number; total: number; before: boolean; waiting: boolean };
 type Pending = "pause" | "resume" | "stop" | "rerun" | "turn" | null;
 type TrailItem = { n: number; label: string; at: number };
 
@@ -27,7 +27,13 @@ function readStep(status: StatusEvent | null): Step | null {
   if (!hit) return null;
   const total = Math.max(1, Number.parseInt(hit[2], 10) || 1);
   const current = Math.min(total, Math.max(1, Number.parseInt(hit[1], 10) || 1));
-  return { current, total, before: /(?:before|then)\s+step\s+\d+/i.test(`${status.message} ${status.detail ?? ""}`) };
+  const words = `${status.message} ${status.detail ?? ""}`;
+  return {
+    current,
+    total,
+    before: /(?:before|then)\s+step\s+\d+/i.test(words),
+    waiting: /your turn/i.test(words),
+  };
 }
 
 /** A status that means there is no task left to show. */
@@ -129,6 +135,16 @@ export function TaskStage({ onActiveChange }: { onActiveChange?: (active: boolea
       return;
     }
     if (!numbered) return;
+    // "Your turn · step 2 of 4" is waiting, not completed: keep it out of
+    // the trail and the progress count until the person presses "I did it".
+    if (numbered.waiting) {
+      lastTotal.current = numbered.total;
+      if (!startedRef.current) {
+        startedRef.current = Date.now();
+        setStartedAt(startedRef.current);
+      }
+      return;
+    }
     if (!lastTotal.current || lastTotal.current !== numbered.total) {
       setTrail([]);
       lastNumber.current = 0;
@@ -178,7 +194,7 @@ export function TaskStage({ onActiveChange }: { onActiveChange?: (active: boolea
       setTotal(announced);
       // The start event names the plan before the first click; this is what
       // lets the stage appear while Izuki is still taking its first look.
-      setStep({ current: 1, total: announced, before: true });
+      setStep({ current: 1, total: announced, before: true, waiting: false });
     }
   }, [status, total]);
 

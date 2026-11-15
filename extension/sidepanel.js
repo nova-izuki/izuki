@@ -372,6 +372,7 @@ async function ask(question, sourceOverride = null, userInitiated = false) {
   question = String(question || "").trim();
   if (!question || busy || starting || desktopTask || !current) return false;
   const source = { ...(sourceOverride || current) };
+  const captured = !!sourceOverride;
   // (Busy from the first moment: a second question sent while this one
   // checks for a quiz or lab command used to cancel it.)
   starting = true;
@@ -416,12 +417,13 @@ async function ask(question, sourceOverride = null, userInitiated = false) {
     const page = share ? await readTab(source.id) : null;
     if (!requests.active(request)) return false;
     if (page?.url && page.url !== source.url) {
-      // The tab is somewhere new. The panel learns it either way, so asking
-      // again works: before, "the page changed" came back every time on pages
-      // that change their address as you use them, since nothing told it.
+      // A queued question or a follow-up was asked about the page it was
+      // asked on. Do not combine its title/question with a different page
+      // that merely shares the host.
+      if (captured) throw Error("The page this question was asked on has changed. Open that page again, or ask a new question about the page that's open now.");
+      // A fresh question can follow a harmless same-site navigation. The
+      // panel learns the new address either way, so asking again works.
       if (current?.id === source.id) current.url = page.url;
-      // …and so does a retry or a follow-up holding the old address.
-      if (sourceOverride?.id === source.id) sourceOverride.url = page.url;
       // You shared this tab, and you're asking about what it shows now: on
       // the same site (you clicked through, a quiz moved on, an app changed
       // its address) the page read just now is the one answered. Every click

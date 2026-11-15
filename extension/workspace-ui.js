@@ -86,7 +86,10 @@ export async function setUpWorkspace({windowId,getSource,getConnection,readTab,o
       const proof=document.createElement("p");proof.className="step-result";proof.textContent="Not run yet";
       row.append(summary,instruction,final,proof);list.append(row);
     }
-    showLab({plan,source:planSource,phase:"ready",text:"Review the exact instructions. Each step includes a result check.",steps:{}});
+    // Paint the plan, but do not overwrite runs.lab: when the panel opens
+    // during an active lab, showLab already owns the live state and Stop.
+    text("lab-status","Review the exact instructions. Each step includes a result check.");
+    $("lab-start").disabled=false;$("lab-stop").hidden=true;
   }
   $("clear-chats").onclick=()=>{beforeRun();void request("history",{action:"clear"}).then(value=>{onHistory([]);return recent(value);}).catch(onError);};
   $("float-panel").onclick=()=>void request("float").catch(onError);
@@ -112,7 +115,7 @@ export async function setUpWorkspace({windowId,getSource,getConnection,readTab,o
       if(error.code==="run_active"){asking={source,text:error.message};paintRunBar();}
       throw error;
     }
-    asking=null;paintQuiz(result.state);
+    asking=null;dismissed="";paintQuiz(result.state);
   }
   function paintQuiz(state){
     runs.quiz=state||null;paintRunBar();
