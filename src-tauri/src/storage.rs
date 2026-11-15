@@ -533,8 +533,9 @@ mod tests {
     fn a_folder_is_named_the_way_you_would_find_it() {
         let home = dirs::home_dir().unwrap();
         assert_eq!(super::where_in_home(&home.join("Downloads").join("game").join("target")), "Downloads › game › target");
-        let elsewhere = std::path::Path::new(r"D:\builds\target");
-        assert_eq!(super::where_in_home(elsewhere), elsewhere.display().to_string());
+        // Beside the home folder, so never inside it, whatever the PC calls it.
+        let elsewhere = home.parent().unwrap_or(&home).join("izuki-not-home-xyz").join("target");
+        assert_eq!(super::where_in_home(&elsewhere), elsewhere.display().to_string());
     }
 
     /// The real answer on this PC: run by hand with --ignored --nocapture.

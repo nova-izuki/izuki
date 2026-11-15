@@ -64,6 +64,18 @@ const sizeOf = (p) => {
   walk(p);
   return total;
 };
+/** When anything under `p` last changed (the folder itself included). */
+const newest = (p) => {
+  let latest = 0;
+  const walk = (q) => {
+    const st = inside(q);
+    if (!st) return;
+    latest = Math.max(latest, st.mtimeMs);
+    if (st.isDirectory()) for (const n of readdirSync(q)) walk(path.join(q, n));
+  };
+  walk(p);
+  return latest;
+};
 const gb = (n) => `${(n / 1024 ** 3).toFixed(2)} GB`;
 const dirIn = (p) => inside(p)?.isDirectory() ?? false;
 
@@ -90,8 +102,10 @@ for (const profileDir of profiles) {
       if (st && st.mtimeMs < cutoff) victims.push({ file, size: st.isDirectory() ? sizeOf(file) : st.size });
     }
   }
+  // The incremental folder only when nothing in it changed for --hours: a
+  // build running right now (any profile) keeps its data.
   const incremental = path.join(profileDir, 'incremental');
-  if (dirIn(incremental)) victims.push({ file: incremental, size: sizeOf(incremental) });
+  if (dirIn(incremental) && newest(incremental) < cutoff) victims.push({ file: incremental, size: sizeOf(incremental) });
 }
 const total = victims.reduce((n, v) => n + v.size, 0);
 console.log(`trim: cache ${gb(sizeOf(target))}; ${victims.length} old Izuki build outputs (${gb(total)}) older than ${hours} h${apply ? '' : ' — run with --apply to remove them'}`);

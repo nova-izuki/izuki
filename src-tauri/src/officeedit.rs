@@ -1160,7 +1160,7 @@ pub fn new_pptx(text: &str) -> Result<Vec<u8>> {
     let shape = |id: u32, name: &str, ph: &str, (x, y, cx, cy): (u32, u32, u32, u32), paras: &str| {
         format!(
             "<p:sp><p:nvSpPr><p:cNvPr id=\"{id}\" name=\"{name}\"/><p:cNvSpPr><a:spLocks noGrp=\"1\"/></p:cNvSpPr><p:nvPr>{ph}</p:nvPr></p:nvSpPr>\
-<p:spPr><a:xfrm><a:off x=\"{x}\" y=\"{y}\"/><a:ext cx=\"{cx}\" cy=\"{cy}\"/></a:xfrm></p:spPr><p:txBody><a:bodyPr/><a:lstStyle/>{paras}</p:txBody></p:sp>"
+<p:spPr><a:xfrm><a:off x=\"{x}\" y=\"{y}\"/><a:ext cx=\"{cx}\" cy=\"{cy}\"/></a:xfrm></p:spPr><p:txBody><a:bodyPr><a:normAutofit/></a:bodyPr><a:lstStyle/>{paras}</p:txBody></p:sp>"
         )
     };
     let title_box = (838_200, 365_125, 10_515_600, 1_325_563);
