@@ -1208,6 +1208,16 @@ fn execute_step(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool, 
                 // will be judged: Enter, Tab or the arrows cost no capture.
                 let judged = shortcut_worth_checking(k);
                 let before = judged.then(|| (front_look(), crate::uia::open_windows(40)));
+                // Looking can take a moment; check once more immediately
+                // before the keys, so a switch during that look cannot send
+                // the shortcut into another app.
+                if let Some(planned) = planned_window {
+                    if crate::uia::foreground_hwnd() != Some(planned) {
+                        return Err(anyhow!(
+                            "target_changed: the window in front is not the one this shortcut was planned for — taking a fresh look"
+                        ));
+                    }
+                }
                 press_key(k)?;
                 if let Some((look, windows)) = before {
                     // Unconfirmed, not failed: the batch stops for a fresh
