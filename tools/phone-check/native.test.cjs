@@ -6,6 +6,7 @@ const path = require("path");
 const vm = require("vm");
 
 const calls = [];
+let tapped = 0, screenMoves = true, launchId = "YouTube";
 let prompted = false, appSettings = 0, lastNavigate = null, lastInstall = null, lastProgress = null;
 const stored = {};
 const localStorage = {
@@ -43,15 +44,16 @@ const window = {
         launch: async ({ name }) => {
           if (String(name).toLowerCase() !== "youtube") throw new Error("not installed");
           calls.push("launch:YouTube");
-          return { name: "YouTube" };
+          // The package id lets the bridge confirm the app came to the front.
+          return { name: "YouTube", id: launchId };
         },
         navigate: async ({ to, orb }) => { calls.push(`navigate:${to}`); lastNavigate = { to, orb }; return { to }; },
         orb: async ({ state, text }) => { calls.push(`orb:${state}${text ? `:${text}` : ""}`); return true; },
-        act: async ({ op, text }) => { calls.push(`act:${op}${text ? `:${text}` : ""}`); return { done: true }; },
+        act: async ({ op, text }) => { calls.push(`act:${op}${text ? `:${text}` : ""}`); if (op === "tapText" && screenMoves) tapped++; return { done: true }; },
         media: async ({ key }) => { calls.push(`media:${key}`); return true; },
         volume: async ({ dir }) => { calls.push(`volume:${dir}`); return true; },
         device: async () => ({ battery: 80, charging: false, online: true, wifi: true, control: true }),
-        screen: async () => ({ app: "YouTube", items: [{ n: 1, text: "Search" }, { n: 2, text: "Home" }] }),
+        screen: async () => (tapped ? { app: "YouTube", items: [{ n: 1, text: "Search YouTube", kind: "box", focused: true }] } : { app: "YouTube", items: [{ n: 1, text: "Search" }, { n: 2, text: "Home" }] }),
         wakeStatus: async () => ({ on: false, running: false, available: true, mic: false, notifications: true }),
         wake: async ({ on }) => { if (on) throw new Error("mic"); return { on: false }; },
         wakePause: async () => { throw new Error("busy"); },
@@ -65,7 +67,7 @@ const window = {
     },
   },
 };
-vm.runInNewContext(fs.readFileSync(path.resolve(__dirname, "../../docs/app/native.js"), "utf8"), { window, console, fetch, localStorage });
+vm.runInNewContext(fs.readFileSync(path.resolve(__dirname, "../../docs/app/native.js"), "utf8"), { window, console, fetch, localStorage, setTimeout, clearTimeout });
 
 (async () => {
   assert.equal(window.IzukiNative.installed(), true);
@@ -109,6 +111,11 @@ vm.runInNewContext(fs.readFileSync(path.resolve(__dirname, "../../docs/app/nativ
   assert.deepEqual(calls, ["home"], "unrecognised words must never become device actions");
   assert.equal(await window.IzukiNative.quickDeviceCommand("open YouTube"), "Opened YouTube. Tap the orb to come back to me.");
   assert.deepEqual(calls, ["home", "launch:YouTube"]);
+  // Without a package id it can't be checked, so it isn't called opened.
+  launchId = undefined;
+  assert.match(await window.IzukiNative.quickDeviceCommand("open YouTube"), /couldn't check that it opened/);
+  launchId = "YouTube";
+  calls.splice(calls.lastIndexOf("launch:YouTube"), 1);
   assert.equal(await window.IzukiNative.quickDeviceCommand("take me to Walmart"), "Taking you to Walmart. Google Maps has the turns — tap the orb when you need me.");
   assert.equal(calls.at(-1), "navigate:Walmart");
   assert.equal(lastNavigate.orb, true, "Maps respects the orb preference");
@@ -119,6 +126,9 @@ vm.runInNewContext(fs.readFileSync(path.resolve(__dirname, "../../docs/app/nativ
   assert.equal(await window.IzukiNative.orb("idle", ""), true, "idle can always take an orb away");
   window.IzukiNative.setOrbOverApps(true);
   assert.equal(await window.IzukiNative.quickDeviceCommand("tap Search"), "Tapped search.");
+  tapped = 0; screenMoves = false;
+  assert.match(await window.IzukiNative.quickDeviceCommand("tap Search"), /nothing on the screen changed/, "a press Android accepted but nothing followed is not called done");
+  screenMoves = true;
   assert.equal(await window.IzukiNative.quickDeviceCommand("volume up"), "Turned the volume up.");
   assert.equal(await window.IzukiNative.quickDeviceCommand("next song"), "Done.");
   assert.equal(await window.IzukiNative.quickDeviceCommand("lock"), "Locked your phone.");

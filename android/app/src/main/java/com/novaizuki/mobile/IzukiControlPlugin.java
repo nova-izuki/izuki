@@ -1,6 +1,8 @@
 package com.novaizuki.mobile;
 
 import android.Manifest;
+import android.app.ActivityManager;
+import android.app.AppOpsManager;
 import android.app.KeyguardManager;
 import android.app.NotificationManager;
 import android.app.UiModeManager;
@@ -66,6 +68,25 @@ public class IzukiControlPlugin extends Plugin {
   private final ExecutorService work = Executors.newCachedThreadPool();
   private static volatile IzukiControlPlugin instance;
   private static volatile String pendingWake = "";
+  /** The wake phrase's audio (base64 WAV) for voice match, briefly. */
+  private static volatile String wakeAudio = "";
+  private static volatile long wakeAudioAt = 0;
+  /** The latest wake came from a voice (not a tap on the tile): voice match applies. */
+  private static volatile boolean wakeByVoice = false;
+
+  /** From the wake listener: its audio ("" when it has none). null: a tap, not a voice. */
+  static void setWakeAudio(String b64) {
+    wakeAudio = b64 == null ? "" : b64;
+    wakeByVoice = b64 != null;
+    wakeAudioAt = System.currentTimeMillis();
+  }
+
+  /** Fresh (under 30 s) wake audio, used once. */
+  private static String takeWakeAudio() {
+    String a = System.currentTimeMillis() - wakeAudioAt < 30_000 ? wakeAudio : "";
+    wakeAudio = "";
+    return a;
+  }
   private static String wakeToken = "";
   private AudioManager.OnAudioFocusChangeListener focusListener;
 
@@ -103,6 +124,22 @@ public class IzukiControlPlugin extends Plugin {
     IzukiControlPlugin p = instance;
     if (p == null) return;
     p.notifyListeners("unlock", new JSObject(), true);
+  }
+
+  /** Izuki is back in front (often from Android Settings): re-check everything now. */
+  static void notifyResume() {
+    IzukiControlPlugin p = instance;
+    if (p == null) return;
+    p.notifyListeners("resume", new JSObject(), true);
+  }
+
+  /** Android connected or dropped Izuki's accessibility service. */
+  static void notifyControl(boolean connected) {
+    IzukiControlPlugin p = instance;
+    if (p == null) return;
+    JSObject data = new JSObject();
+    data.put("connected", connected);
+    p.notifyListeners("control", data, true);
   }
 
   /** Tell the Izuki page something happened on the TV (e.g. a paywall). */
@@ -166,6 +203,7 @@ public class IzukiControlPlugin extends Plugin {
     getContext().getSharedPreferences("izuki_native", Context.MODE_PRIVATE).edit()
         .putBoolean(IzukiWakeService.KEY_WAKE, on).apply();
     try {
+      // Both are idempotent: a second "on" never opens a second microphone.
       if (on) IzukiWakeService.start(getContext());
       else IzukiWakeService.stop(getContext());
     } catch (Exception e) {
@@ -174,25 +212,41 @@ public class IzukiControlPlugin extends Plugin {
       call.reject("Couldn't start the wake listener: " + e.getMessage());
       return;
     }
-    JSObject result = new JSObject();
-    result.put("on", on);
-    result.put("running", IzukiWakeService.isRunning());
-    result.put("available", SpeechRecognizer.isRecognitionAvailable(getContext()));
-    result.put("mic", hasMicrophone());
-    result.put("notifications", notificationsShown());
-    call.resolve(result);
+    call.resolve(wakeInfo());
   }
 
   @PluginMethod
   public void wakeStatus(PluginCall call) {
-    JSObject result = new JSObject();
-    result.put("on", getContext().getSharedPreferences("izuki_native", Context.MODE_PRIVATE)
-        .getBoolean(IzukiWakeService.KEY_WAKE, false));
-    result.put("running", IzukiWakeService.isRunning());
+    call.resolve(wakeInfo());
+  }
+
+  /**
+   * The person's own wake phrase ("hey jarvis"), besides "Hey Nova". 2–4
+   * words; an empty phrase goes back to just "Hey Nova". The listener reads
+   * it on its next check, so no restart (and no microphone blip) is needed.
+   */
+  @PluginMethod
+  public void setWakePhrase(PluginCall call) {
+    String raw = call.getString("phrase", "");
+    String clean = WakeGate.cleanPhrase(raw);
+    if (raw != null && !raw.trim().isEmpty() && clean.isEmpty()) {
+      call.reject("Use 2 to 4 words, letters only — for example “hey jarvis”.");
+      return;
+    }
+    getContext().getSharedPreferences("izuki_native", Context.MODE_PRIVATE).edit()
+        .putString(IzukiWakeService.KEY_PHRASE, clean).apply();
+    call.resolve(wakeInfo());
+  }
+
+  /** The listener's real state (OFF, ARMED, PAUSED, ERROR…), not just the switch. */
+  private JSObject wakeInfo() {
+    JSObject result;
+    try { result = JSObject.fromJSONObject(IzukiWakeService.status(getContext())); }
+    catch (Exception e) { result = new JSObject(); }
     result.put("available", SpeechRecognizer.isRecognitionAvailable(getContext()));
     result.put("mic", hasMicrophone());
     result.put("notifications", notificationsShown());
-    call.resolve(result);
+    return result;
   }
 
   /** The live call needs the microphone; pause the hotword without turning it off. */
@@ -226,6 +280,10 @@ public class IzukiControlPlugin extends Plugin {
     JSObject result = new JSObject();
     result.put("phrase", pendingWake);
     pendingWake = "";
+    // Whether it was a voice outlives its audio: an expired clip still means "check the command".
+    result.put("voice", wakeByVoice);
+    result.put("audio", takeWakeAudio());
+    wakeByVoice = false;
     call.resolve(result);
   }
 
@@ -475,21 +533,135 @@ public class IzukiControlPlugin extends Plugin {
    */
   @PluginMethod
   public void repairStatus(PluginCall call) {
+    call.resolve(readinessInfo());
+  }
+
+  /** Phone Readiness: the same facts as repairStatus, named for the new card. */
+  @PluginMethod
+  public void readiness(PluginCall call) {
+    call.resolve(readinessInfo());
+  }
+
+  /**
+   * What Android actually reports, capability by capability. The floating
+   * orb is an accessibility overlay: it works when Android control is
+   * connected, and Izuki deliberately doesn't ask for "Appear on top"
+   * (it isn't in the manifest, so Samsung doesn't list Izuki there).
+   * `overlay` keeps its old meaning for older pages: "the orb can show".
+   */
+  private JSObject readinessInfo() {
+    Context c = getContext();
     JSObject result = new JSObject();
-    result.put("control", IzukiAccessibilityService.isEnabled(getContext()));
-    result.put("running", IzukiAccessibilityService.running());
-    result.put("overlay", Settings.canDrawOverlays(getContext()));
+    boolean enabled = IzukiAccessibilityService.isEnabled(c);
+    boolean connected = IzukiAccessibilityService.running();
+    String restriction = restriction();
+    result.put("control", enabled);
+    result.put("running", connected);
+    result.put("controlState", ControlState.control(enabled, connected, restriction));
+    result.put("restricted", restriction);
+    result.put("connectedAt", IzukiAccessibilityService.connectedAt());
+    result.put("overlay", connected);
+    result.put("overlayMechanism", "accessibility");
+    result.put("appOverlayAllowed", Settings.canDrawOverlays(c));
     result.put("mic", hasMicrophone());
     result.put("notifications", notificationsShown());
-    PowerManager pm = (PowerManager) getContext().getSystemService(Context.POWER_SERVICE);
-    result.put("battery", pm != null && pm.isIgnoringBatteryOptimizations(getContext().getPackageName()));
+    result.put("notificationsRuntime", Build.VERSION.SDK_INT >= 33);
+    PowerManager pm = (PowerManager) c.getSystemService(Context.POWER_SERVICE);
+    result.put("battery", pm != null && pm.isIgnoringBatteryOptimizations(c.getPackageName()));
+    result.put("powerSave", pm != null && pm.isPowerSaveMode());
+    ActivityManager am = (ActivityManager) c.getSystemService(Context.ACTIVITY_SERVICE);
+    result.put("backgroundRestricted", Build.VERSION.SDK_INT >= 28 && am != null && am.isBackgroundRestricted());
+    result.put("speech", SpeechRecognizer.isRecognitionAvailable(c));
+    result.put("wakeOn", IzukiWakeService.wanted(c));
+    result.put("wakeRunning", IzukiWakeService.isRunning());
+    result.put("sdk", Build.VERSION.SDK_INT);
+    result.put("manufacturer", Build.MANUFACTURER);
+    result.put("tv", isTv());
+    result.put("checkedAt", System.currentTimeMillis());
     try {
-      PackageInfo info = getContext().getPackageManager().getPackageInfo(getContext().getPackageName(), 0);
+      PackageInfo info = c.getPackageManager().getPackageInfo(c.getPackageName(), 0);
       result.put("version", info.versionName);
       result.put("versionCode", Build.VERSION.SDK_INT >= 28 ? info.getLongVersionCode() : info.versionCode);
-      result.put("updateAllowed", Build.VERSION.SDK_INT < 26 || getContext().getPackageManager().canRequestPackageInstalls());
+      result.put("updateAllowed", Build.VERSION.SDK_INT < 26 || c.getPackageManager().canRequestPackageInstalls());
     } catch (Exception ignored) { }
-    call.resolve(result);
+    return result;
+  }
+
+  /**
+   * Android 13+ blocks Accessibility for apps installed from a file until the
+   * person allows "restricted settings" in App info. Android only partly
+   * exposes this, so the answer is "restricted" (Android says so), "likely"
+   * (installed from a file), or "unknown" — never a guess dressed as fact.
+   */
+  private String restriction() {
+    int op = ControlState.OP_UNKNOWN;
+    int source = ControlState.SOURCE_UNKNOWN;
+    if (Build.VERSION.SDK_INT >= 33) {
+      try {
+        AppOpsManager ops = (AppOpsManager) getContext().getSystemService(Context.APP_OPS_SERVICE);
+        if (ops != null) op = ops.unsafeCheckOpNoThrow("android:access_restricted_settings", android.os.Process.myUid(), getContext().getPackageName());
+      } catch (Exception ignored) { }
+      try {
+        source = getContext().getPackageManager().getInstallSourceInfo(getContext().getPackageName()).getPackageSource();
+      } catch (Exception ignored) { }
+    }
+    return ControlState.restriction(Build.VERSION.SDK_INT, op, source);
+  }
+
+  private static volatile JSObject lastAction = null;
+
+  /** The last phone action's outcome (no labels or typed words: those can be personal). */
+  private static void remember(String op, JSONObject outcome) {
+    JSObject a = new JSObject();
+    a.put("op", op);
+    a.put("done", outcome != null && outcome.optBoolean("done"));
+    if (outcome != null && outcome.has("how")) a.put("how", outcome.optString("how"));
+    if (outcome != null && outcome.has("reason")) a.put("reason", outcome.optString("reason"));
+    a.put("at", System.currentTimeMillis());
+    lastAction = a;
+  }
+
+  /**
+   * The developer diagnostics: versions, every capability, the overlay
+   * mechanism, the wake listener's state machine and recent transitions, and
+   * the last action. Nothing on screen, nothing anyone said, no keys.
+   */
+  @PluginMethod
+  public void diagnostics(PluginCall call) {
+    JSObject out = new JSObject();
+    out.put("readiness", readinessInfo());
+    try { out.put("wake", JSObject.fromJSONObject(IzukiWakeService.status(getContext()))); } catch (Exception ignored) { }
+    try { out.put("orb", JSObject.fromJSONObject(IzukiAccessibilityService.orbStatus())); } catch (Exception ignored) { }
+    out.put("package", getContext().getPackageName());
+    out.put("android", Build.VERSION.RELEASE);
+    out.put("model", Build.MODEL);
+    out.put("controlConnectedAt", IzukiAccessibilityService.connectedAt());
+    out.put("controlDroppedAt", IzukiAccessibilityService.disconnectedAt());
+    out.put("lastAction", lastAction);
+    out.put("at", System.currentTimeMillis());
+    call.resolve(out);
+  }
+
+  /** One tap: Android's own "let Izuki run in the background?" question, else the list. */
+  @PluginMethod
+  public void requestBatteryExemption(PluginCall call) {
+    Context c = getContext();
+    PowerManager pm = (PowerManager) c.getSystemService(Context.POWER_SERVICE);
+    if (pm != null && pm.isIgnoringBatteryOptimizations(c.getPackageName())) { call.resolve(); return; }
+    try {
+      Intent ask = new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:" + c.getPackageName()));
+      ask.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+      c.startActivity(ask);
+      call.resolve();
+      return;
+    } catch (Exception ignored) { }
+    try {
+      Intent list = new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+      c.startActivity(list);
+      call.resolve();
+    } catch (Exception e) {
+      call.reject("Couldn't open battery settings: " + e.getMessage());
+    }
   }
 
   /** “Display over other apps” for this package, not the full app list. */
@@ -532,11 +704,15 @@ public class IzukiControlPlugin extends Plugin {
     String action = call.getString("action", "");
     if (!"lock".equals(action) && IzukiAccessibilityService.locked(getContext())) { call.reject("locked"); return; }
     if (!IzukiAccessibilityService.perform(action)) {
-      call.reject("Control is off. Turn on Izuki Companion in Accessibility settings first.");
+      remember(action, null);
+      call.reject(IzukiAccessibilityService.running()
+          ? "Android didn't accept that phone action."
+          : "Control is off. Turn on Izuki Companion in Accessibility settings first.");
       return;
     }
     JSObject result = new JSObject();
     result.put("done", true);
+    remember(action, result);
     call.resolve(result);
   }
 
@@ -553,7 +729,12 @@ public class IzukiControlPlugin extends Plugin {
     }
   }
 
-  /** {op: click|focus|type|scroll|tapText|submit|tap|swipe|longpress, n, text, dir, x, y, x2, y2, ms} */
+  /**
+   * {op: click|focus|type|scroll|tapText|submit|tap|swipe|longpress, n, text, dir, x, y, x2, y2, ms}
+   * Resolves {done, how, reason, verified?, matched?}: `done` only when
+   * Android performed it (an accessibility action that returned true, or a
+   * gesture Android reported completed), and `reason` when it didn't.
+   */
   @PluginMethod
   public void act(PluginCall call) {
     if (!IzukiAccessibilityService.running()) { call.reject("off"); return; }
@@ -565,37 +746,49 @@ public class IzukiControlPlugin extends Plugin {
     float x2 = coord(call, "x2");
     float y2 = coord(call, "y2");
     int ms = call.getInt("ms", 300);
-    boolean done;
+    java.util.function.Consumer<JSONObject> answer = (outcome) -> {
+      remember(op, outcome);
+      try { call.resolve(JSObject.fromJSONObject(outcome)); }
+      catch (Exception e) { JSObject r = new JSObject(); r.put("done", outcome.optBoolean("done")); call.resolve(r); }
+    };
     switch (op) {
-      case "click": done = IzukiAccessibilityService.click(n); break;
-      case "focus": done = IzukiAccessibilityService.focus(n); break;
-      case "type": done = IzukiAccessibilityService.type(n, call.getString("text", "")); break;
-      case "scroll": done = IzukiAccessibilityService.scroll(call.getString("dir", "down")); break;
-      case "tapText": done = IzukiAccessibilityService.tapText(call.getString("text", "")); break;
-      case "submit": done = IzukiAccessibilityService.submit(); break;
-      case "tap": done = IzukiAccessibilityService.gesture("tap", x, y, 0, 0, 60); break;
-      case "swipe": done = IzukiAccessibilityService.gesture("swipe", x, y, x2, y2, ms); break;
-      case "longpress": done = IzukiAccessibilityService.gesture("longpress", x, y, 0, 0, ms); break;
-      default: done = IzukiAccessibilityService.perform(op);
+      case "click": IzukiAccessibilityService.click(n, answer); break;
+      case "tapText": IzukiAccessibilityService.tapText(call.getString("text", ""), answer); break;
+      case "submit": IzukiAccessibilityService.submit(answer); break;
+      case "tap": IzukiAccessibilityService.gesture("tap", x, y, 0, 0, 60, answer); break;
+      case "swipe": IzukiAccessibilityService.gesture("swipe", x, y, x2, y2, ms, answer); break;
+      case "longpress": IzukiAccessibilityService.gesture("longpress", x, y, 0, 0, ms, answer); break;
+      case "type": answer.accept(IzukiAccessibilityService.type(n, call.getString("text", ""))); break;
+      case "scroll": answer.accept(IzukiAccessibilityService.scroll(call.getString("dir", "down"))); break;
+      case "focus": {
+        JSObject r = new JSObject();
+        r.put("done", IzukiAccessibilityService.focus(n));
+        answer.accept(r);
+        break;
+      }
+      default: {
+        JSObject r = new JSObject();
+        r.put("done", IzukiAccessibilityService.perform(op));
+        answer.accept(r);
+      }
     }
-    JSObject result = new JSObject();
-    result.put("done", done);
-    call.resolve(result);
   }
 
-  /** A real touch gesture at screen coordinates (tap, swipe, long-press). */
+  /** A real touch gesture at screen coordinates (tap, swipe, long-press), confirmed by Android. */
   @PluginMethod
   public void gesture(PluginCall call) {
     if (!IzukiAccessibilityService.running()) { call.reject("off"); return; }
     if (IzukiAccessibilityService.locked(getContext())) { call.reject("locked"); return; }
-    boolean done = IzukiAccessibilityService.gesture(
-      call.getString("op", "tap"),
+    String op = call.getString("op", "tap");
+    IzukiAccessibilityService.gesture(op,
       coord(call, "x"), coord(call, "y"),
       coord(call, "x2"), coord(call, "y2"),
-      call.getInt("ms", 300));
-    JSObject result = new JSObject();
-    result.put("done", done);
-    call.resolve(result);
+      call.getInt("ms", 300),
+      (outcome) -> {
+        remember(op, outcome);
+        try { call.resolve(JSObject.fromJSONObject(outcome)); }
+        catch (Exception e) { JSObject r = new JSObject(); r.put("done", outcome.optBoolean("done")); call.resolve(r); }
+      });
   }
 
   private static float coord(PluginCall call, String key) {
@@ -603,10 +796,26 @@ public class IzukiControlPlugin extends Plugin {
     return v == null ? 0f : v.floatValue();
   }
 
+  /**
+   * {state: listen|think|talk|rest|idle, text, lease}. Listen, think and talk
+   * are leases (default 20 s) the page renews while they're true; without a
+   * renewal the orb falls back to resting instead of claiming "Listening…".
+   */
   @PluginMethod
   public void orb(PluginCall call) {
-    IzukiAccessibilityService.orb(call.getString("state", "idle"), call.getString("text", ""));
-    call.resolve();
+    String state = call.getString("state", "idle");
+    Integer lease = call.getInt("lease");
+    long ms = lease != null ? Math.max(0, Math.min(120_000, lease)) : ("rest".equals(state) ? 0 : 20_000);
+    IzukiAccessibilityService.orb(state, call.getString("text", ""), ms);
+    JSObject result = new JSObject();
+    result.put("available", IzukiAccessibilityService.running());
+    call.resolve(result);
+  }
+
+  @PluginMethod
+  public void orbStatus(PluginCall call) {
+    try { call.resolve(JSObject.fromJSONObject(IzukiAccessibilityService.orbStatus())); }
+    catch (Exception e) { call.reject("orb status unavailable"); }
   }
 
   // ---- apps -------------------------------------------------------------------
@@ -654,20 +863,24 @@ public class IzukiControlPlugin extends Plugin {
       int score = label.equals(wanted) || pkg.equals(wanted) ? 3 : label.startsWith(wanted) ? 2 : (label.contains(wanted) || pkg.contains(wanted.replace(" ", ""))) ? 1 : 0;
       if (score > bestScore) { best = r; bestScore = score; }
     }
-    if (best == null || wanted.isEmpty()) { call.reject("I couldn't find " + wanted + " on this TV."); return; }
+    if (best == null || wanted.isEmpty()) { call.reject("I couldn't find " + wanted + " on this " + (isTv() ? "TV" : "phone") + "."); return; }
     String pkg = best.activityInfo.packageName;
     Intent open = pm.getLeanbackLaunchIntentForPackage(pkg);
     if (open == null) open = pm.getLaunchIntentForPackage(pkg);
     if (open == null) { call.reject("That app can't be opened directly."); return; }
     open.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-    getContext().startActivity(open);
+    try { getContext().startActivity(open); }
+    catch (Exception e) { call.reject("Android didn't open " + best.loadLabel(pm) + "."); return; }
     // Only after a real launch: leave the glass orb above Photos, Maps or the
-    // app that just opened, when the person kept that setting on.
+    // app that just opened, when the person kept that setting on. It rests:
+    // nothing is listening until it's tapped.
     if (!Boolean.FALSE.equals(call.getBoolean("orb", true))) {
-      IzukiAccessibilityService.orbFor("launch", "listen", "");
+      IzukiAccessibilityService.orbFor("launch", "rest", "");
     }
     JSObject result = new JSObject();
     result.put("name", best.loadLabel(pm).toString());
+    // The package, so the caller can confirm this app really came to the front.
+    result.put("id", pkg);
     call.resolve(result);
   }
 
@@ -699,7 +912,7 @@ public class IzukiControlPlugin extends Plugin {
     }
     if (navigating && !Boolean.FALSE.equals(call.getBoolean("orb", true))) {
       // Keep the glass orb above Maps, ready for "when I get there, remind me…".
-      IzukiAccessibilityService.orbFor("maps", "listen", "Maps is driving — tap to talk");
+      IzukiAccessibilityService.orbFor("maps", "rest", "Maps is driving — tap to talk");
     }
     JSObject result = new JSObject();
     result.put("to", to);

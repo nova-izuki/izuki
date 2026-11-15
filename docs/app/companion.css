@@ -136,3 +136,12 @@
 }
 .drive-offer button.ghost { background: rgba(255, 255, 255, 0.12); color: #fff; }
 @keyframes drive-offer-in { from { transform: translateY(14px); opacity: 0; } to { transform: none; opacity: 1; } }
+
+/* While Izuki works, Send is Stop: always a way out of a long answer. */
+#send.stop { background: rgba(255, 120, 120, 0.2) !important; color: #ffd0d0 !important; border-color: rgba(255, 150, 150, 0.4) !important; }
+#send.stop svg { width: 15px; height: 15px; }
+
+/* Diagnostics: readable, wraps on a small phone, never wider than the sheet. */
+.diag-out { margin: 8px 0 0; padding: 10px; max-height: 320px; overflow: auto; border-radius: 12px; background: rgba(0, 0, 0, 0.28); color: #c9d6ee; font: 11px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; word-break: break-word; }
+#native-diagnostics summary { cursor: pointer; list-style: none; }
+#native-diagnostics summary::-webkit-details-marker { display: none; }

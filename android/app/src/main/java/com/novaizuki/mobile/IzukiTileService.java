@@ -23,6 +23,8 @@ public class IzukiTileService extends TileService {
   @Override public void onClick() {
     super.onClick();
     Intent open = new Intent(this, MainActivity.class);
+    // A tap, not a voice: voice match never blocks it.
+    IzukiControlPlugin.setWakeAudio(null);
     open.putExtra("izuki_wake_token", IzukiControlPlugin.beginWake("Hey Nova"));
     IzukiControlPlugin.notifyWake("Hey Nova");
     open.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
