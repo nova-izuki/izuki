@@ -2492,7 +2492,9 @@ where F: FnOnce() + Send + 'static,
 static STEP_SNAG: Mutex<Option<String>> = Mutex::new(None);
 /// What this round's direct steps brought back (a report, a reading): real
 /// data for the next look, word for word, never just "did it".
-static DIRECT_SAID: Mutex<Vec<String>> = Mutex::new(Vec::new());
+/// Each entry is tagged with the task that ran the step: a step a stopped
+/// task finished late never lands in the next task's look.
+static DIRECT_SAID: Mutex<Vec<(u64, String)>> = Mutex::new(Vec::new());
 
 /// A final control that has been attempted, keyed by its exact visible label.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -2816,6 +2818,8 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
             STEP_SNAG.lock().take();
             take_step_replan();
             let executed = std::cell::Cell::new(0usize);
+            // The task these steps belong to (what their direct results are tagged with).
+            let step_task = WORK_TASK.lock().0;
             // Person-completed steps are real progress but are not automated
             // clicks: keep them out of `executed` (and last_click replay).
             let people = std::cell::RefCell::new(Vec::new());
@@ -3105,8 +3109,8 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
                             }
                             if step.action == Intent::Do {
                                 let mut said = DIRECT_SAID.lock();
-                                if said.len() < 4 {
-                                    said.push(detail.chars().take(4000).collect());
+                                if said.iter().filter(|(t, _)| *t == step_task).count() < 4 {
+                                    said.push((step_task, detail.chars().take(4000).collect()));
                                 }
                             }
                             final_press_confirmed(final_attempt.as_ref());
@@ -4904,7 +4908,12 @@ fn submit_task(
             final_word = Some(said);
             break;
         }
-        let said: Vec<String> = std::mem::take(&mut *DIRECT_SAID.lock());
+        // This task's own direct results only; anything else is stale.
+        let said: Vec<String> = std::mem::take(&mut *DIRECT_SAID.lock())
+            .into_iter()
+            .filter(|(t, _)| *t == working.0)
+            .map(|(_, s)| s)
+            .collect();
         if !said.is_empty() {
             let note = format!(
                 "Your direct step(s) returned this. It is real data from this PC: base what you say on it, quote it, \

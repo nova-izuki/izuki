@@ -308,6 +308,10 @@ fn outside(ip: &str) -> bool {
     match ip.parse::<std::net::IpAddr>() {
         Ok(std::net::IpAddr::V4(v4)) => !(v4.is_private() || v4.is_loopback() || v4.is_link_local() || v4.is_unspecified()),
         Ok(std::net::IpAddr::V6(v6)) => {
+            // "::ffff:203.0.113.9" is an IPv4 address written for IPv6.
+            if let Some(v4) = v6.to_ipv4_mapped() {
+                return outside(&v4.to_string());
+            }
             let first = v6.segments()[0];
             !(v6.is_loopback() || v6.is_unspecified() || (first & 0xfe00) == 0xfc00 || (first & 0xffc0) == 0xfe80)
         }
@@ -733,6 +737,13 @@ They could also open Event Viewer → Windows Logs → Security themselves. Noth
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_ipv4_address_written_for_ipv6_is_judged_as_ipv4() {
+        assert!(outside("::ffff:203.0.113.9"));
+        assert!(!outside("::ffff:192.168.1.20"));
+        assert!(!outside("fe80::1"));
+    }
 
     const WIN: &str = r#"<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Security-Auditing'/><EventID>4625</EventID><TimeCreated SystemTime='2026-11-14T03:01:05.1234567Z'/><EventRecordID>101</EventRecordID></System><EventData><Data Name='TargetUserName'>admin</Data><Data Name='TargetDomainName'>PC</Data><Data Name='Status'>0xc000006d</Data><Data Name='SubStatus'>0xc0000064</Data><Data Name='LogonType'>3</Data><Data Name='IpAddress'>203.0.113.9</Data><Data Name='WorkstationName'>-</Data></EventData></Event>
 <Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><EventID>4624</EventID><TimeCreated SystemTime='2026-11-14T08:15:00.0000000Z'/><EventRecordID>102</EventRecordID></System><EventData><Data Name='TargetUserName'>nova</Data><Data Name='TargetDomainName'>PC</Data><Data Name='LogonType'>2</Data><Data Name='IpAddress'>127.0.0.1</Data></EventData></Event>

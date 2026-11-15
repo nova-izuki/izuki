@@ -432,7 +432,9 @@ pub async fn instant_command(app: AppHandle, said: String) -> Option<String> {
         if details.to_lowercase().contains("admin") && !crate::logins::agreed(&said) {
             return Some(crate::logins::ask_admin());
         }
-        return Some(crate::logins::ability(&details));
+        // Reading the log (and an administrator read waiting on Windows'
+        // prompt) runs on the blocking pool, never an async worker.
+        return Some(blocking(move || crate::logins::ability(&details)).await.unwrap_or_else(|e| format!("The sign-in log couldn't be read: {e}. Nothing was read, so I won't describe any sign-ins.")));
     }
     if crate::notes::is_study_prompt(&said) { return None; }
     if crate::brain::direct_answer_requested(&said) {

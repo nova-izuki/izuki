@@ -977,7 +977,11 @@ export function VoiceEngine() {
     // me do this one"): handed to the task, which keeps going. Nothing
     // running: they go on as a normal request.
     if (PRACTICAL_TURN.test(own.trim())) {
+      const asked = requestSeq;
       const reply = await api.practicalSay(own).catch(() => null);
+      // Stopped, or something newer came in while it answered: say nothing,
+      // and never treat the words as a new request either.
+      if (requestSeq !== asked) return;
       if (reply) {
         if (!session.current.on) startSession(from === "voice", "speaking");
         await respond(reply, "calm", true, true);
