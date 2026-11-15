@@ -4,7 +4,7 @@
 
 - The Android companion now has one floating glass language: a rounded header with a soft rim, a night-blue ground, frosted composer, deeper cards and gentler press feedback. Nothing new floats on top of a conversation.
 - The header is six clear controls: Home, New, Read aloud, Call, Settings and **More**. Drive, Remote, Lecture and **PC Missions** (formerly Touch Grass) moved into a Command Centre where each has room, a real icon and a one-line description.
-- Read aloud is a compact floating glass circle when it is on, not a stretched oval. Call keeps its pill shape with a brighter gradient and a soft lift, and Home and New get their names back on wider screens.
+- Every header control is the same floating glass circle: Read aloud glows when it is on, and Call keeps only a blue glass tint instead of turning into a separate pill. Home and New get their names back on wider screens.
 - The one-tap phone dock on Home is now always visible. Home, Back, Recents, Notifications, Screenshot and Lock are glass pills with proper icons instead of Unicode glyphs, and each is large enough to hit without aiming.
 - The live call's round controls are layered glass now, with a red glass end button, a soft halo behind the orb and stronger press states.
 - The cockpit's Home, Back, Music, Lock, Drive and Shot buttons use drawn icons and glass tiles instead of `⌂ ↩ ♫ ⏻ ◈ ◉`.
@@ -17,6 +17,11 @@
 - Health re-checks itself when you come back from Android settings, so the row updates instead of staying stale. A small dot on the Settings button and a Home strip appear only while something is unfinished.
 - The Quick Settings button opens the tile editor and explains where to drag **Ask Izuki**.
 - Older APKs without the new native health call still show the checks they can answer; the app never invents a permission it cannot read.
+
+## 🪟 The Task Stage keeps its trail
+
+- The desktop Task Stage still floats above a real multi-step task and keeps Pause, Resume and Stop in reach. It now keeps the steps that have already finished, with the real result line and time for each, so a long job reads as a short plan instead of one line that keeps replacing itself.
+- The live step, elapsed time and progress stay together in the same glass room. It remains a view of the real desktop task, not a sandbox, and moving the mouse or pressing Esc still takes control back.
 
 ## 🔊 Sound, easier to read and change
 

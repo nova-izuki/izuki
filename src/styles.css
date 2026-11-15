@@ -2018,6 +2018,73 @@ html.izuki-overlay .izk-task-detail {
   -webkit-line-clamp: 2;
 }
 
+html.izuki-overlay .izk-task-trail {
+  margin: 10px 15px 0;
+  padding: 8px 9px 7px;
+  border: 1px solid rgba(196, 229, 255, 0.09);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.028);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+html.izuki-overlay .izk-task-trail-label {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 7.5px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #688097;
+}
+
+html.izuki-overlay .izk-task-trail ol {
+  display: grid;
+  gap: 4px;
+  max-height: 82px;
+  margin: 6px 0 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(142, 232, 255, 0.2) transparent;
+}
+
+html.izuki-overlay .izk-task-trail li {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  font-size: 9.5px;
+  line-height: 1.3;
+  color: #9db2c8;
+}
+
+html.izuki-overlay .izk-task-trail .tick {
+  display: grid;
+  width: 14px;
+  height: 14px;
+  place-items: center;
+  border: 1px solid rgba(142, 232, 255, 0.26);
+  border-radius: 50%;
+  background: rgba(142, 232, 255, 0.13);
+  font-size: 7px;
+  color: #c8f4ff;
+  box-shadow: 0 0 8px rgba(142, 232, 255, 0.12);
+}
+
+html.izuki-overlay .izk-task-trail .label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+html.izuki-overlay .izk-task-trail time {
+  font-family: var(--font-mono);
+  font-size: 8px;
+  color: #5d748b;
+}
+
 html.izuki-overlay .izk-task-progress-wrap {
   margin: 12px 15px 0;
 }

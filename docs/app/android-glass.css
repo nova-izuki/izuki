@@ -132,10 +132,10 @@ html[data-os="android"] .app > header .icon-btn {
 }
 
 html[data-os="android"] .app > header .call-btn {
-  width: 100%;
-  max-width: 112px;
+  width: 46px;
+  max-width: 100%;
   justify-self: center;
-  border-radius: 999px;
+  border-radius: 50%;
 }
 
 html[data-os="android"] .app > header .icon-btn svg {
@@ -149,15 +149,15 @@ html[data-os="android"] .app > header .call-btn {
 }
 
 html[data-os="android"] .app > header .call-btn {
-  border: 1px solid rgba(189, 217, 255, 0.32);
+  border-color: rgba(168, 207, 255, 0.3);
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.24), rgba(255, 255, 255, 0) 55%),
-    linear-gradient(145deg, #7ea8ff, #5d7fff 50%, #34c8c5);
-  color: #071127;
+    radial-gradient(circle at 32% 18%, rgba(255, 255, 255, 0.34), transparent 46%),
+    linear-gradient(145deg, rgba(126, 168, 255, 0.36), rgba(52, 200, 197, 0.18));
+  color: #eef7ff;
   box-shadow:
-    inset 0 1px rgba(255, 255, 255, 0.48),
-    0 12px 28px rgba(67, 113, 255, 0.34),
-    0 2px 5px rgba(0, 0, 0, 0.18);
+    inset 0 1px rgba(255, 255, 255, 0.38),
+    0 10px 24px rgba(67, 113, 255, 0.28),
+    0 2px 5px rgba(0, 0, 0, 0.16);
 }
 
 html[data-os="android"] .app > header .call-btn svg {
@@ -236,26 +236,27 @@ html[data-os="ios"] .app > header .tools > .icon-btn:active {
   opacity: 1;
 }
 html[data-os="ios"] .app > header .tools > .call-btn {
-  width: 100%;
-  max-width: 92px;
+  width: 44px;
+  max-width: 100%;
   justify-self: center;
-  border-radius: 999px;
+  border-radius: 50%;
+  border: 1px solid rgba(176, 208, 255, 0.28);
   background:
-    radial-gradient(120% 100% at 25% 0%, rgba(255, 255, 255, 0.42), transparent 55%),
-    linear-gradient(145deg, #a68cff, #7c5cf5);
-  color: #fff;
+    radial-gradient(circle at 32% 18%, rgba(255, 255, 255, 0.34), transparent 46%),
+    linear-gradient(145deg, rgba(150, 170, 255, 0.38), rgba(108, 92, 245, 0.2));
+  color: #f0f6ff;
   box-shadow:
-    inset 0 1px rgba(255, 255, 255, 0.55),
-    0 12px 26px rgba(108, 78, 255, 0.38),
-    0 2px 6px rgba(0, 0, 0, 0.25);
+    inset 0 1px rgba(255, 255, 255, 0.32),
+    0 10px 24px rgba(96, 110, 255, 0.26),
+    0 2px 6px rgba(0, 0, 0, 0.22);
   transition: transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 180ms ease;
 }
 html[data-os="ios"] .app > header .tools > .call-btn:active {
-  transform: translateY(1px) scale(0.96);
+  transform: scale(0.92);
   opacity: 1;
   box-shadow:
-    inset 0 1px rgba(255, 255, 255, 0.45),
-    0 5px 14px rgba(108, 78, 255, 0.28);
+    inset 0 1px rgba(255, 255, 255, 0.28),
+    0 5px 14px rgba(96, 110, 255, 0.22);
 }
 
 /* Give Home and New their names back where there is room, still one row. */
