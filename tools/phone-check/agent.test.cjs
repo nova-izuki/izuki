@@ -212,6 +212,9 @@ function brain(replies) {
     assert.ok(!p.calls.some((c) => c.startsWith("act:click")), "no answer was picked");
     assert.equal(A._test.testPage({ items: [{ text: "Storage" }, { text: "Apps 38 GB" }] }), false);
     assert.equal(A._test.testPage({ items: [{ text: "Question 3/20" }] }), true, "a compact counter");
+    assert.equal(A._test.testPage({ items: [{ text: "Question 3" }, { text: "of 20" }] }), true, "a counter split across items");
+    assert.equal(A._test.testPage({ items: [{ text: "Episode 4" }, { text: "Time remaining 12:40" }] }), false, "a video's timer isn't a test");
+    assert.equal(A._test.testPage({ items: [{ text: "Which port does HTTPS use?" }, { text: "Choose one answer" }, { text: "Time left 08:12" }] }), true, "a timer with answers is");
     // The word "quiz" alone isn't a test: a search for "pub quiz" can be changed to "weather".
     const q = phone();
     q.native.screen = async () => ({ app: "com.android.chrome", items: [{ n: 1, text: "pub quiz near me", hint: "Search", id: "search_box", kind: "box" }, { n: 2, text: "Quiz night at The Crown", kind: "text" }] });
