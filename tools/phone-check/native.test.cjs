@@ -8,6 +8,7 @@ const vm = require("vm");
 const calls = [];
 let tapped = 0, screenMoves = true, launchId = "YouTube";
 let prompted = false, appSettings = 0, lastNavigate = null, lastInstall = null, lastProgress = null;
+let torchOn = false, speechListener = null;
 const stored = {};
 const localStorage = {
   getItem: (key) => (Object.prototype.hasOwnProperty.call(stored, key) ? stored[key] : null),
@@ -38,6 +39,7 @@ const window = {
         installUpdate: async (args) => { lastInstall = args; return { started: true, version: "1.0.211" }; },
         addListener: (name, callback) => {
           if (name === "updateProgress") lastProgress = callback;
+          if (name === "speech") speechListener = callback;
           return { remove() {} };
         },
         openAccessibilitySettings: async () => calls.push("settings"),
@@ -58,6 +60,11 @@ const window = {
         wake: async ({ on }) => { if (on) throw new Error("mic"); return { on: false }; },
         wakePause: async () => { throw new Error("busy"); },
         openAppSettings: async () => { appSettings++; },
+        voicePrefs: async (prefs) => { calls.push(`prefs:${JSON.stringify(prefs)}`); },
+        torch: async ({ on } = {}) => { const next = on === undefined ? !torchOn : !!on; torchOn = next; calls.push(`torch:${next}`); return { on: next }; },
+        openPanel: async ({ name }) => { calls.push(`panel:${name}`); return { opened: name }; },
+        storage: async () => ({ total: 128e9, free: 41.3e9, used: 86.7e9 }),
+        say: async ({ id }) => { calls.push(`say:${id}`); setTimeout(() => speechListener?.({ id, event: "done" }), 5); },
       },
       LocalNotifications: {
         checkPermissions: async () => ({ display: "prompt" }),
@@ -125,15 +132,34 @@ vm.runInNewContext(fs.readFileSync(path.resolve(__dirname, "../../docs/app/nativ
   assert.match(await window.IzukiNative.quickDeviceCommand("open YouTube"), /couldn't check that it opened/);
   launchId = "YouTube";
   calls.splice(calls.lastIndexOf("launch:YouTube"), 1);
+  // The resting orb over other apps is opt-in now; working, listening and talking always show.
   assert.equal(await window.IzukiNative.quickDeviceCommand("take me to Walmart"), "Taking you to Walmart. Google Maps has the turns — tap the orb when you need me.");
   assert.equal(calls.at(-1), "navigate:Walmart");
+  assert.equal(lastNavigate.orb, false, "no resting orb over Maps unless the person keeps one");
+  window.IzukiNative.setOrbOverApps(true);
+  assert.equal(calls.at(-1), 'prefs:{"keep":true}', "the keep-orb setting reaches Android for voice turns");
+  await window.IzukiNative.quickDeviceCommand("take me to Walmart");
   assert.equal(lastNavigate.orb, true, "Maps respects the orb preference");
   assert.equal(await window.IzukiNative.orb("listen", ""), true);
   assert.equal(calls.at(-1), "orb:listen");
   window.IzukiNative.setOrbOverApps(false);
-  assert.equal(await window.IzukiNative.orb("listen", ""), false, "the off switch gates the native orb");
+  assert.equal(await window.IzukiNative.orb("rest", ""), false, "the off switch removes the resting orb");
+  assert.equal(await window.IzukiNative.orb("think", "Opening Storage…"), true, "work in progress still shows over other apps");
   assert.equal(await window.IzukiNative.orb("idle", ""), true, "idle can always take an orb away");
   window.IzukiNative.setOrbOverApps(true);
+  // Flashlight, quick panels and storage: straight away, no AI.
+  assert.equal(await window.IzukiNative.quickDeviceCommand("turn on the flashlight"), "Flashlight on.");
+  assert.equal(await window.IzukiNative.quickDeviceCommand("flashlight off"), "Flashlight off.");
+  assert.equal(await window.IzukiNative.quickDeviceCommand("open wifi settings"), "Here's Wi-Fi.");
+  assert.equal(calls.at(-1), "panel:wifi");
+  assert.equal(await window.IzukiNative.quickDeviceCommand("bluetooth"), "Here's Bluetooth.");
+  assert.match(await window.IzukiNative.quickDeviceCommand("how much storage do I have left"), /^41 GB free of 128 GB\./, "whole gigabytes above ten, as people say them");
+  assert.equal(await window.IzukiNative.quickDeviceCommand("split screen"), "Split screen is on: pick the second app.");
+  assert.equal(calls.at(-1), "split_screen");
+  // Android's own voice: one promise per line, settled by its "done" event.
+  assert.equal(window.IzukiNative.canSpeak(), true);
+  assert.equal(await window.IzukiNative.speak("Your phone has 41 GB free."), "done");
+  assert.match(calls.at(-1), /^say:s/);
   assert.equal(await window.IzukiNative.quickDeviceCommand("tap Search"), "Tapped search.");
   tapped = 0; screenMoves = false;
   assert.match(await window.IzukiNative.quickDeviceCommand("tap Search"), /nothing on the screen changed/, "a press Android accepted but nothing followed is not called done");

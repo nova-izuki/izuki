@@ -50,6 +50,14 @@ let browser, ws, profile, server, cacheDir;
   // the compact 148px card and no open panel before focusing or clicking it.
   const closed=()=>wait('document.querySelector(".izk-notch-mini") && !document.querySelector(".izk-island-open") && document.querySelector(".izk-notch-mini").getBoundingClientRect().width < 200');
   await closed();
+  // At rest the notch hides above the top edge; only the top middle brings it down.
+  const peek=(where='middle')=>evaluate(`(()=>{const r=document.querySelector('.izk-island').getBoundingClientRect();window.izukiPoint(${where==='middle'?'r.left+r.width/2':'5'},0)})()`);
+  const away=()=>evaluate(`window.izukiPoint(window.innerWidth/2,400)`);
+  assert.equal(await evaluate(`document.querySelector('.izk-island').classList.contains('izk-island-hidden')`),true,'the notch hides at rest');
+  await peek('left');await pause(50);
+  assert.equal(await evaluate(`document.querySelector('.izk-island').classList.contains('izk-island-hidden')`),true,'the top-left corner does not bring the notch down');
+  await peek();await wait(`!document.querySelector('.izk-island').classList.contains('izk-island-hidden')`,5000);
+  await away();await wait(`document.querySelector('.izk-island').classList.contains('izk-island-hidden')`,5000);
   // A button's default activation needs the matching text payload too; a bare
   // keyDown/keyUp never produces the click Chromium gives a real key press.
   const key=async(key,code,n)=>{const text=n===13?'\r':n===32?' ':undefined;await call('Input.dispatchKeyEvent',{type:'keyDown',key,code,windowsVirtualKeyCode:n,nativeVirtualKeyCode:n,...(text?{text,unmodifiedText:text}:{})});await call('Input.dispatchKeyEvent',{type:'keyUp',key,code,windowsVirtualKeyCode:n,nativeVirtualKeyCode:n});};
@@ -59,17 +67,21 @@ let browser, ws, profile, server, cacheDir;
     await evaluate(`document.querySelector('.izk-notch-mini').focus()`);
     assert.equal(await evaluate('document.activeElement.tagName'),'BUTTON');
     assert.match(await evaluate('document.activeElement.getAttribute("aria-label")'),/Open Izuki Island/);
-    if(activation==='click')await click('.izk-notch-mini');else await key(activation==='Space'?' ':activation,activation==='Space'?'Space':'Enter',activation==='Space'?32:13);
+    if(activation==='click'){await peek();await pause(50);await click('.izk-notch-mini');}else await key(activation==='Space'?' ':activation,activation==='Space'?'Space':'Enter',activation==='Space'?32:13);
     await wait('document.querySelector(".izk-island-open")',10000);
     assert.equal(await evaluate(`getComputedStyle(document.querySelector('.izk-island'),'::before').content`),'none','rectangular glow escaped notch');
     await pause(500);
-    const shoulder=await evaluate(`(()=>{const r=document.querySelector('.izk-island').getBoundingClientRect(),hit=document.elementFromPoint(r.left+1,r.top+1);return {clear:hit?.closest('.izk-island')===null,hit:hit?.tagName+'.'+hit?.className,rect:[r.x,r.y,r.width,r.height]}})()`);
-    assert.equal(shoulder.clear,true,'transparent shoulder blocked desktop: '+JSON.stringify(shoulder));
+    // The ears flare out beside the top corners; they're decoration, so clicks there reach the desktop.
+    const ear=await evaluate(`(()=>{const r=document.querySelector('.izk-island').getBoundingClientRect(),hit=document.elementFromPoint(r.left-5,r.top+2),s=getComputedStyle(document.querySelector('.izk-notch-shell'),'::before');return {clear:!hit||hit.closest('.izk-island')===null,hit:hit?.tagName+'.'+hit?.className,width:s.width,bg:s.backgroundImage}})()`);
+    assert.equal(ear.clear,true,'an ear blocked the desktop: '+JSON.stringify(ear));
+    assert.equal(ear.width,'14px','the open notch has its ears');
+    assert.match(ear.bg,/radial-gradient/,'the ear is a curved fillet');
     await evaluate(`document.querySelector('.izk-island [role=tab]').focus()`);await key('Escape','Escape',27);
     await closed();
   }
   // Existing fixes stay effective, including actual pointer dispatch to the menu.
   await closed();
+  await peek();await pause(50);
   await click('.izk-notch-mini');await wait('document.querySelector(".izk-island-open")',10000);
   await click('.izk-island-subtitle','right');await wait('document.querySelector("[role=menu]")');
   assert.equal(await evaluate(`getComputedStyle(document.querySelector('[role=menu]')).pointerEvents`),'auto');
@@ -82,6 +94,7 @@ let browser, ws, profile, server, cacheDir;
   assert.notEqual(await evaluate(`getComputedStyle(document.querySelector('.izk-notch-shell')).filter`),'none');
   // Hover remains available after adding keyboard/click activation.
   await closed();
+  await peek();await pause(50);
   await evaluate(`(()=>{const r=document.querySelector('.izk-notch-mini').getBoundingClientRect();window.izukiPoint(r.left+r.width/2,r.top+20)})()`);
   await wait('document.querySelector(".izk-island-open")');
   const sharp=require('sharp');
@@ -106,7 +119,7 @@ let browser, ws, profile, server, cacheDir;
   fs.writeFileSync(path.join(root,'.work','notch-contrast.json'),JSON.stringify(results,null,2));
   fs.writeFileSync(path.join(root,'.work','notch-review.png'),Buffer.from((await call('Page.captureScreenshot',{format:'png'})).data,'base64'));
   assert.equal(errors.length,0,errors.join('\n'));
-  console.log(`Notch browser checks passed: Enter/Space/click, hover, transparent shoulders, no rectangular glow, actual menu click, Shadow toggle, ${results.length} rendered contrast checks (minimum ${Math.min(...results.map(r=>r.contrast))}:1).`);
+  console.log(`Notch browser checks passed: hidden at rest until the top middle, Enter/Space/click, hover, click-through ears, no rectangular glow, actual menu click, Shadow toggle, ${results.length} rendered contrast checks (minimum ${Math.min(...results.map(r=>r.contrast))}:1).`);
 })().catch(e=>{console.error(e);process.exitCode=1;}).finally(async()=>{
   try{ws?.close()}catch{}
   await closeTestBrowser(browser, profile);

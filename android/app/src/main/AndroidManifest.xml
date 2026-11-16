@@ -89,6 +89,15 @@
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
         </intent>
+        <!-- Android 11+ hides other apps' services unless they are named here:
+             without these, isRecognitionAvailable() said "no speech recognition"
+             ("Hey Nova" and the voice turn) and TextToSpeech found no engine. -->
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
     </queries>
 
     <!-- Permissions -->

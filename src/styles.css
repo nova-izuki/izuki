@@ -747,29 +747,36 @@ html[data-backdrop="tabbed"] .izk-card {
   border-radius: 0 0 6px 6px !important;
 }
 
-/* Screen-attached notch. The silhouette is a bell, not a rounded rectangle:
-   a narrow top lip meets the screen edge, then the shoulders sweep outward
-   into the full-width body and its rounded bottom. Two masked corner cut-outs
-   make the curve; the glass, rim and shadow are a separate shell so the
-   content is never clipped. */
+/* Screen-attached notch, the laptop-notch look: a dark body hanging from the
+   top edge with rounded bottom corners, and two small "ears" where its top
+   corners curve OUT into the screen edge (concave fillets), so it reads as
+   part of the bezel. The glass, rim and shadow are a separate shell so the
+   content is never clipped. At rest it hides above the edge and slides down
+   when the mouse reaches the top middle (Island.tsx). */
 .izk-island.izk-theme-notch {
+  --notch-ear: 14px;
+  --notch-top: rgba(13, 17, 27, var(--izk-island-alpha, 0.96));
   background: transparent;
   box-shadow: none;
   overflow: visible !important;
   border-radius: 0 !important;
+  translate: 0 0;
+  transition: translate 260ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity 180ms ease-out;
 }
+.izk-island.izk-theme-notch.izk-island-hidden {
+  translate: 0 -112%;
+}
+.izk-island.izk-theme-notch.izk-island-calm { transition: none; }
 /* The parent glow is rectangular; only the masked shell paints the notch. */
 .izk-island.izk-theme-notch.izk-island-open::before { content: none; }
 .izk-island.izk-theme-notch .izk-notch-shell {
-  --notch-cut-x: 7.5%;
-  --notch-cut-y: 18px;
   position: absolute;
   inset: 0;
   z-index: 0;
   pointer-events: none;
-  border: 1px solid color-mix(in srgb, var(--izk-island-accent, #22d3ee) 42%, rgba(255, 255, 255, 0.1));
+  border: 1px solid color-mix(in srgb, var(--izk-island-accent, #22d3ee) 30%, rgba(255, 255, 255, 0.06));
   border-top: 0;
-  border-radius: 0 0 26px 26px;
+  border-radius: 0 0 24px 24px;
   background:
     radial-gradient(100% 80% at 50% 0%, color-mix(in srgb, var(--izk-island-accent, #22d3ee) 10%, transparent), transparent 70%),
     linear-gradient(180deg, rgba(13, 17, 27, var(--izk-island-alpha, 0.96)) 0%, rgba(5, 7, 13, var(--izk-island-alpha, 0.96)) 100%);
@@ -780,14 +787,28 @@ html[data-backdrop="tabbed"] .izk-card {
     inset -1px 0 0 rgba(255, 255, 255, 0.05),
     inset 0 1px 0 rgba(255, 255, 255, 0.08);
   filter: drop-shadow(0 16px 32px rgba(0, 0, 0, 0.42));
-  -webkit-mask-image:
-    radial-gradient(ellipse var(--notch-cut-x) var(--notch-cut-y) at 0 0, transparent 99.2%, #000 99.7%),
-    radial-gradient(ellipse var(--notch-cut-x) var(--notch-cut-y) at 100% 0, transparent 99.2%, #000 99.7%);
-  -webkit-mask-composite: source-in;
-  mask-image:
-    radial-gradient(ellipse var(--notch-cut-x) var(--notch-cut-y) at 0 0, transparent 99.2%, #000 99.7%),
-    radial-gradient(ellipse var(--notch-cut-x) var(--notch-cut-y) at 100% 0, transparent 99.2%, #000 99.7%);
-  mask-composite: intersect;
+}
+/* The ears: the top corners flare outward into the screen edge. Each is a
+   small square beside the body's top corner, filled outside a quarter circle. */
+.izk-island.izk-theme-notch .izk-notch-shell::before,
+.izk-island.izk-theme-notch .izk-notch-shell::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  width: var(--notch-ear);
+  height: var(--notch-ear);
+  pointer-events: none;
+}
+.izk-island.izk-theme-notch .izk-notch-shell::before {
+  left: calc(-1 * var(--notch-ear) - 1px);
+  background: radial-gradient(circle at 0 100%, transparent calc(var(--notch-ear) - 0.5px), var(--notch-top) var(--notch-ear));
+}
+.izk-island.izk-theme-notch .izk-notch-shell::after {
+  right: calc(-1 * var(--notch-ear) - 1px);
+  background: radial-gradient(circle at 100% 100%, transparent calc(var(--notch-ear) - 0.5px), var(--notch-top) var(--notch-ear));
+}
+.izk-island.izk-theme-notch.izk-island-light {
+  --notch-top: rgba(101, 124, 153, var(--izk-island-alpha, 0.96));
 }
 /* Light glass: a cooler, frostier slate. Still translucent and readable with
    white text, but clearly lifted off the smoked-black default. */
@@ -809,9 +830,8 @@ html[data-backdrop="tabbed"] .izk-card {
   -webkit-backdrop-filter: blur(var(--izk-island-blur, 0px)) saturate(1.4) brightness(1.08);
 }
 
-/* Masks clip paint, not hit-testing. This invisible twin carries the same
-   silhouette with clip-path (which does clip pointer hit-testing), so the
-   cut-out shoulders pass clicks through to the desktop. */
+/* The click area of the open notch: its body (the ears are decoration, so
+   clicks there reach the desktop). */
 .izk-island.izk-theme-notch .izk-notch-hit {
   position: absolute;
   inset: 0;
@@ -822,29 +842,15 @@ html[data-backdrop="tabbed"] .izk-card {
 .izk-island.izk-theme-notch.izk-island-open .izk-notch-hit {
   display: block;
   pointer-events: auto;
-  clip-path: polygon(
-    7.5% 0, 92.5% 0,
-    92.7% 3px, 93.5% 6px, 94.8% 10px, 96.8% 14px, 100% 18px,
-    100% calc(100% - 26px),
-    calc(100% - 2.5px) calc(100% - 10px),
-    calc(100% - 10px) calc(100% - 2.5px),
-    calc(100% - 26px) 100%,
-    26px 100%,
-    10px calc(100% - 2.5px),
-    2.5px calc(100% - 10px),
-    0 calc(100% - 26px),
-    0 18px,
-    3.2% 14px, 5.2% 10px, 6.5% 6px, 7.3% 3px
-  );
+  clip-path: inset(0 round 0 0 24px 24px);
 }
 .izk-island.izk-island-blurred.izk-theme-notch .izk-notch-shell {
   backdrop-filter: blur(var(--izk-island-blur, 0px)) saturate(1.25);
   -webkit-backdrop-filter: blur(var(--izk-island-blur, 0px)) saturate(1.25);
 }
-/* The side cut-outs occupy the top corners: keep content out of them, and let
-   clicks through that transparent strip to the desktop underneath. */
+/* The top is flat now (no cut-outs): content starts just under the edge. */
 .izk-island.izk-theme-notch.izk-island-open .izk-notch-content {
-  padding-top: 22px;
+  padding-top: 12px;
   pointer-events: none;
 }
 /* Tailwind's scanner can miss a class followed by a template expression;
@@ -861,17 +867,12 @@ html[data-backdrop="tabbed"] .izk-card {
 .izk-island.izk-theme-notch:not(.izk-island-open) .izk-notch-content {
   padding: 8px 22px 0;
 }
-/* Closed: the compact live notch keeps the two outward C-curve shoulders.
-   This is a deliberate silhouette, not a rounded rectangle. */
-.izk-island.izk-theme-notch:not(.izk-island-open) .izk-notch-shell {
-  --notch-cut-x: 9%;
-  --notch-cut-y: 20px;
-  border-radius: 0 0 24px 24px;
+/* Closed: the compact live notch, smaller ears and corners. */
+.izk-island.izk-theme-notch:not(.izk-island-open) {
+  --notch-ear: 10px;
 }
-.izk-island.izk-theme-notch.izk-island-resting .izk-notch-shell {
-  --notch-cut-x: 9%;
-  --notch-cut-y: 21px;
-  border-radius: 0 0 24px 24px;
+.izk-island.izk-theme-notch:not(.izk-island-open) .izk-notch-shell {
+  border-radius: 0 0 20px 20px;
 }
 
 /* Level 1: compact live card. It sits inside the masked glass shell, so text
@@ -1107,10 +1108,19 @@ html[data-backdrop="tabbed"] .izk-card {
 }
 
 /* Nothing to say: just a faint glowing line showing where it lives. */
-/* "Always show" off: nothing at rest until your mouse goes up there. */
+/* "Always show" off: nothing at rest until your mouse goes up there, then
+   it slides down from the top edge (not a fade in place). */
 .izk-island-hidden {
   opacity: 0;
 }
+.izk-island.izk-island-docked {
+  translate: 0 0;
+  transition: translate 260ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity 180ms ease-out;
+}
+.izk-island.izk-island-docked.izk-island-hidden {
+  translate: 0 -120%;
+}
+.izk-island.izk-island-docked.izk-island-calm { transition: none; }
 
 .izk-island-rest {
   /* Static on purpose: this sits over live video all day, and a moving

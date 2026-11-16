@@ -179,6 +179,11 @@ public class IzukiAccessibilityService extends AccessibilityService {
         if (Build.VERSION.SDK_INT < 28) return false;
         global = GLOBAL_ACTION_TAKE_SCREENSHOT;
         break;
+      case "split_screen": global = GLOBAL_ACTION_TOGGLE_SPLIT_SCREEN; break;
+      case "close_shade":
+        if (Build.VERSION.SDK_INT < 31) return false;
+        global = GLOBAL_ACTION_DISMISS_NOTIFICATION_SHADE;
+        break;
       default: return false;
     }
     return service.performGlobalAction(global);
@@ -429,12 +434,23 @@ public class IzukiAccessibilityService extends AccessibilityService {
     return cls.contains("webview") || pkg.equals(service.getPackageName());
   }
 
-  /** Press thing number n from the last screen read. */
-  static void click(int n, Consumer<JSONObject> done) {
+  /**
+   * Press thing number n from the last screen read. A control that sends,
+   * pays, buys or deletes is refused unless the caller says the person asked
+   * for exactly that (`risky`): the phone agent never does.
+   */
+  static void click(int n, boolean risky, Consumer<JSONObject> done) {
     AccessibilityNodeInfo node = item(n);
     if (active == null) { off(done); return; }
     if (node == null) { done.accept(result(false, null, "stale")); return; }
-    press(node, labelOf(node), preferTouch(node, active), done);
+    String label = labelOf(node);
+    if (!risky && ControlState.risky(label)) {
+      JSONObject r = result(false, null, "needs-person");
+      put(r, "matched", label);
+      done.accept(r);
+      return;
+    }
+    press(node, label, preferTouch(node, active), done);
   }
 
   /** Move the TV's focus to thing number n (the highlight, as with the remote). */
@@ -799,7 +815,7 @@ public class IzukiAccessibilityService extends AccessibilityService {
   /** Settings can open after the page asked for the orb; take it down then. */
   private static final Runnable settingsGuard = () -> {
     IzukiAccessibilityService service = active;
-    if (service == null || orbView == null || !settingsInFront(service)) return;
+    if (service == null || orbView == null || "voice".equals(orbOwner) || !settingsInFront(service)) return;
     orbOwner = null;
     removeOrbNow();
   };
@@ -837,10 +853,14 @@ public class IzukiAccessibilityService extends AccessibilityService {
         }
         return;
       }
+      // A voice turn owns the orb while it runs: the page's own "working"
+      // orb or a Maps rest must not replace "Listening…" mid-sentence.
+      if ("voice".equals(orbOwner) && !"voice".equals(owner) && IzukiVoice.active()) return;
       // Never float Izuki's orb over Android's own Settings or permission
       // screens: that is where the person turns Accessibility on, and a
       // "Listening…" bubble there looks like Izuki is watching the setting.
-      if (settingsInFront(service)) { removeOrbNow(); return; }
+      // A voice turn is the exception: the person called Izuki there.
+      if (!"voice".equals(owner) && settingsInFront(service)) { removeOrbNow(); return; }
       orbOwner = owner;
       if (orbView == null && !addOrb(service)) return;
       showState(state, words);
@@ -855,6 +875,10 @@ public class IzukiAccessibilityService extends AccessibilityService {
     if (dot == null || caption == null) return;
     orbState = state;
     dot.setState(state);
+    // Listening, working and talking: the orb grows a little, like a phone
+    // assistant's; resting, it settles back.
+    float size = "rest".equals(state) ? 1f : 1.14f;
+    dot.animate().scaleX(size).scaleY(size).setDuration(220).start();
     String shown = words != null && !words.isEmpty() ? words
       : "listen".equals(state) ? "Listening…" : "think".equals(state) ? "Working…" : "";
     caption.setText(shown);
@@ -869,17 +893,24 @@ public class IzukiAccessibilityService extends AccessibilityService {
     LinearLayout box = new LinearLayout(service);
     box.setOrientation(LinearLayout.HORIZONTAL);
     box.setGravity(Gravity.CENTER_VERTICAL);
-    box.setPadding(dp(service, 4), dp(service, 4), dp(service, 4), dp(service, 4));
     box.setBackground(null);
-    box.setContentDescription("Izuki. Tap to talk. Drag to move. Long-press to hide.");
+    box.setContentDescription("Izuki. Tap to talk, tap again to stop. Drag to move. Long-press to hide.");
     box.setClickable(true);
+    box.setClipChildren(false);
+    box.setClipToPadding(false);
     dot = new OrbDot(service);
     box.addView(dot, new LinearLayout.LayoutParams(dp(service, 56), dp(service, 56)));
+    // Room for the orb to grow while it listens and talks.
+    box.setPadding(dp(service, 6), dp(service, 6), dp(service, 6), dp(service, 6));
     caption = new TextView(service);
     caption.setTextColor(Color.WHITE);
     caption.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
-    caption.setMaxWidth(dp(service, 220));
-    caption.setMaxLines(2);
+    caption.setMaxWidth(dp(service, 240));
+    caption.setMaxLines(3);
+    caption.setEllipsize(android.text.TextUtils.TruncateAt.END);
+    // The words open Izuki (the chat with the whole answer); the orb itself talks.
+    caption.setOnClickListener(v -> openFromOrb());
+    caption.setContentDescription("Open Izuki");
     caption.setPadding(dp(service, 10), dp(service, 6), dp(service, 12), dp(service, 6));
     android.graphics.drawable.GradientDrawable capBg = new android.graphics.drawable.GradientDrawable();
     capBg.setColor(Color.argb(210, 8, 9, 20));
@@ -941,12 +972,20 @@ public class IzukiAccessibilityService extends AccessibilityService {
       };
     }
 
+    private void settle() {
+      if (dot == null) return;
+      float size = "rest".equals(orbState) ? 1f : 1.14f;
+      dot.animate().scaleX(size).scaleY(size).setDuration(160).start();
+    }
+
     @Override public boolean onTouch(View v, MotionEvent e) {
       switch (e.getActionMasked()) {
         case MotionEvent.ACTION_DOWN:
           downX = e.getRawX(); downY = e.getRawY();
           startX = lp.x; startY = lp.y;
           dragging = false;
+          // A touch answers at once: the orb gives a little.
+          if (dot != null) dot.animate().scaleX(0.9f).scaleY(0.9f).setDuration(90).start();
           ui.postDelayed(longPress, ViewConfiguration.getLongPressTimeout() + 250);
           return true;
         case MotionEvent.ACTION_MOVE: {
@@ -961,7 +1000,14 @@ public class IzukiAccessibilityService extends AccessibilityService {
         }
         case MotionEvent.ACTION_UP:
           ui.removeCallbacks(longPress);
-          if (!dragging) { v.performClick(); openFromOrb(); return true; }
+          settle();
+          if (!dragging) {
+            v.performClick();
+            v.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY);
+            // Tap to talk, right here (Siri-style); tap again to stop.
+            IzukiVoice.tap(context);
+            return true;
+          }
           if (orbView == null) return true; // the long press hid it
           DisplayMetrics dm = context.getResources().getDisplayMetrics();
           int edge = dp(context, 12);
@@ -974,6 +1020,7 @@ public class IzukiAccessibilityService extends AccessibilityService {
           return true;
         case MotionEvent.ACTION_CANCEL:
           ui.removeCallbacks(longPress);
+          settle();
           return true;
         default:
           return false;
@@ -996,10 +1043,9 @@ public class IzukiAccessibilityService extends AccessibilityService {
   }
 
   /**
-   * Tapping the floating orb brings Izuki's page back. It does not start a
-   * voice turn: tapping the orb used to fire a fake "Hey Nova" and left the
-   * page listening (and the orb up) behind Android Settings. The person taps
-   * the microphone when they want to talk.
+   * Tapping the orb's words brings Izuki's page back (the chat with the whole
+   * answer). Tapping the orb itself is a voice turn over the current app
+   * (IzukiVoice): it listens there instead of opening Izuki.
    */
   private static void openFromOrb() {
     IzukiAccessibilityService service = active;
@@ -1072,14 +1118,24 @@ public class IzukiAccessibilityService extends AccessibilityService {
       clock.start();
     }
 
+    /**
+     * A resting orb is a button, not a performance: it breathes for a few
+     * seconds after it settles (so it reads as alive and touchable), then
+     * holds still with no redraw loop.
+     */
+    private final Runnable holdStill = () -> {
+      if ("rest".equals(state) && clock.isRunning() && !clock.isPaused()) clock.pause();
+    };
+
     void setState(String s) {
       state = s;
-      // A resting orb is a button, not a performance: no redraw loop.
-      if ("rest".equals(s)) { if (clock.isRunning() && !clock.isPaused()) clock.pause(); invalidate(); }
-      else if (clock.isPaused()) clock.resume();
+      removeCallbacks(holdStill);
+      if (clock.isPaused()) clock.resume();
       else if (!clock.isStarted()) clock.start();
+      if ("rest".equals(s)) postDelayed(holdStill, 4000);
+      invalidate();
     }
-    void stop() { clock.cancel(); }
+    void stop() { removeCallbacks(holdStill); clock.cancel(); }
 
     private static int rgba(int[] c, float a) {
       return Color.argb(Math.round(Math.max(0f, Math.min(1f, a)) * 255f), c[0], c[1], c[2]);

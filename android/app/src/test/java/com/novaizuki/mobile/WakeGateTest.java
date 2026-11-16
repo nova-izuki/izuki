@@ -139,6 +139,25 @@ public class WakeGateTest {
     assertFalse("an unusable phrase never wakes", WakeGate.isWake("computer", false, "computer"));
   }
 
+  @Test public void spellingsSpeechServicesUse() {
+    assertTrue(WakeGate.isWake("HeyNova", false));
+    assertTrue(WakeGate.isWake("Hey, Nova! What's the weather", false));
+    assertTrue("a quick “Hey Nova” at the start is often written Hanover", WakeGate.isWake("Hanover what's the weather", false));
+    assertFalse("Hanover in a sentence is a place", WakeGate.isWake("I moved to Hanover last year", false));
+    assertFalse(WakeGate.isWake("they nova", false));
+  }
+
+  @Test public void theCommandAfterThePhrase() {
+    assertEquals("what's the time?", WakeGate.command("Hey Nova, what's the time?", false, ""));
+    assertEquals("", WakeGate.command("hey nova", false, ""));
+    assertEquals("turn on the flashlight", WakeGate.command("HeyNova turn on the flashlight", false, ""));
+    assertEquals("play some music", WakeGate.command("Hanover, play some music", false, ""));
+    assertEquals("open YouTube", WakeGate.command("Hey Jarvis open YouTube", false, "hey jarvis"));
+    assertEquals("what's the time", WakeGate.command("nova what's the time", true, ""));
+    assertEquals("not clipped: no phrase, no command", "", WakeGate.command("nova what's the time", false, ""));
+    assertEquals("", WakeGate.command(null, true, ""));
+  }
+
   @Test public void levels() {
     assertEquals(-96, WakeGate.levelDb(new short[320], 320), 0.001);
     double loud = WakeGate.levelDb(tone(0.5, 320), 320);

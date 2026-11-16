@@ -75,7 +75,7 @@ assert.ok(trimmed.length < clip.length && trimmed.length >= 16000, "quiet margin
     let listening = 0;
     const notices = [];
     const context = vm.createContext({
-      window: {}, attached: [], busy: false, wakeTurn: false, talking: true,
+      window: {}, attached: [], busy: false, wakeTurn: false, talking: true, turnCtx: null,
       ready: () => true, canHear: () => true, beginRequest() {}, finishRequest() {},
       brainKeys: { groq: true }, requestEnd: "", refreshSend() {}, setOrb() {}, setStatus() {}, stage() {},
       bubble: (_, words) => notices.push(words), endedSay: () => "Request timed out",

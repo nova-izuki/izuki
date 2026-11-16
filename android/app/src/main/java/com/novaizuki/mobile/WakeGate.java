@@ -238,10 +238,40 @@ final class WakeGate {
 
   // ---- the phrase --------------------------------------------------------
 
-  private static final Pattern WAKE = Pattern.compile("\\b(?:hey|hi|ok|okay|hay|hei)\\s+(?:nova|izuki)\\b");
+  // Speech services write "Hey Nova" in several ways: "hey nova", "heynova",
+  // "hey, Nova", and "Hanover" for a quick "Hey Nova" at the very start.
+  private static final Pattern WAKE = Pattern.compile("\\b(?:hey|hi|ok|okay|hay|hei)\\s*(?:nova|novah|izuki)\\b|^(?:hannover|hanover)\\b");
   // The start of the phrase can be cut off when the recognizer had to open
   // the microphone itself after speech began: "nova, what's the time".
   private static final Pattern CLIPPED = Pattern.compile("^\\W*(?:a\\s+|ey\\s+)?(?:nova|izuki)\\b");
+  /** The same phrases on the raw words, case-insensitive, to find where the command starts. */
+  private static final Pattern WAKE_AT = Pattern.compile(
+      "(?i)(?:\\b(?:hey|hi|ok|okay|hay|hei)[\\s,]*(?:nova|novah|izuki)\\b|^\\W*(?:hannover|hanover)\\b)[\\s,.!?:;-]*");
+  private static final Pattern CLIPPED_AT = Pattern.compile("(?i)^\\W*(?:a\\s+|ey\\s+)?(?:nova|izuki)\\b[\\s,.!?:;-]*");
+
+  /**
+   * What came after the wake phrase in the same breath ("Hey Nova, what's
+   * the time?" → "what's the time?"), or "" when they only said the phrase.
+   */
+  static String command(String heard, boolean clipped, String custom) {
+    if (heard == null) return "";
+    java.util.regex.Matcher m = WAKE_AT.matcher(heard);
+    int end = -1;
+    if (m.find()) end = m.end();
+    else {
+      String phrase = cleanPhrase(custom);
+      if (!phrase.isEmpty()) {
+        Pattern own = Pattern.compile("(?i)\\b" + phrase.replace("'", "'?").replace(" ", "[\\s,]+") + "\\b[\\s,.!?:;-]*");
+        java.util.regex.Matcher o = own.matcher(heard);
+        if (o.find()) end = o.end();
+      }
+      if (end < 0 && clipped) {
+        java.util.regex.Matcher c = CLIPPED_AT.matcher(heard);
+        if (c.find()) end = c.end();
+      }
+    }
+    return end < 0 ? "" : heard.substring(end).trim();
+  }
 
   /** Did they say the wake phrase? `clipped` when the first moment may be missing. */
   static boolean isWake(String heard, boolean clipped) {

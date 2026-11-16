@@ -352,6 +352,8 @@ export interface Settings {
   island_wave: "auto" | "silk" | "bars" | "mirror" | "neon" | "dots";
   /** Always at the top like an iPhone's Dynamic Island (not only on hover). */
   island_always: boolean;
+  /** The one-time switch to "hidden until the mouse reaches the top" happened. */
+  island_hidden_v1: boolean;
   /** Drag it anywhere on screen (off: along the top). */
   island_free: boolean;
   /** The Island's look (Windhawk-style themes). */

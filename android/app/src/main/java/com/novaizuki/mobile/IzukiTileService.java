@@ -8,7 +8,10 @@ import android.service.quicksettings.TileService;
 
 /**
  * One swipe and a tap from anywhere: add Izuki to Android's Quick Settings.
- * It opens the companion in wake mode; it does not start listening by itself.
+ * The tap starts a voice turn over the current screen (the panel closes and
+ * the orb listens), the lock screen included. When the orb can't run (Android
+ * control off, or Izuki's page not started yet) it opens the companion in
+ * wake mode instead.
  */
 public class IzukiTileService extends TileService {
   @Override public void onStartListening() {
@@ -22,9 +25,13 @@ public class IzukiTileService extends TileService {
 
   @Override public void onClick() {
     super.onClick();
-    Intent open = new Intent(this, MainActivity.class);
     // A tap, not a voice: voice match never blocks it.
     IzukiControlPlugin.setWakeAudio(null);
+    if (IzukiVoice.canTurn(this)) {
+      IzukiVoice.begin(this, "tile");
+      return;
+    }
+    Intent open = new Intent(this, MainActivity.class);
     open.putExtra("izuki_wake_token", IzukiControlPlugin.beginWake("Hey Nova"));
     IzukiControlPlugin.notifyWake("Hey Nova");
     open.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);

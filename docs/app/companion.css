@@ -145,3 +145,48 @@
 .diag-out { margin: 8px 0 0; padding: 10px; max-height: 320px; overflow: auto; border-radius: 12px; background: rgba(0, 0, 0, 0.28); color: #c9d6ee; font: 11px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; word-break: break-word; }
 #native-diagnostics summary { cursor: pointer; list-style: none; }
 #native-diagnostics summary::-webkit-details-marker { display: none; }
+
+/* Each phone sees only its own setup: iPhone steps never show on Android, and the other way round. */
+html[data-os="android"] [data-only="ios"], html[data-os="ios"] [data-only="android"] { display: none !important; }
+
+/* One-tap phone controls: six up front, the rest under "More controls". */
+.phone-grid .phone-action.extra { display: none; }
+.phone-grid.all .phone-action.extra { display: flex; }
+.phone-action span { max-width: 100%; text-align: center; line-height: 1.15; overflow-wrap: break-word; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.phone-action.on i { background: var(--teal) !important; color: #071312 !important; }
+.phone-more { display: block; width: 100%; margin-top: 8px; padding: 8px; border: 0; border-radius: 12px; background: rgba(255,255,255,.04); color: var(--muted); font: inherit; font-size: 12px; font-weight: 700; }
+.phone-more:active { background: rgba(255,255,255,.09); }
+
+/* Teach my voice: a guided screen over Settings. */
+.vm-sheet { position: fixed; inset: 0; z-index: 30; display: flex; align-items: flex-end; justify-content: center; background: rgba(4,5,10,.62); padding: 10px 10px calc(10px + var(--safe-bottom, 0px)); }
+.vm-sheet[hidden] { display: none; }
+.vm-card { width: 100%; max-width: 460px; max-height: calc(100% - 20px); overflow: auto; padding: 18px 18px 16px; border-radius: 28px; border: 1px solid rgba(255,255,255,.14); background: linear-gradient(160deg, rgba(139,108,255,.16), transparent 45%), #12121e; box-shadow: 0 24px 60px rgba(0,0,0,.45); animation: companion-arrive 220ms cubic-bezier(.2,.8,.2,1); }
+.vm-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.vm-head h3 { margin: 2px 0 0; font-size: 20px; }
+.vm-kicker { font-size: 10px; font-weight: 800; letter-spacing: .12em; color: var(--teal); }
+.vm-x { flex: none; width: 36px; height: 36px; border-radius: 999px; border: 1px solid rgba(255,255,255,.14); background: rgba(255,255,255,.05); color: var(--ink); font: inherit; }
+.vm-why { margin: 10px 0 14px; color: var(--muted); font-size: 14px; line-height: 1.45; }
+.vm-steps { list-style: none; display: flex; justify-content: center; gap: 14px; margin: 0 0 14px; padding: 0; }
+.vm-step button { width: 40px; height: 40px; border-radius: 999px; border: 1.5px solid rgba(255,255,255,.18); background: transparent; color: var(--muted); font: inherit; font-weight: 800; }
+.vm-step.now button { border-color: var(--violet); color: var(--ink); box-shadow: 0 0 0 4px rgba(139,108,255,.18); }
+.vm-step.done button { border-color: transparent; background: var(--teal); color: #071312; }
+.vm-stage { display: grid; justify-items: center; gap: 10px; padding: 14px 10px 6px; border-radius: 22px; background: rgba(255,255,255,.035); }
+.vm-label { margin: 0; color: var(--muted); font-size: 13px; }
+.vm-say { margin: 0; text-align: center; font-size: 21px; font-weight: 700; line-height: 1.3; color: var(--ink); min-height: 1.3em; }
+.vm-rec { display: grid; justify-items: center; gap: 8px; padding: 6px 12px 2px; border: 0; background: none; color: var(--ink); font: inherit; }
+.vm-rec[hidden] { display: none; }
+.vm-ring { position: relative; display: grid; place-items: center; width: 86px; height: 86px; border-radius: 999px; background: linear-gradient(145deg, var(--violet), #5b8cff); box-shadow: 0 10px 28px rgba(91,140,255,.35); }
+.vm-ring svg { position: relative; width: 34px; height: 34px; color: #fff; }
+.vm-level { position: absolute; inset: -8px; border-radius: 999px; border: 3px solid var(--teal); opacity: .25; transition: transform 90ms linear, opacity 90ms linear; }
+.vm-rec.live .vm-ring { background: linear-gradient(145deg, #ff5f8f, var(--violet)); }
+.vm-rec:active .vm-ring { transform: scale(.96); }
+.vm-rec:disabled { opacity: 1; }
+.vm-rec-label { font-weight: 700; font-size: 15px; }
+.vm-note { margin: 0; min-height: 1.4em; text-align: center; font-size: 13.5px; color: var(--teal); }
+.vm-note.bad { color: #ffb3a8; }
+.vm-model { display: grid; gap: 6px; margin-top: 12px; font-size: 12.5px; color: var(--muted); }
+.vm-model[hidden] { display: none; }
+.vm-bar { display: block; height: 6px; border-radius: 99px; background: rgba(255,255,255,.08); overflow: hidden; }
+.vm-bar i { display: block; height: 100%; width: 4%; background: var(--teal); transition: width 300ms ease; }
+.vm-actions { display: flex; justify-content: flex-end; margin-top: 12px; }
+@media (prefers-reduced-motion: reduce) { .vm-card { animation: none; } .vm-level { transition: none; } }

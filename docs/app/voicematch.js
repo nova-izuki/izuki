@@ -115,7 +115,7 @@
     for (const p of pending.values()) { clearTimeout(p.timer); p.reject(new Error(message)); }
     pending.clear();
   }
-  function request(audio) {
+  function request(audio, onProgress) {
     if (!worker) {
       const code = `
         import { AutoProcessor, AutoModelForXVector, env } from "${LIB}";
@@ -124,11 +124,15 @@
         let queue = Promise.resolve();
         self.onmessage = (e) => {
           const { id, audio } = e.data;
+          // Download progress for the person's screen: {file, loaded, total}.
+          const progress_callback = (p) => {
+            if (p && p.status === "progress") self.postMessage({ id, progress: { file: p.file, loaded: p.loaded || 0, total: p.total || 0 } });
+          };
           queue = queue.then(async () => {
             try {
               loaded ??= (async () => ({
-                processor: await AutoProcessor.from_pretrained("${MODEL}"),
-                model: await AutoModelForXVector.from_pretrained("${MODEL}", { dtype: "q8", device: "wasm" }),
+                processor: await AutoProcessor.from_pretrained("${MODEL}", { progress_callback }),
+                model: await AutoModelForXVector.from_pretrained("${MODEL}", { dtype: "q8", device: "wasm", progress_callback }),
               }))().catch((err) => { loaded = null; throw err; });
               const { processor, model } = await loaded;
               if (!audio) { self.postMessage({ id, ok: true }); return; }
@@ -143,6 +147,17 @@
       worker.onmessage = (e) => {
         const p = pending.get(e.data.id);
         if (!p) return;
+        if (e.data.progress) {
+          // Still downloading: show how far, and don't call it "too long" while bytes arrive.
+          const f = e.data.progress;
+          p.files.set(f.file, f);
+          let loaded = 0, total = 0;
+          for (const x of p.files.values()) { loaded += x.loaded; total += x.total; }
+          clearTimeout(p.timer);
+          p.timer = setTimeout(() => stopWorker("The voice model stopped downloading. Check the connection and try again."), 60000);
+          if (total > 0) { try { p.onProgress?.((loaded / total) * 100); } catch {} }
+          return;
+        }
         clearTimeout(p.timer); pending.delete(e.data.id);
         if (e.data.ok) p.resolve(e.data.vector || []); else p.reject(new Error(e.data.error || "Voice match failed."));
       };
@@ -152,13 +167,14 @@
       const id = ++seq;
       // The first time also downloads the model: give that time, not a check.
       const timer = setTimeout(() => stopWorker("Voice match took too long. Check the connection and try again."), audio ? 30000 : 300000);
-      pending.set(id, { resolve, reject, timer });
+      pending.set(id, { resolve, reject, timer, onProgress, files: new Map() });
       try { worker.postMessage({ id, audio }, audio ? [audio.buffer] : []); }
       catch { stopWorker("Voice match could not start."); }
     });
   }
 
-  const prepare = () => request(null).then(() => true);
+  /** Load (the first time, download) the voice model. onProgress(0…100) while it downloads. */
+  const prepare = (onProgress) => request(null, onProgress).then(() => true);
   const vectorOf = async (recording) => unitVector(await request(speechOnly(await toSpeech(recording))));
 
   /** Three recordings of one person → a saved profile. */

@@ -109,5 +109,25 @@ is("standalone phone reminder stays local", requestLane("remind me to email Sam"
 is("web scraping uses backend without a device-choice question", requestLane("scrape https://example.com", false, true), "pc");
 is("link extraction uses backend even with phone apps configured", requestLane("extract the table from https://example.com", true, true), "pc");
 is("unpaired phone never pretends it read a website", requestLane("summarize https://example.com", true, false), "web-unavailable");
+
+console.log("the Android app does phone jobs itself (the phone agent):");
+// eslint-disable-next-line no-new-func
+const agent = new Function("window", source + "; return { phoneAgentLane, requestLane };")({
+  IzukiNative: { installed: () => true, platform: () => "android" }, IzukiAgent: {},
+});
+const onPhone = (s, apps = false, pc = true) => agent.phoneAgentLane(s, agent.requestLane(s, apps, pc));
+for (const s of [
+  "check what's taking space on my phone", "what's taking up so much storage", "free up space", "how much battery do I have",
+  "turn on dark mode", "turn off wifi", "open YouTube", "play some music", "take a screenshot", "open settings on my phone",
+  "check up what is taking lotta storage on my phone", "connect to my bluetooth speaker",
+]) is(JSON.stringify(s) + " → phone agent", onPhone(s), true);
+for (const s of [
+  "open YouTube on my PC", "free up space on my computer", "hello", "tell me a joke", "what's the weather today",
+  "remind me to call mum at 6", "set an alarm for 7", "read my Gmail", "put my windows side by side",
+  "summarize https://example.com", "who won the game last night",
+]) is(JSON.stringify(s) + " is not a phone job", onPhone(s), false);
+// eslint-disable-next-line no-new-func
+const web = new Function("window", source + "; return { phoneAgentLane, requestLane };")({});
+is("a browser (no Android app) never runs the agent", web.phoneAgentLane("open YouTube", web.requestLane("open YouTube", false, true)), false);
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);

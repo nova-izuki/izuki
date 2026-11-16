@@ -92,6 +92,315 @@ public class IzukiControlPlugin extends Plugin {
 
   @Override public void load() { instance = this; }
 
+  @Override protected void handleOnDestroy() {
+    if (instance == this) instance = null;
+    super.handleOnDestroy();
+  }
+
+  /** Is Izuki's page running (it can answer a voice turn without opening)? */
+  static boolean alive() {
+    IzukiControlPlugin p = instance;
+    return p != null && p.getBridge() != null && p.getBridge().getWebView() != null && p.hasListeners("turn");
+  }
+
+  /** Native speech progress for the page: {id, event: start|done|error|stopped}. */
+  static void speechEvent(String id, String event) {
+    IzukiControlPlugin p = instance;
+    if (p == null) return;
+    JSObject data = new JSObject();
+    data.put("id", id);
+    data.put("event", event);
+    p.notifyListeners("speech", data, false);
+  }
+
+  /** Words heard so far in the page's native listening session. */
+  static void hearingEvent(String text) {
+    IzukiControlPlugin p = instance;
+    if (p == null) return;
+    JSObject data = new JSObject();
+    data.put("text", text);
+    p.notifyListeners("hearing", data, false);
+  }
+
+  /**
+   * A voice turn's words for the page to answer. False when no page is
+   * listening for turns (the caller opens Izuki with the words instead).
+   */
+  static boolean sendTurn(String id, String text, boolean locked, String source, boolean followUp) {
+    IzukiControlPlugin p = instance;
+    if (p == null || !p.hasListeners("turn")) return false;
+    JSObject data = new JSObject();
+    data.put("id", id);
+    data.put("text", text);
+    data.put("locked", locked);
+    data.put("source", source);
+    data.put("wake", "wake".equals(source) && !followUp);
+    data.put("followUp", followUp);
+    p.notifyListeners("turn", data, false);
+    return true;
+  }
+
+  /** The person stopped a turn (a tap on the orb, or a new wake): the page drops its request. */
+  static void turnCancelled(String id) {
+    IzukiControlPlugin p = instance;
+    if (p == null || id == null || id.isEmpty()) return;
+    JSObject data = new JSObject();
+    data.put("id", id);
+    p.notifyListeners("turnCancel", data, false);
+  }
+
+  // ---- Izuki's native voice and ears --------------------------------------------
+
+  /** Say text with Android's voice. {text, id, turn, rate}; progress arrives as "speech" events. */
+  @PluginMethod
+  public void say(PluginCall call) {
+    Double rate = call.getDouble("rate");
+    IzukiVoice.say(getContext(), call.getString("text", ""), call.getString("id", ""),
+        call.getString("turn", ""), rate == null ? 1.0f : rate.floatValue());
+    call.resolve();
+  }
+
+  @PluginMethod
+  public void hush(PluginCall call) {
+    IzukiVoice.hush();
+    call.resolve();
+  }
+
+  /** One listening session with Android's recognizer: {text, error}; partial words as "hearing" events. */
+  @PluginMethod
+  public void listen(PluginCall call) {
+    if (!hasMicrophone()) { JSObject r = new JSObject(); r.put("text", ""); r.put("error", "permission"); call.resolve(r); return; }
+    IzukiVoice.listenForPage(getContext(), (text, error) -> {
+      JSObject r = new JSObject();
+      r.put("text", text);
+      r.put("error", error);
+      call.resolve(r);
+    });
+  }
+
+  /** {finish: true} ends the session keeping the words so far (a tap on "I'm done"); else drops them. */
+  @PluginMethod
+  public void stopListening(PluginCall call) {
+    if (Boolean.TRUE.equals(call.getBoolean("finish", false))) IzukiVoice.finishListening();
+    else IzukiVoice.stopListening();
+    call.resolve();
+  }
+
+  /** The page's progress during a voice turn, shown on the orb. {id, state, text} */
+  @PluginMethod
+  public void turnState(PluginCall call) {
+    IzukiVoice.state(call.getString("id", ""), call.getString("state", "think"), call.getString("text", ""));
+    call.resolve();
+  }
+
+  /** The page finished a voice turn; `follow` listens again (the answer asked something). */
+  @PluginMethod
+  public void turnDone(PluginCall call) {
+    IzukiVoice.done(call.getString("id", ""), Boolean.TRUE.equals(call.getBoolean("follow", false)));
+    call.resolve();
+  }
+
+  /** The page opened (or closed) its own microphone: the wake listener steps aside meanwhile. */
+  @PluginMethod
+  public void micBusy(PluginCall call) {
+    IzukiWakeService.hold(IzukiWakeService.HOLD_PAGE, Boolean.TRUE.equals(call.getBoolean("on", false)));
+    call.resolve();
+  }
+
+  /** The keep-orb setting and the hearing language, for turns that run without the page in front. */
+  @PluginMethod
+  public void voicePrefs(PluginCall call) {
+    Boolean keep = call.getBoolean("keep");
+    if (keep != null) IzukiVoice.keepOrb = keep;
+    String lang = call.getString("lang");
+    if (lang != null) IzukiVoice.lang = lang.trim();
+    call.resolve();
+  }
+
+  private final android.os.Handler later = new android.os.Handler(android.os.Looper.getMainLooper());
+
+  /**
+   * A wait that isn't a page timer: a hidden WebView slows its timers down
+   * (to once a minute after a while), which stalled the phone agent between
+   * steps while Izuki was in the background.
+   */
+  @PluginMethod
+  public void pause(PluginCall call) {
+    int ms = Math.max(0, Math.min(15_000, call.getInt("ms", 300)));
+    later.postDelayed(call::resolve, ms);
+  }
+
+  /** The phone's storage: {total, free} in bytes (no permission; nothing about files). */
+  @PluginMethod
+  public void storage(PluginCall call) {
+    JSObject r = new JSObject();
+    try {
+      android.os.StatFs fs = new android.os.StatFs(android.os.Environment.getDataDirectory().getPath());
+      long total = fs.getTotalBytes(), free = fs.getAvailableBytes();
+      if (Build.VERSION.SDK_INT >= 26) {
+        // The size the phone is sold as (what Settings shows), when Android tells it.
+        try {
+          android.app.usage.StorageStatsManager stats = (android.app.usage.StorageStatsManager) getContext().getSystemService(Context.STORAGE_STATS_SERVICE);
+          if (stats != null) {
+            total = stats.getTotalBytes(android.os.storage.StorageManager.UUID_DEFAULT);
+            free = stats.getFreeBytes(android.os.storage.StorageManager.UUID_DEFAULT);
+          }
+        } catch (Exception ignored) { }
+      }
+      r.put("total", total);
+      r.put("free", free);
+      r.put("used", Math.max(0, total - free));
+      call.resolve(r);
+    } catch (Exception e) {
+      call.reject("Couldn't read the storage: " + e.getMessage());
+    }
+  }
+
+  /**
+   * Straight to one Settings page or quick panel by name (wifi, internet,
+   * bluetooth, volume, nfc, storage, battery, battery_saver, display, sound,
+   * apps, notifications, location, data, dnd, about, date, language,
+   * keyboard, airplane, camera, settings). Security and account pages are
+   * deliberately not on the list.
+   */
+  @PluginMethod
+  public void openPanel(PluginCall call) {
+    if (IzukiAccessibilityService.locked(getContext())) { call.reject("locked"); return; }
+    String name = call.getString("name", "").toLowerCase(Locale.ROOT).trim();
+    Intent intent = panelIntent(name);
+    if (intent == null) { call.reject("unknown"); return; }
+    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+    try {
+      getContext().startActivity(intent);
+    } catch (Exception e) {
+      try { getContext().startActivity(new Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); }
+      catch (Exception again) { call.reject("Android didn't open that page."); return; }
+      JSObject r = new JSObject();
+      r.put("opened", "settings");
+      call.resolve(r);
+      return;
+    }
+    JSObject r = new JSObject();
+    r.put("opened", name);
+    call.resolve(r);
+  }
+
+  private static Intent panelIntent(String name) {
+    boolean panels = Build.VERSION.SDK_INT >= 29;
+    switch (name) {
+      case "wifi": return new Intent(panels ? Settings.Panel.ACTION_WIFI : Settings.ACTION_WIFI_SETTINGS);
+      case "internet": return new Intent(panels ? Settings.Panel.ACTION_INTERNET_CONNECTIVITY : Settings.ACTION_WIRELESS_SETTINGS);
+      case "volume": return new Intent(panels ? Settings.Panel.ACTION_VOLUME : Settings.ACTION_SOUND_SETTINGS);
+      case "nfc": return new Intent(panels ? Settings.Panel.ACTION_NFC : Settings.ACTION_NFC_SETTINGS);
+      case "bluetooth": return new Intent(Settings.ACTION_BLUETOOTH_SETTINGS);
+      case "storage": return new Intent(Settings.ACTION_INTERNAL_STORAGE_SETTINGS);
+      case "battery": return new Intent(Intent.ACTION_POWER_USAGE_SUMMARY);
+      case "battery_saver": return new Intent(Settings.ACTION_BATTERY_SAVER_SETTINGS);
+      case "display": return new Intent(Settings.ACTION_DISPLAY_SETTINGS);
+      case "sound": return new Intent(Settings.ACTION_SOUND_SETTINGS);
+      case "apps": return new Intent(Settings.ACTION_MANAGE_APPLICATIONS_SETTINGS);
+      case "notifications": return new Intent("android.settings.NOTIFICATION_SETTINGS");
+      case "location": return new Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS);
+      case "data": return new Intent(Build.VERSION.SDK_INT >= 28 ? Settings.ACTION_DATA_USAGE_SETTINGS : Settings.ACTION_WIRELESS_SETTINGS);
+      case "dnd": return new Intent("android.settings.ZEN_MODE_SETTINGS");
+      case "about": return new Intent(Settings.ACTION_DEVICE_INFO_SETTINGS);
+      case "date": return new Intent(Settings.ACTION_DATE_SETTINGS);
+      case "language": return new Intent(Settings.ACTION_LOCALE_SETTINGS);
+      case "keyboard": return new Intent(Settings.ACTION_INPUT_METHOD_SETTINGS);
+      case "airplane": return new Intent(Settings.ACTION_AIRPLANE_MODE_SETTINGS);
+      case "camera": return new Intent(android.provider.MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA);
+      case "settings": return new Intent(Settings.ACTION_SETTINGS);
+      default: return null;
+    }
+  }
+
+  private static volatile Boolean torchOn = null;
+  private static volatile boolean torchWatched = false;
+
+  /** The flashlight: {on} sets it, no `on` toggles it. Resolves {on}. No camera permission needed. */
+  @PluginMethod
+  public void torch(PluginCall call) {
+    android.hardware.camera2.CameraManager cm = (android.hardware.camera2.CameraManager) getContext().getSystemService(Context.CAMERA_SERVICE);
+    if (cm == null) { call.reject("This phone has no flashlight."); return; }
+    try {
+      String id = null;
+      for (String camera : cm.getCameraIdList()) {
+        android.hardware.camera2.CameraCharacteristics c = cm.getCameraCharacteristics(camera);
+        Boolean flash = c.get(android.hardware.camera2.CameraCharacteristics.FLASH_INFO_AVAILABLE);
+        Integer facing = c.get(android.hardware.camera2.CameraCharacteristics.LENS_FACING);
+        if (Boolean.TRUE.equals(flash) && (id == null || Integer.valueOf(android.hardware.camera2.CameraCharacteristics.LENS_FACING_BACK).equals(facing))) id = camera;
+      }
+      if (id == null) { call.reject("This phone has no flashlight."); return; }
+      final String torchId = id;
+      if (!torchWatched) {
+        torchWatched = true;
+        cm.registerTorchCallback(new android.hardware.camera2.CameraManager.TorchCallback() {
+          @Override public void onTorchModeChanged(String cameraId, boolean enabled) { if (cameraId.equals(torchId)) torchOn = enabled; }
+        }, later);
+      }
+      Boolean want = call.getBoolean("on");
+      boolean on = want != null ? want : !Boolean.TRUE.equals(torchOn);
+      cm.setTorchMode(id, on);
+      torchOn = on;
+      JSObject r = new JSObject();
+      r.put("on", on);
+      call.resolve(r);
+    } catch (Exception e) {
+      call.reject("The flashlight is busy (the camera may be in use).");
+    }
+  }
+
+  /**
+   * A short recording for "Teach my voice": 16 kHz mono WAV, base64, plus its
+   * loudest level, recorded here (the WebView's MediaRecorder was unreliable).
+   * The wake listener steps aside while it records. Nothing is kept.
+   */
+  @PluginMethod
+  public void recordClip(PluginCall call) {
+    if (!hasMicrophone()) { call.reject("mic"); return; }
+    int ms = Math.max(1000, Math.min(8000, call.getInt("ms", 3500)));
+    IzukiWakeService.hold(IzukiWakeService.HOLD_CLIP, true);
+    work.execute(() -> {
+      android.media.AudioRecord r = null;
+      try {
+        Thread.sleep(200); // let the wake listener close its microphone first
+        int rate = 16000;
+        int min = android.media.AudioRecord.getMinBufferSize(rate, android.media.AudioFormat.CHANNEL_IN_MONO, android.media.AudioFormat.ENCODING_PCM_16BIT);
+        r = new android.media.AudioRecord(android.media.MediaRecorder.AudioSource.VOICE_RECOGNITION, rate,
+            android.media.AudioFormat.CHANNEL_IN_MONO, android.media.AudioFormat.ENCODING_PCM_16BIT, Math.max(min, 6400));
+        if (r.getState() != android.media.AudioRecord.STATE_INITIALIZED) throw new IllegalStateException("busy");
+        r.startRecording();
+        short[] pcm = new short[rate * ms / 1000];
+        int at = 0;
+        long until = SystemClock.elapsedRealtime() + ms + 1500;
+        while (at < pcm.length && SystemClock.elapsedRealtime() < until) {
+          int n = r.read(pcm, at, Math.min(1600, pcm.length - at));
+          if (n < 0) throw new IllegalStateException("read");
+          // The page's meter follows the voice while it records (every 100 ms).
+          int loud = 0;
+          for (int i = at; i < at + n; i++) loud = Math.max(loud, Math.abs((int) pcm[i]));
+          JSObject level = new JSObject();
+          level.put("level", loud / 32768.0);
+          notifyListeners("clipLevel", level, false);
+          at += n;
+        }
+        int peak = 0;
+        for (int i = 0; i < at; i++) peak = Math.max(peak, Math.abs((int) pcm[i]));
+        short[] got = at == pcm.length ? pcm : java.util.Arrays.copyOf(pcm, at);
+        JSObject out = new JSObject();
+        out.put("audio", android.util.Base64.encodeToString(WakeGate.wav(got, rate), android.util.Base64.NO_WRAP));
+        out.put("type", "audio/wav");
+        out.put("peak", peak / 32768.0);
+        call.resolve(out);
+      } catch (Exception e) {
+        call.reject("The microphone is busy (another app may be using it).");
+      } finally {
+        if (r != null) { try { r.stop(); } catch (Exception ignored) { } try { r.release(); } catch (Exception ignored) { } }
+        IzukiWakeService.hold(IzukiWakeService.HOLD_CLIP, false);
+      }
+    });
+  }
+
   /**
    * Remember a wake phrase and mint a one-use hand-off token. Only our own
    * services/tile can call this; MainActivity refuses a wake without a token,
@@ -752,7 +1061,7 @@ public class IzukiControlPlugin extends Plugin {
       catch (Exception e) { JSObject r = new JSObject(); r.put("done", outcome.optBoolean("done")); call.resolve(r); }
     };
     switch (op) {
-      case "click": IzukiAccessibilityService.click(n, answer); break;
+      case "click": IzukiAccessibilityService.click(n, Boolean.TRUE.equals(call.getBoolean("risky", false)), answer); break;
       case "tapText": IzukiAccessibilityService.tapText(call.getString("text", ""), answer); break;
       case "submit": IzukiAccessibilityService.submit(answer); break;
       case "tap": IzukiAccessibilityService.gesture("tap", x, y, 0, 0, 60, answer); break;
