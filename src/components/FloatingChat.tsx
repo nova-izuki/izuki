@@ -155,7 +155,15 @@ export function FloatingChat() {
 
   // The conversation lives in the config panel, so it's told what to offer.
   useEffect(() => {
-    const off = on<string[]>(EV.suggestions, (list) => setChips(Array.isArray(list) ? list.slice(0, 4) : []));
+    const off = on<string[]>(EV.suggestions, (list) => {
+      setChips(Array.isArray(list) ? list.slice(0, 4) : []);
+      // The answer is in. This event comes from the same turn as `chatDone`,
+      // but it is published by the conversation itself — so even if the
+      // completion event is lost while windows wake up, the bubble cannot
+      // stay on its spinner with the box refusing a new line.
+      live.current = null;
+      setBusy(false);
+    });
     return () => void off.then((f) => f());
   }, []);
 

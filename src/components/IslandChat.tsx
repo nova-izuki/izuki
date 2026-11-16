@@ -114,6 +114,12 @@ export function AskPage({ page, onHold, onClose, onDetach, onDragHandle }: { pag
   const current = useRef(0);
   const asking = useRef("");
   const answer = useRef("");
+  /** The page this thread is asking about, read by the stable answer listener. */
+  const pageRef = useRef(page);
+  pageRef.current = page;
+  /** Clears a reply that never sends its final event (a closed window, a lost
+   *  event, a provider that went quiet), so Ask never stays on Stop forever. */
+  const watchdog = useRef<number | null>(null);
   const picker = useRef<HTMLInputElement>(null);
   const sessionFiles = useRef<AskFile[]>([]);
   const fileGeneration = useRef(0);
@@ -129,6 +135,7 @@ export function AskPage({ page, onHold, onClose, onDetach, onDragHandle }: { pag
   const reset = () => {
     sessionFiles.current = [];
     fileGeneration.current++; readingNow.current = false; setReadingFiles(false);
+    if (watchdog.current) { window.clearTimeout(watchdog.current); watchdog.current = null; }
     if (current.current) void api.pageAskCancel(current.current);
     current.current = 0;
     chatId.current = null;
@@ -162,10 +169,16 @@ export function AskPage({ page, onHold, onClose, onDetach, onDragHandle }: { pag
     try { localStorage.setItem(ACTIVE_ASK_KEY, String(id)); } catch { /* optional persistence */ }
     setSaved((list) => {
       const was = list.find((c) => c.id === id);
-      const chat: SavedAsk = { id, title: was?.title ?? (first.length > 40 ? first.slice(0, 39) + "…" : first), where: was?.where ?? (page || "Your screen"), turns: log.slice(-16), at: Date.now(), pinned: was?.pinned };
+      const chat: SavedAsk = { id, title: was?.title ?? (first.length > 40 ? first.slice(0, 39) + "…" : first), where: was?.where ?? (pageRef.current || "Your screen"), turns: log.slice(-16), at: Date.now(), pinned: was?.pinned };
       return storeAsks([chat, ...list.filter((c) => c.id !== id)]);
     });
   };
+
+  /** The answer listener is registered once, not once per page: moving from
+   *  one question to the next used to unregister it while a reply was still
+   *  arriving, leaving the composer on its spinner after the answer was done. */
+  const keepRef = useRef(keep);
+  keepRef.current = keep;
 
   useEffect(() => {
     const off = on<PagePiece>(EV.pageAnswer, (p) => {
@@ -175,6 +188,7 @@ export function AskPage({ page, onHold, onClose, onDetach, onDragHandle }: { pag
         setFull(answer.current);
       }
       if (p.done) {
+        if (watchdog.current) { window.clearTimeout(watchdog.current); watchdog.current = null; }
         current.current = 0;
         setWorking(false);
         if (p.error && !answer.current) {
@@ -183,13 +197,15 @@ export function AskPage({ page, onHold, onClose, onDetach, onDragHandle }: { pag
         } else {
           const log = [...turnsRef.current, { role: "user" as const, content: asking.current }, { role: "assistant" as const, content: answer.current }].slice(-16);
           setLog(log);
-          keep(log);
+          keepRef.current(log);
         }
       }
     });
-    return () => void off.then((f) => f());
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page]);
+    return () => {
+      if (watchdog.current) { window.clearTimeout(watchdog.current); watchdog.current = null; }
+      void off.then((f) => f());
+    };
+  }, []);
 
   const send = (text?: string) => {
     const q = (text ?? draft).trim() || (files.length ? "Explain these files." : "");
@@ -207,24 +223,35 @@ export function AskPage({ page, onHold, onClose, onDetach, onDragHandle }: { pag
     setAllChats(false);
     setNote(null);
     setWorking(true);
+    if (watchdog.current) window.clearTimeout(watchdog.current);
+    watchdog.current = window.setTimeout(() => {
+      if (current.current !== id) return;
+      current.current = 0;
+      setWorking(false);
+      setDraft(q);
+      setError("That answer stopped coming back. Your question is back in the box — press Ask to try again.");
+    }, 180_000);
     const sending = files.length ? files : sessionFiles.current;
     sessionFiles.current = sending;
     setFiles([]);
     setAskedDeep(deep);
     void api.pageAsk(id, q, turnsRef.current.slice(-8), sending, !page, deep).catch((e) => {
       if (current.current !== id) return;
+      if (watchdog.current) { window.clearTimeout(watchdog.current); watchdog.current = null; }
       current.current = 0;
       setWorking(false);
       setError(e instanceof Error ? e.message : String(e));
     });
   };
   const stop = () => {
+    if (watchdog.current) { window.clearTimeout(watchdog.current); watchdog.current = null; }
     if (current.current) void api.pageAskCancel(current.current);
     current.current = 0;
     setWorking(false);
   };
   useEffect(() => {
     const cancel = () => {
+      if (watchdog.current) { window.clearTimeout(watchdog.current); watchdog.current = null; }
       if (current.current) void api.pageAskCancel(current.current);
       current.current = 0;
       setWorking(false);

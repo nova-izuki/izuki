@@ -267,6 +267,11 @@ pub struct Settings {
     /// When music plays, the orb comes up and flows with it (music mode).
     #[serde(default)]
     pub music_visuals: bool,
+    /// Use only AI that runs on this PC (Ollama or a local endpoint), even
+    /// when the internet is up. Chat, screen work and vision all keep their
+    /// normal lanes; they just never send a request to a cloud provider.
+    #[serde(default)]
+    pub offline_mode: bool,
     /// The Island: the pill at the top of the screen that shows what Izuki
     /// is doing, what's playing and what's coming up — like a phone's live
     /// activities. Keeps the (click-through) overlay up while it's on.
@@ -1238,6 +1243,7 @@ impl Default for Settings {
             action_hand_enabled: false,
             island_enabled: true,
             music_visuals: false,
+            offline_mode: false,
             tv_host: String::new(),
             tv_pair: String::new(),
             tv_voice: true,

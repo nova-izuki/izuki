@@ -510,6 +510,15 @@ fn reads_as_choice(name: &str) -> bool {
 /// Told to the brain while a quiz or test is on screen.
 const QUIZ_PROMPT: &str = "A QUIZ OR TEST IS ON SCREEN. Answer the visible question directly: name the correct choice and explain briefly. When the user asks you to answer or pick it, click the correct choice by its control number. Never press Submit, Finish, End test, Send or any other final button unless the user said so in this request.\n";
 
+/// "Do my quiz", "complete the test", "take the exam": this is a request to
+/// work through the questions, so an answer alone is not enough; the plan must
+/// actually pick them.
+fn doing_a_quiz(s: &str) -> bool {
+    let words: Vec<&str> = s.split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()).collect();
+    words.iter().any(|w| matches!(*w, "quiz" | "test" | "exam" | "question" | "questions"))
+        && words.iter().any(|w| matches!(*w, "do" | "complete" | "finish" | "take"))
+}
+
 /// The owner asked for direct answers when explicitly requested. Coaching
 /// remains a separate mode; answering allows picking the choice, while the
 /// final Submit/Finish guard still stays in place.
@@ -529,10 +538,8 @@ pub(crate) fn direct_answer_requested(prompt: &str) -> bool {
     let words: Vec<&str> = s.split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()).collect();
     let answering = words.iter().any(|w| matches!(*w, "answer" | "answers" | "ans" | "solve" | "correct"));
     let about_this = words.iter().any(|w| matches!(*w, "this" | "that" | "it" | "them" | "these" | "all" | "question" | "questions" | "quiz" | "test" | "option" | "options" | "one"));
-    let doing_a_quiz = words.iter().any(|w| matches!(*w, "quiz" | "test" | "exam" | "question" | "questions"))
-        && words.iter().any(|w| matches!(*w, "do" | "complete" | "finish" | "take"));
     // "the answer" on its own is already asking for it ("give me the answer").
-    doing_a_quiz
+    doing_a_quiz(&s)
         || (answering && (about_this || s.contains("the answer") || s.contains("what") || s.contains("which")))
         || matches!(s.trim().trim_end_matches(['?', '!', '.']), "answer" | "answer it" | "answer this" | "ans")
 }
@@ -560,6 +567,9 @@ const FINAL_BUTTONS: &[&str] = &[
     // Hands out access or cuts it off.
     "revoke", "deactivate", "close account", "delete account", "cancel subscription", "unsubscribe",
     "grant access", "allow access", "trust this", "sign out of all",
+    // A bare Finish completes the attempt or installer step; it needs the
+    // owner's request just like "Finish test".
+    "finish",
 ];
 
 /// " words like this " — lower-case, punctuation gone, padded for whole-word matching.
@@ -623,7 +633,13 @@ fn guard_steps_with(steps: &mut Vec<ActionStep>, prompt: &str, lesson: bool, fro
         let phrase = final_phrase(&name)?;
         // Consent is the button's whole phrase in the request ("submit it",
         // "yes, end the test" doesn't count for "Finish attempt"), not negated.
-        let negated = ["don't ", "dont ", "do not ", "never ", "without ", "not "].iter().any(|n| said.contains(&format!(" {n}{phrase} ")));
+        // A negation shortly before the phrase covers "never press Submit" and
+        // a list like "never press Submit, Finish or Send".
+        let negated = ["don't", "dont", "do not", "never", "without", "not"].iter().any(|n| {
+            said.match_indices(&format!(" {phrase} ")).any(|(i, _)| {
+                said[..i].split_whitespace().rev().take(8).any(|w| w == n.trim())
+            })
+        });
         let told = said.contains(&format!(" {phrase} ")) && !negated;
         (!told).then_some((i, name, phrase))
     });
@@ -929,6 +945,9 @@ fn ask_model(
 
     let mut chain = brain_chain();
     if chain.is_empty() {
+        if local_only() {
+            return Err(anyhow!("{}", NO_LOCAL));
+        }
         return Err(anyhow!("{}", if online() { NO_BRAIN } else { OFFLINE }));
     }
     // The smartest brain to hand goes first. Small models are quick, but they
@@ -1008,6 +1027,16 @@ pub(crate) const NO_BRAIN: &str = "I haven't got an AI to think with yet. Add a 
 
 /// What to say when the internet's down and no brain on this PC can answer.
 pub const OFFLINE: &str = "You're offline right now — check your Wi-Fi, then ask me again.";
+
+/// Offline mode is on but this PC has no local model to answer with. The
+/// normal "add a Gemini key" advice would be wrong: a cloud key is exactly
+/// what this mode forbids.
+pub const NO_LOCAL: &str = "Offline mode is on, but I don't have an AI on this PC yet. Install Ollama from ollama.com, pull a chat model (for example `ollama pull llama3.2`), then choose Ollama in Settings → Izuki's brain. Until then, turn Offline mode off to use your cloud brain.";
+
+/// The owner asked for no cloud requests at all, not merely a local-first order.
+pub fn local_only() -> bool {
+    crate::state::store().settings().offline_mode
+}
 
 /// The brains for screen work. A real local vision model (qwen2.5vl,
 /// llama3.2-vision…) stays as configured, since the screenshot is what it's
@@ -1225,7 +1254,13 @@ pub fn switches_freely() -> bool {
 /// being broken, resting, or not running.
 fn configured_chain() -> Vec<crate::settings::ProviderConfig> {
     let settings = crate::state::store().settings();
-    chain_for(&settings)
+    let mut chain = chain_for(&settings);
+    // Offline mode is a promise, not a preference: not one cloud request is
+    // allowed, even if one of those keys is configured and the Wi-Fi is up.
+    if local_only() {
+        chain.retain(|p| p.on_this_pc());
+    }
+    chain
 }
 
 /// `configured_chain` for these settings: the chosen brain; then, unless
@@ -3878,7 +3913,9 @@ fn submit_task(
     // next": the answer itself is the point, and on a test page every step is
     // stripped anyway. Demanding an action here threw away a correct reply
     // that arrived in 1.2 s and waited ~30 s for brains that then failed.
-    let wants_action = (!resumed.is_empty() || crate::companion::asks_to_do(&prompt)) && !direct_answer_requested(&prompt);
+    let asks_quiz = doing_a_quiz(&prompt.to_lowercase());
+    let wants_action = (!resumed.is_empty() || asks_quiz || crate::companion::asks_to_do(&prompt))
+        && (!direct_answer_requested(&prompt) || asks_quiz);
 
     let focus = matches!(settings.execution_mode, crate::settings::ExecutionMode::Focus);
 
@@ -6552,6 +6589,17 @@ mod speed_tests {
         let mut submit = vec![click("Submit quiz")];
         assert!(guard_steps_with(&mut submit, "answer this", false, "chrome", &quiz).is_some());
         assert!(submit.is_empty(), "Submit still needs an explicit request");
+        let mut finish = vec![click("Finish")];
+        assert!(guard_steps_with(&mut finish, "answer this", false, "chrome", &quiz).is_some());
+        assert!(finish.is_empty(), "a bare Finish still needs an explicit request");
+        // The answer wrapper says "Never press Submit" — that is a prohibition,
+        // not the person asking for a submit.
+        let mut wrapped = vec![click("Submit quiz")];
+        assert!(guard_steps_with(&mut wrapped, "Answer the question. Never press Submit, Finish or Send unless they said so.", false, "chrome", &quiz).is_some());
+        assert!(wrapped.is_empty(), "a prohibition is not submit consent");
+        let mut wrapped_finish = vec![click("Finish")];
+        assert!(guard_steps_with(&mut wrapped_finish, "Answer the question. Never press Submit, Finish or Send unless they said so.", false, "chrome", &quiz).is_some());
+        assert!(wrapped_finish.is_empty(), "a prohibition is not finish consent");
         let controls = vec![
             radio(1, "A. Phishing"),
             radio(2, "B. PII"),
