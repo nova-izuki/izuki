@@ -92,7 +92,9 @@ impl ProviderConfig {
     /// it joins the backups when another one is busy.
     pub fn on_this_pc(&self) -> bool {
         match self.id {
-            ProviderId::Ollama => true,
+            // Ollama's default is localhost, but the endpoint is editable. A
+            // remote Ollama is a cloud brain for Offline mode's promise.
+            ProviderId::Ollama => self.base_url.trim().is_empty() || crate::brain::on_this_pc(&self.base_url),
             ProviderId::Custom => self.base_url.trim().is_empty() || crate::brain::on_this_pc(&self.base_url),
             _ => false,
         }
@@ -1401,6 +1403,16 @@ mod tests {
         assert!(c.on_this_pc());
         c.base_url = "https://localhost.example.com/v1".into();
         assert!(!c.on_this_pc(), "a website whose name starts with localhost");
+    }
+
+    #[test]
+    fn a_remote_ollama_is_not_an_offline_brain() {
+        let mut c = Settings::default().providers.into_iter().find(|p| p.id == ProviderId::Ollama).expect("ollama slot");
+        assert!(c.on_this_pc(), "the default Ollama address is on this PC");
+        c.base_url = "http://192.168.1.20:11434".into();
+        assert!(!c.on_this_pc(), "a LAN Ollama is still off this PC");
+        c.base_url = "https://ollama.example.com".into();
+        assert!(!c.on_this_pc(), "a remote Ollama is a cloud brain");
     }
 
     fn key_after_heal(pasted: &str) -> String {

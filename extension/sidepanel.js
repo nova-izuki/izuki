@@ -442,7 +442,10 @@ async function ask(question, sourceOverride = null, userInitiated = false) {
     const focused = share ? await readTab(source.id, "question") : null;
     if (focused?.text) {
       if (!page) page = { ...focused, selection: "" };
-      else if (!page.text.includes(focused.text.slice(0, 80))) {
+      // Both reads must be the same document: the tab can navigate between
+      // them, and merging page B's question into page A's labelled text would
+      // share the wrong page's content under page A's URL.
+      else if (focused.url === page.url && !page.text.includes(focused.text.slice(0, 80))) {
         page.text = `Current question on the page:\n${focused.text}\n\n${page.text}`;
       }
     }

@@ -226,11 +226,13 @@ export function AskPage({ page, onHold, onClose, onDetach, onDragHandle }: { pag
     if (watchdog.current) window.clearTimeout(watchdog.current);
     watchdog.current = window.setTimeout(() => {
       if (current.current !== id) return;
+      void api.pageAskCancel(id);
       current.current = 0;
       setWorking(false);
-      setDraft(q);
+      // Don't overwrite a follow-up the learner typed while waiting.
+      setDraft((text) => (text.trim() ? text : q));
       setError("That answer stopped coming back. Your question is back in the box — press Ask to try again.");
-    }, 180_000);
+    }, 300_000);
     const sending = files.length ? files : sessionFiles.current;
     sessionFiles.current = sending;
     setFiles([]);

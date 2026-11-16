@@ -2212,7 +2212,11 @@ fn ask_racing(
             Ok((i, Ok(mut plan), took)) => {
                 // Only the plan that won gets the sharp-eye look — not every
                 // brain's in the race.
-                crate::sharpeye::refine(&mut plan.steps, &req);
+                // Offline mode means no cloud request at all; sharp eye would
+                // otherwise send the screenshot to Gemini/UI-TARS.
+                if !local_only() {
+                    crate::sharpeye::refine(&mut plan.steps, &req);
+                }
                 eprintln!(
                     "[brain] {} ({}) answered in {} ms (prep {} ms){}",
                     chain[i].label,
