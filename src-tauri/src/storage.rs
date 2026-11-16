@@ -336,11 +336,7 @@ pub fn report() -> String {
     let mut found = std::mem::take(&mut *found.lock());
     found.big_files.sort_by(|a, b| b.1.cmp(&a.1));
     found.big_files.dedup_by(|a, b| a.0 == b.0);
-    let files: Vec<(String, u64)> = found
-        .big_files
-        .iter()
-        .map(|(p, b)| (p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(), *b))
-        .collect();
+    let files = group_parts(&found.big_files);
     let mut safe = Vec::new();
     found.rebuild.sort_by(|a, b| b.2.cmp(&a.2));
     if let Some((what, path, b)) = found.rebuild.first() {
@@ -381,9 +377,8 @@ fn compose(ds: &[(String, f64, f64)], apps: &[(String, f64)], folders: &[FolderL
         let list: Vec<String> = apps.iter().take(4).map(|(n, g)| format!("{} {}", tidy_app(n), gb(*g))).collect();
         also.push(format!("Biggest apps: {}.", list.join(", ")));
     }
-    let grouped = group_parts(files);
-    if !grouped.is_empty() {
-        let list: Vec<String> = grouped.iter().take(3).map(|(n, b)| format!("{n} {}", gb(*b as f64 / 1e9))).collect();
+    if !files.is_empty() {
+        let list: Vec<String> = files.iter().take(3).map(|(n, b)| format!("{n} {}", gb(*b as f64 / 1e9))).collect();
         also.push(format!("Biggest files: {}.", list.join(", ")));
     }
     if !also.is_empty() {
@@ -421,7 +416,10 @@ fn tidy_app(name: &str) -> String {
 
 /// Where a split archive's name stops: "faces.part03.rar", "faces.7z.001", "faces.z01" → "faces".
 fn part_stem(name: &str) -> Option<usize> {
-    let lower = name.to_lowercase();
+    // ASCII-only lowercasing keeps every byte where it was, so the offset
+    // slices the real name (full lowercasing can change a name's length:
+    // "\u{212A}" — the Kelvin sign — becomes a one-byte "k").
+    let lower = name.to_ascii_lowercase();
     if let Some(i) = lower.rfind(".part") {
         let rest = &lower[i + 5..];
         if let Some(num) = rest.strip_suffix(".rar") {
@@ -444,18 +442,22 @@ fn part_stem(name: &str) -> Option<usize> {
 
 /// Big files with the parts of one split archive counted together:
 /// (name, bytes), biggest first; "facepack (4 parts)" instead of four lines.
-fn group_parts(files: &[(String, u64)]) -> Vec<(String, u64)> {
-    let mut groups: Vec<(String, String, u64, usize)> = Vec::new(); // (stem, first name, bytes, parts)
-    for (name, bytes) in files {
-        let stem = part_stem(name).map(|i| name[..i].to_string());
-        match stem.as_ref().and_then(|s| groups.iter_mut().find(|g| g.3 > 0 && g.0 == *s)) {
-            Some(g) => { g.2 += bytes; g.3 += 1; }
-            None => groups.push((stem.clone().unwrap_or_else(|| name.clone()), name.clone(), *bytes, usize::from(stem.is_some()))),
+/// Parts belong together only in the same folder.
+fn group_parts(files: &[(std::path::PathBuf, u64)]) -> Vec<(String, u64)> {
+    // (folder, stem, first name, bytes, parts)
+    let mut groups: Vec<(std::path::PathBuf, String, String, u64, usize)> = Vec::new();
+    for (path, bytes) in files {
+        let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        let folder = path.parent().map(|p| p.to_path_buf()).unwrap_or_default();
+        let stem = part_stem(&name).map(|i| name[..i].to_string());
+        match stem.as_ref().and_then(|s| groups.iter_mut().find(|g| g.4 > 0 && g.1 == *s && g.0 == folder)) {
+            Some(g) => { g.3 += bytes; g.4 += 1; }
+            None => groups.push((folder, stem.clone().unwrap_or_else(|| name.clone()), name, *bytes, usize::from(stem.is_some()))),
         }
     }
     let mut out: Vec<(String, u64)> = groups
         .into_iter()
-        .map(|(stem, first, bytes, parts)| (if parts > 1 { format!("{stem} ({parts} parts)") } else { first }, bytes))
+        .map(|(_, stem, first, bytes, parts)| (if parts > 1 { format!("{stem} ({parts} parts)") } else { first }, bytes))
         .collect();
     out.sort_by(|a, b| b.1.cmp(&a.1));
     out
@@ -657,7 +659,9 @@ mod tests {
             FolderLine { name: "Music".into(), gb: 6.9, done: true, inside: vec![] },
             FolderLine { name: "Videos".into(), gb: 1.3, done: true, inside: vec![] },
         ];
-        let files: Vec<(String, u64)> = (1..=4).map(|i| (format!("facepack2627.part0{i}.rar"), 4_700_000_000)).chain([("movie.mkv".to_string(), 2_000_000_000)]).collect();
+        let dl = std::path::PathBuf::from("Downloads");
+        let big: Vec<(std::path::PathBuf, u64)> = (1..=4).map(|i| (dl.join(format!("facepack2627.part0{i}.rar")), 4_700_000_000)).chain([(dl.join("movie.mkv"), 2_000_000_000)]).collect();
+        let files = group_parts(&big);
         let safe = vec!["A Rust build folder (target), 4.0 GB, in Downloads › Nova_Izuki › izuki › src-tauri › target: it rebuilds itself, so delete it when you're done with that project".to_string()];
         let text = compose(&ds, &apps, &folders, &files, &safe);
         println!("{text}");
@@ -672,8 +676,13 @@ mod tests {
         assert_eq!(tidy_app("Microsoft Visual Studio Code (User)"), "Microsoft Visual Studio Code");
         assert_eq!(tidy_app("7-Zip 24.08 (x64)"), "7-Zip");
         assert_eq!(tidy_app("Python 3"), "Python 3", "a lone number is part of the name");
-        let g = group_parts(&[("a.7z.001".into(), 5), ("a.7z.002".into(), 5), ("b.zip".into(), 7), ("c.part1.rar".into(), 3)]);
+        let at = |p: &str| std::path::PathBuf::from(p);
+        let g = group_parts(&[(at("x/a.7z.001"), 5), (at("x/a.7z.002"), 5), (at("x/b.zip"), 7), (at("x/c.part1.rar"), 3)]);
         assert_eq!(g, vec![("a (2 parts)".to_string(), 10), ("b.zip".to_string(), 7), ("c.part1.rar".to_string(), 3)]);
+        let apart = group_parts(&[(at("x/a.part1.rar"), 5), (at("y/a.part2.rar"), 4)]);
+        assert_eq!(apart.len(), 2, "same name, different folders: not one archive");
+        // A name whose full lowercase is shorter (the Kelvin sign) never breaks the report.
+        assert_eq!(group_parts(&[(at("x/\u{212A}.part1.rar"), 2), (at("x/\u{212A}.part2.rar"), 2)]), vec![("\u{212A} (2 parts)".to_string(), 4)]);
     }
 
     #[test]

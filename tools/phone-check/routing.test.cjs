@@ -129,5 +129,22 @@ for (const s of [
 // eslint-disable-next-line no-new-func
 const web = new Function("window", source + "; return { phoneAgentLane, requestLane };")({});
 is("a browser (no Android app) never runs the agent", web.phoneAgentLane("open YouTube", web.requestLane("open YouTube", false, true)), false);
+
+console.log("Google Search only when the question needs it (it slows every answer):");
+const webStart = html.indexOf("  const WEB_WORDS = ");
+const webEnd = html.indexOf("  const usesGemini = ", webStart);
+if (webStart < 0 || webEnd < 0) throw new Error("could not find needsWeb in index.html");
+// eslint-disable-next-line no-new-func
+const searchFor = (lang) => new Function("speechLanguage", html.slice(webStart, webEnd) + "; return needsWeb;")(lang);
+const needsWeb = searchFor("auto");
+const asked = (...lines) => lines.map((text) => ({ role: "user", parts: [{ text }] }));
+for (const q of ["what's the weather today", "Is it raining in London?", "who won the match last night", "news about the election", "¿Va a llover mañana?", "quel temps fait-il demain"]) {
+  is(JSON.stringify(q) + " searches", needsWeb(asked(q)), true);
+}
+for (const q of ["hi", "tell me a joke", "make that shorter", "write me a poem about the sea"]) {
+  is(JSON.stringify(q) + " answers without search", needsWeb(asked(q)), false);
+}
+is("a follow-up keeps the search (“and in Paris?”)", needsWeb(asked("what's the weather in London", "and in Paris?")), true);
+is("a language the lists don't cover leaves it to Gemini", searchFor("yoruba")(asked("bawo ni")), true);
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);

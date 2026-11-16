@@ -154,6 +154,9 @@ public class WakeGateTest {
     assertEquals("play some music", WakeGate.command("Hanover, play some music", false, ""));
     assertEquals("open YouTube", WakeGate.command("Hey Jarvis open YouTube", false, "hey jarvis"));
     assertEquals("punctuation between the words", "open YouTube", WakeGate.command("Hey, Jarvis! open YouTube", false, "hey jarvis"));
+    assertEquals("a hyphen, as isWake allows", "what's the time", WakeGate.command("Hey-Nova what's the time", false, ""));
+    assertTrue(WakeGate.isWake("Hey-Nova what's the time", false));
+    assertEquals("the phrase said first wins", "tell me about hey nova", WakeGate.command("hey jarvis tell me about hey nova", false, "hey jarvis"));
     assertEquals("a clipped start of their own phrase", "what's the time", WakeGate.command("jarvis, what's the time", true, "hey jarvis"));
     assertEquals("not clipped: the whole phrase is needed", "", WakeGate.command("jarvis, what's the time", false, "hey jarvis"));
     assertEquals("what's the time", WakeGate.command("nova what's the time", true, ""));

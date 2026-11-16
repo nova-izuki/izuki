@@ -246,7 +246,7 @@ final class WakeGate {
   private static final Pattern CLIPPED = Pattern.compile("^\\W*(?:a\\s+|ey\\s+)?(?:nova|izuki)\\b");
   /** The same phrases on the raw words, case-insensitive, to find where the command starts. */
   private static final Pattern WAKE_AT = Pattern.compile(
-      "(?i)(?:\\b(?:hey|hi|ok|okay|hay|hei)[\\s,]*(?:nova|novah|izuki)\\b|^\\W*(?:hannover|hanover)\\b)[\\s,.!?:;-]*");
+      "(?i)(?:\\b(?:hey|hi|ok|okay|hay|hei)[\\W_]*(?:nova|novah|izuki)\\b|^\\W*(?:hannover|hanover)\\b)[\\s,.!?:;-]*");
   private static final Pattern CLIPPED_AT = Pattern.compile("(?i)^\\W*(?:a\\s+|ey\\s+)?(?:nova|izuki)\\b[\\s,.!?:;-]*");
 
   /**
@@ -255,19 +255,28 @@ final class WakeGate {
    */
   static String command(String heard, boolean clipped, String custom) {
     if (heard == null) return "";
-    int end = endOf(WAKE_AT, heard);
     String phrase = cleanPhrase(custom);
-    // Their own phrase, written with any punctuation between its words.
-    if (end < 0 && !phrase.isEmpty()) end = endOf(phrasePattern(phrase, false), heard);
+    // "Hey Nova" or their own phrase (any punctuation between its words):
+    // the one said first is the one that woke Izuki.
+    int[] built = span(WAKE_AT, heard);
+    int[] own = phrase.isEmpty() ? null : span(phrasePattern(phrase, false), heard);
+    int[] first = built == null ? own : own == null ? built : (own[0] < built[0] ? own : built);
+    int end = first == null ? -1 : first[1];
     // A clipped start may have lost the first word, as isWake accepts.
     if (end < 0 && clipped) end = endOf(CLIPPED_AT, heard);
     if (end < 0 && clipped && phrase.indexOf(' ') > 0) end = endOf(phrasePattern(phrase.substring(phrase.indexOf(' ') + 1), true), heard);
     return end < 0 ? "" : heard.substring(end).trim();
   }
 
-  private static int endOf(Pattern p, String text) {
+  /** Where a pattern first matches: {start, end}, or null. */
+  private static int[] span(Pattern p, String text) {
     java.util.regex.Matcher m = p.matcher(text);
-    return m.find() ? m.end() : -1;
+    return m.find() ? new int[] { m.start(), m.end() } : null;
+  }
+
+  private static int endOf(Pattern p, String text) {
+    int[] s = span(p, text);
+    return s == null ? -1 : s[1];
   }
 
   /** A cleaned phrase as a pattern: any spaces or punctuation between its words, optionally only at the start. */
