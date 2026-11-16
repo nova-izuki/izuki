@@ -49,3 +49,23 @@ Update the extension first (the app says when it's out of date).
 
 - `npm run trim:cache` reports old Izuki build outputs in `src-tauri/target`; add `-- --apply` to remove them. Only build output is touched.
 - Dev builds now keep line numbers for Izuki and no debug info for dependencies, which keeps the cache much smaller.
+
+## 1.0.216: Android phone (the owner's Samsung)
+
+Install the 1.0.216 APK (Settings → Phone → App updates, or the download page). Then:
+
+1. **Phone readiness** (Settings → Phone): every row matches what Android shows. Android control reads "Ready" only after it's on; if Android said "App was denied access", the card shows the Samsung steps; after App info → ⋮ → Allow restricted settings and turning it on, come back: the row turns Ready within ~3 s without tapping Check again, and "Enable Android controls" is gone.
+2. **Floating orb → Show it**: the orb appears for ~5 s; leave Izuki: it rests ("Tap to talk"), never "Listening…". Drag it to the other side; long-press hides it. Open Android Settings: no orb over it.
+3. **"Hey Nova" → Turn on**, then leave Izuki: no repeating connect/disconnect sound in a quiet room. Say "Hey Nova": the screen wakes and Izuki opens. Settings → Phone → Diagnostics shows ARMED / PAUSED / HEARING with the times. Try your own phrase (e.g. "hey jarvis").
+4. **Voice match** (optional): Settings → Phone → “Hey Nova” → Teach my voice, then do the three recordings (the first time downloads about 95 MB). Then say "Hey Nova": it starts. Have someone else (or a video) say it: "That didn't sound like you". Turn it off again if you don't want it.
+5. **Test phone control** (Autopilot sheet): tap, tap-by-label and swipe pass; any failure line names Android's reason.
+6. **Autopilot: "open YouTube and search lofi"**: YouTube opens, the search box opens (not voice search), the results appear, and the log says "results are on screen".
+7. **Stop**: ask something long; Send turns into Stop with "Asking Gemini… N s"; Stop ends it with "Stopped."; no late answer appears.
+8. Diagnostics → **Copy report** and paste it into the chat with Claude if anything above failed.
+
+## 1.0.216: browser extension 1.6.4 and Windows
+
+1. **Emergency escape**: press Esc three times quickly: Izuki's overlay disappears and its work stops; tray → Restore overlay brings it back. Type "remove the black screen": the same, with a plain result. Ctrl+Shift+Q does it too. No other app closes.
+2. **Do it / Type it**: on a reply, Do it acts on the screen; the composer's keyboard button types the draft into the app behind without sending.
+3. Extension: ask a question in Gemini, close the side panel mid-answer, reopen it: it shows "Gemini is still answering …" with Stop and Show. Ask again: "Stop that one and ask this" works; "Show Gemini" brings the tab forward.
+4. Windows: "help me set my battery charge limit to 80%": Izuki goes to Lenovo Commercial Vantage (not Windows Settings), asks before changing, and only says it's set when Vantage shows the saved value. If it stops, the message says what happened.
