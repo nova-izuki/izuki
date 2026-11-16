@@ -126,6 +126,10 @@
     };
   }
 
+  /** A quiz, test or exam page, from its own words ("Question 3 of 20", "Submit quiz", "Time remaining"). */
+  const TEST_WORDS = /\b(question \d+ (?:of|\/) \d+|\d+ of \d+ questions|quiz|exam|assessment|midterm|final test|practice test|test results|time (?:left|remaining)|submit (?:test|quiz|exam|answers|attempt)|finish (?:test|attempt|quiz)|attempt \d+)\b/i;
+  const testPage = (screen) => TEST_WORDS.test((screen?.items || []).slice(0, 120).map((i) => i.text || "").join(" \n "));
+
   const SEARCHY = /(^|[^a-z])(search|find|query|url|address|omnibox|urlbar|searchbar|searchbox)([^a-z]|$)/i;
   const forSearch = (item) => !!item && (SEARCHY.test(String(item.hint || "")) || SEARCHY.test(String(item.id || "")) || SEARCHY.test(String(item.desc || "")));
   const look = (screen) => `${screen?.app || ""}|${(screen?.items || []).slice(0, 40).map((i) => `${i.kind}:${i.text}${i.focused ? "*" : ""}${i.on ? "+" : ""}`).join("|")}`;
@@ -185,6 +189,10 @@
     async function act(a, screen) {
       const items = screen?.items || [];
       const own = screen?.app === OWN;
+      // A quiz, test or exam on screen: Izuki explains, but never picks or types answers.
+      if ((a.do === "tap" || a.do === "type") && testPage(screen)) {
+        return { ok: false, stop: true, note: "This looks like a quiz or test, so I won't pick or type answers for you. Say “explain this” and I'll walk you through the question." };
+      }
       switch (a.do) {
         case "open": {
           if (!a.app) return { ok: false, note: "no app was named" };
@@ -326,5 +334,5 @@
   /** Autopilot and the agent take turns: both use Android's one numbered screen list. */
   let agentBusy = false;
 
-  window.IzukiAgent = { run, get busy() { return agentBusy; }, _test: { parse, describe, facts, RISKY, SYSTEM, PAGES } };
+  window.IzukiAgent = { run, get busy() { return agentBusy; }, _test: { parse, describe, facts, RISKY, SYSTEM, PAGES, testPage } };
 })();

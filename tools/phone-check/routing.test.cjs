@@ -146,5 +146,18 @@ for (const q of ["hi", "tell me a joke", "make that shorter", "write me a poem a
 }
 is("a follow-up keeps the search (“and in Paris?”)", needsWeb(asked("what's the weather in London", "and in Paris?")), true);
 is("a language the lists don't cover leaves it to Gemini", searchFor("yoruba")(asked("bawo ni")), true);
+
+console.log("the screen assistant: what's on the screen, explained:");
+const screenStart = html.indexOf("  const SCREEN_HELP = ");
+const screenEnd = html.indexOf("  const SCREEN_SYSTEM = ", screenStart);
+if (screenStart < 0 || screenEnd < 0) throw new Error("could not find SCREEN_HELP in index.html");
+// eslint-disable-next-line no-new-func
+const wantsScreenHelp = new Function(html.slice(screenStart, screenEnd) + "; return wantsScreenHelp;")();
+for (const q of ["explain this", "what does this mean", "what's this?", "what is this error", "help me with this page", "summarize this article", "translate this", "what's on my screen", "what am I looking at", "read this for me", "check this message"]) {
+  is(JSON.stringify(q) + " is about the screen", wantsScreenHelp(q), true);
+}
+for (const q of ["what's the weather", "open YouTube", "tell me a joke", "what is love", "explain quantum physics", "what's this week's news"]) {
+  is(JSON.stringify(q) + " is not", wantsScreenHelp(q), false);
+}
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);
