@@ -68,13 +68,138 @@
     return 0;
   };
 
-  let orbOverApps = true;
+  let orbOverApps = false;
   let wakeExtra = { audio: "", voice: false };
+  // Native speech: one promise per line, settled by the "speech" events.
+  const speeches = new Map();
+  let speechSeq = 0, speechListening = false;
+  const listenSpeech = () => {
+    const p = control();
+    if (speechListening || !p?.addListener) return;
+    speechListening = true;
+    try {
+      p.addListener("speech", (d) => {
+        const s = speeches.get(String(d?.id || ""));
+        if (!s) return;
+        if (d.event === "start") { s.onStart?.(); return; }
+        speeches.delete(s.id);
+        clearTimeout(s.guard);
+        s.resolve(d.event || "done");
+      });
+    } catch {}
+  };
+  // Listen for Android's speech events from the start: the very first line's
+  // "done" must not arrive before anyone is listening for it.
+  if (platform() === "android") listenSpeech();
   window.IzukiNative = {
     installed: () => !!window.Capacitor?.isNativePlatform?.(),
     platform,
-    /** Match the Android setting; app launches only leave an orb when this is on. */
-    setOrbOverApps(on) { orbOverApps = !!on; },
+    /** Match the Android setting; app launches only leave a resting orb when this is on. */
+    setOrbOverApps(on) {
+      orbOverApps = !!on;
+      try { void control()?.voicePrefs?.({ keep: orbOverApps }); } catch {}
+    },
+    /** The hearing language for native listening and the voice turn ("" = the phone's). */
+    setHearing(lang) { try { void control()?.voicePrefs?.({ lang: String(lang || "") }); } catch {} },
+    /** Android's own voice (TextToSpeech) is here: replies are never silent in the app. */
+    canSpeak: () => platform() === "android" && !!control()?.say,
+    /**
+     * Say `text` with Android's voice. Resolves "done", "stopped" or "error"
+     * when it has finished (never hangs: a guard covers a lost event).
+     * opts: { turn, rate, onStart }.
+     */
+    speak(text, opts = {}) {
+      const p = control();
+      if (!p?.say) return Promise.resolve("error");
+      listenSpeech();
+      const id = `s${Date.now().toString(36)}${++speechSeq}`;
+      const words = String(text || "");
+      return new Promise((resolve) => {
+        const entry = { id, resolve, onStart: opts.onStart, guard: 0 };
+        entry.guard = setTimeout(() => { if (speeches.delete(id)) resolve("done"); }, Math.min(180000, 8000 + words.length * 110));
+        speeches.set(id, entry);
+        p.say({ text: words, id, turn: String(opts.turn || ""), rate: Number(opts.rate) || 1.0 })
+          .catch(() => { if (speeches.delete(id)) { clearTimeout(entry.guard); resolve("error"); } });
+      });
+    },
+    /** Stop Android's voice now. */
+    async hushSpeech() { try { await control()?.hush?.(); } catch {} },
+    /** Native ears are here (Android's speech recognizer, one session at a time). */
+    canListen: () => platform() === "android" && !!control()?.listen,
+    /**
+     * One listening session with Android's recognizer: {text, error}. error is
+     * "" (words), "silence", "permission", "busy", "unavailable", "cancelled"…
+     * `onPartial(words)` sees the words as they are heard.
+     */
+    async listen(onPartial) {
+      const p = control();
+      if (!p?.listen) return { text: "", error: "unavailable" };
+      let sub = null;
+      try { sub = await p.addListener?.("hearing", (d) => { try { onPartial?.(String(d?.text || "")); } catch {} }); } catch {}
+      try { return (await p.listen()) || { text: "", error: "client" }; }
+      catch { return { text: "", error: "client" }; }
+      finally { try { await sub?.remove?.(); } catch {} }
+    },
+    /** End the listening session: `finish` keeps the words heard so far ("I'm done"), else drops them. */
+    async stopListening(finish = false) { try { await control()?.stopListening?.({ finish: !!finish }); } catch {} },
+    /** The page's own microphone is open (or closed): the "Hey Nova" listener steps aside meanwhile. */
+    micBusy(on) { try { void control()?.micBusy?.({ on: !!on }); } catch {} },
+    /** A voice turn from the orb, "Hey Nova", the tile or the notification: {id, text, locked, source, wake, followUp}. */
+    onTurn(callback) {
+      const p = control();
+      if (!p?.addListener) return null;
+      try { return p.addListener("turn", (d) => { try { callback?.(d || {}); } catch {} }); } catch { return null; }
+    },
+    /** A tap on the orb while it shows the page's own work ("Tap to stop"). */
+    onStop(callback) {
+      const p = control();
+      if (!p?.addListener) return null;
+      try { return p.addListener("stop", () => { try { callback?.(); } catch {} }); } catch { return null; }
+    },
+    /** The person stopped a turn (a tap on the orb): {id}. */
+    onTurnCancel(callback) {
+      const p = control();
+      if (!p?.addListener) return null;
+      try { return p.addListener("turnCancel", (d) => { try { callback?.(d || {}); } catch {} }); } catch { return null; }
+    },
+    /** Progress on the orb during a turn ("Opening Settings…"). */
+    turnState(id, state, text) { try { void control()?.turnState?.({ id: String(id || ""), state: String(state || "think"), text: String(text || "") }); } catch {} },
+    /** The turn is answered; `follow` listens again because the answer asked something. */
+    turnDone(id, follow = false) { try { void control()?.turnDone?.({ id: String(id || ""), follow: !!follow }); } catch {} },
+    /** A wait that a hidden page's slowed-down timers can't stretch. */
+    async pause(ms) {
+      const p = control();
+      if (p?.pause) { try { await p.pause({ ms: Math.max(0, Math.round(ms)) }); return; } catch {} }
+      await new Promise((r) => setTimeout(r, ms));
+    },
+    /** {total, free, used} bytes of the phone's storage, or null. */
+    async storage() {
+      try { return (await control()?.storage?.()) || null; } catch { return null; }
+    },
+    /** Straight to a Settings page or quick panel by name (wifi, bluetooth, storage, battery…). */
+    async openPanel(name) {
+      try { return (await control()?.openPanel?.({ name: String(name || "") })) || null; } catch { return null; }
+    },
+    /** The flashlight: true/false sets it, undefined toggles. Resolves {on} or null. */
+    async torch(on) {
+      const p = control();
+      if (!p?.torch) return null;
+      try { return (await p.torch(on === undefined ? {} : { on: !!on })) || null; } catch { return null; }
+    },
+    /**
+     * A short native recording ({type: "audio/wav", b64, peak}) for Teach my
+     * voice. `onLevel(0…1)` follows the sound while it records.
+     */
+    async recordClip(ms = 3800, onLevel) {
+      const p = control();
+      if (!p?.recordClip) return null;
+      let sub = null;
+      try { sub = await p.addListener?.("clipLevel", (d) => { try { onLevel?.(Number(d?.level) || 0); } catch {} }); } catch {}
+      try {
+        const r = await p.recordClip({ ms });
+        return r?.audio ? { type: "audio/wav", b64: r.audio, peak: Number(r.peak) || 0 } : null;
+      } finally { try { await sub?.remove?.(); } catch {} }
+    },
     async haptic() {
       try { return !!(await (device() || control())?.haptic())?.done; } catch { return false; }
     },
@@ -214,7 +339,7 @@
     clearPendingUpdate() { try { localStorage.removeItem(UPDATE_PENDING); } catch {} },
     /** A direct, visible phone action for the new home dock. */
     async phoneAction(action) {
-      const allowed = ["home", "back", "recents", "notifications", "quick_settings", "lock", "screenshot", "power"];
+      const allowed = ["home", "back", "recents", "notifications", "quick_settings", "lock", "screenshot", "power", "split_screen"];
       if (!control() || !allowed.includes(String(action))) return false;
       try { await control().perform({ action }); return true; } catch { return false; }
     },
@@ -350,10 +475,10 @@
     async orb(state = "idle", text = "", lease) {
       if (!control() || platform() === "web") return false;
       const mode = String(state || "idle");
-      // "Keep the glass orb over other apps" is the one gate for every
-      // producer, including Maps and Drive. Idle is always allowed so turning
-      // the setting off can take an existing orb away.
-      if (!orbOverApps && mode !== "idle" && mode !== "hide") return false;
+      // "Keep the glass orb over other apps" decides whether a resting orb
+      // stays up. Listening, working and talking always show it: that is
+      // Izuki doing something for the person, over whatever is open.
+      if (!orbOverApps && mode === "rest") return false;
       const args = { state: mode, text: String(text || "") };
       if (Number.isFinite(lease)) args.lease = Math.max(0, Math.round(lease));
       try { await control().orb(args); return true; } catch { return false; }
@@ -476,7 +601,38 @@
       const text = String(words || "").trim().toLowerCase().replace(/\s+on (?:my |the |this )?(?:phone|android)[.!?]*$/, "").replace(/[.!?]+$/, "").trim();
       if (!text || !control()) return null;
       const failed = "I couldn't perform that phone action. Check Android accessibility permission in Settings. I haven't sent it to your PC.";
+      // The flashlight, quick panels and Settings pages, straight away.
+      const torch = text.match(/^(?:turn |switch )?(on|off)? ?(?:the |my )?(?:flash ?light|torch)(?: (on|off))?$/);
+      if (torch && (torch[1] || torch[2] || /^(?:flash ?light|torch)$/.test(text))) {
+        const want = (torch[1] || torch[2]) === "on" ? true : (torch[1] || torch[2]) === "off" ? false : undefined;
+        const r = await window.IzukiNative.torch(want);
+        return r ? `Flashlight ${r.on ? "on" : "off"}.` : "I couldn't reach the flashlight (the camera may be in use).";
+      }
+      const panels = [
+        [/^(?:open |show )?(?:wi-?fi|wireless)(?: settings)?$/, "wifi", "Here's Wi-Fi."],
+        [/^(?:open |show )?(?:internet|mobile data|data)(?: settings)?$/, "internet", "Here's your internet."],
+        [/^(?:open |show )?bluetooth(?: settings)?$/, "bluetooth", "Here's Bluetooth."],
+        [/^(?:open |show )?(?:volume|sound) (?:panel|controls|settings)$/, "volume", "Here are the volume controls."],
+        [/^(?:open |show )?(?:storage|storage settings)$/, "storage", "Here's your storage."],
+        [/^(?:open |show )?(?:battery|battery settings|battery usage)$/, "battery", "Here's your battery."],
+        [/^(?:open |show )?(?:display|brightness|display settings)$/, "display", "Here's the display."],
+        [/^(?:open |show )?(?:do not disturb|dnd)(?: settings)?$/, "dnd", "Here's Do not disturb."],
+        [/^(?:open |show )?(?:settings|phone settings)$/, "settings", "Here's Settings."],
+        [/^(?:open |take a |take )?(?:camera|photo|picture)$/, "camera", "Here's the camera."],
+      ];
+      const panel = panels.find(([pattern]) => pattern.test(text));
+      if (panel && panel[1]) {
+        const r = await window.IzukiNative.openPanel(panel[1]);
+        return r ? panel[2] : failed;
+      }
+      if (/^(?:how much (?:storage|space)(?: do i have)?(?: left)?|storage left|free space)$/.test(text)) {
+        const s = await window.IzukiNative.storage();
+        if (!s?.total) return failed;
+        const gb = (b) => (b / 1e9 >= 10 ? Math.round(b / 1e9) : Math.round(b / 1e8) / 10) + " GB";
+        return `${gb(s.free)} free of ${gb(s.total)}. Say “what's taking space on my phone” and I'll look through Storage.`;
+      }
       const nav = [
+        [/^(?:split screen|split the screen)$/, "split_screen", "Split screen is on: pick the second app."],
         [/^(go )?home$/, "home", "Opened Home."],
         [/^(go )?back$/, "back", "Went back."],
         [/^(show )?(recent|recent apps|app switcher)$/, "recents", "Opened recent apps."],

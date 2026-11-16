@@ -342,6 +342,12 @@
 
   async function run(raw) {
     if (state.running) return false;
+    // The phone agent uses Android's numbered screen list too; one at a time.
+    if (window.IzukiAgent?.busy) {
+      state.log = [];
+      add("Izuki's phone agent is working on the phone. Stop it first, then run this.", "bad");
+      return false;
+    }
     const made = plan(raw);
     state.goal = String(raw || "").trim();
     state.label = made?.title || "";

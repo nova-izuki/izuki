@@ -61,6 +61,8 @@ public class IzukiWakeService extends Service implements RecognitionListener {
   public static final String ACTION_PAUSE = "com.novaizuki.mobile.WAKE_PAUSE";
   public static final String ACTION_RESUME = "com.novaizuki.mobile.WAKE_RESUME";
   public static final String ACTION_RETRY = "com.novaizuki.mobile.WAKE_RETRY";
+  /** The notification's "Ask Izuki": a voice turn from anywhere, the lock screen included. */
+  public static final String ACTION_ASK = "com.novaizuki.mobile.WAKE_ASK";
   private static final String CHANNEL = "izuki_wake";
   private static final int NOTIFY_ID = 7311;
   private static final String PREFS = "izuki_native";
@@ -76,8 +78,35 @@ public class IzukiWakeService extends Service implements RecognitionListener {
   private static final int FRAME = 320; // 20 ms
 
   private static volatile IzukiWakeService self;
-  /** MainActivity is resumed: the page owns the microphone, so the listener steps aside. */
+  /** MainActivity is resumed (shown in diagnostics; the listener keeps listening there). */
   private static volatile boolean appInFront = false;
+
+  /**
+   * Who is using the microphone or the speaker right now: the page's own
+   * microphone, a voice turn, Izuki's native voice, a native listening
+   * session. The listener steps aside while any of them holds it — and only
+   * then. In 1.0.216 it paused whenever Izuki was open, so "Hey Nova" said
+   * inside the app did nothing.
+   */
+  static final int HOLD_PAGE = 1, HOLD_TURN = 2, HOLD_SPEECH = 4, HOLD_EARS = 8, HOLD_CLIP = 16;
+  private static int holds = 0;
+
+  static void hold(int bit, boolean on) {
+    IzukiWakeService s;
+    synchronized (IzukiWakeService.class) {
+      int before = holds;
+      holds = on ? (holds | bit) : (holds & ~bit);
+      if (before == holds) return;
+      s = self;
+    }
+    if (s == null) return;
+    // On the main thread, at once: the microphone must be closed before the
+    // speech service opens its own one.
+    if (Looper.myLooper() == Looper.getMainLooper()) s.arm();
+    else s.main.post(s::arm);
+  }
+
+  private static synchronized int holds() { return holds; }
   /** Why the service last couldn't run, for the page and diagnostics (survives the service). */
   private static volatile String lastError = "";
   private static volatile long lastErrorAt = 0;
@@ -102,6 +131,21 @@ public class IzukiWakeService extends Service implements RecognitionListener {
   private boolean sourceRefused;
   private boolean onDeviceRefused;
   private boolean recognizerOnDevice;
+  /**
+   * Piped sessions in the current mode, and whether any of them returned a
+   * single word. Some phones' on-device recognizers take Izuki's audio and
+   * then return nothing, every time: "Hey Nova" could never match. After a
+   * few sessions without one word, the next simpler mode is used.
+   */
+  private int pipedSessions;
+  private boolean pipedWords;
+  private boolean sessionWords;
+  /**
+   * The wake phrase seen in a partial result. The person may still be saying
+   * the command ("Hey Nova, what's the weather in…"), so Izuki waits for the
+   * final words and uses this only if none come.
+   */
+  private String partialWake = "";
   private String noteText = "";
   private SpeechRecognizer recognizer;
 
@@ -196,11 +240,11 @@ public class IzukiWakeService extends Service implements RecognitionListener {
   }
 
   /**
-   * MainActivity calls this as it comes to the front and leaves. While Izuki
-   * is open the page owns the microphone; the old listener kept fighting it,
-   * and each lost fight restarted the recognizer (another sound). Starting
-   * here also brings the listener back after a reboot or an Android stop:
-   * a microphone service may only start while the app is in front.
+   * MainActivity calls this as it comes to the front and leaves. The listener
+   * keeps listening while Izuki is open; it only steps aside while the page
+   * actually uses the microphone (see {@link #hold}). Starting here also
+   * brings the listener back after a reboot or an Android stop: a microphone
+   * service may only start while the app is in front.
    */
   static void foreground(Context context, boolean front) {
     appInFront = front;
@@ -295,6 +339,8 @@ public class IzukiWakeService extends Service implements RecognitionListener {
       callHoldUntil = 0;
     } else if (ACTION_RETRY.equals(action)) {
       gate.reset();
+    } else if (ACTION_ASK.equals(action)) {
+      IzukiVoice.begin(this, "notification");
     }
     startAgain();
     return START_STICKY;
@@ -405,20 +451,23 @@ public class IzukiWakeService extends Service implements RecognitionListener {
       showState();
       return;
     }
+    int held = holds();
     // Still backing off: keep the deadline; listen again only after it.
-    if (retryAt > now && !appInFront && now >= callHoldUntil) {
+    if (retryAt > now && held == 0 && now >= callHoldUntil) {
       closeMic();
       move(WakeGate.State.ERROR);
       showState();
       main.postDelayed(rearm, retryAt - now + 50);
       return;
     }
-    if (appInFront || now < callHoldUntil) {
+    if (held != 0 || now < callHoldUntil) {
       closeMic();
-      noteText = appInFront ? "Paused while Izuki is open — it listens again when you leave." : "Paused during a call.";
+      noteText = (held & HOLD_TURN) != 0 ? "Izuki is listening to you right now."
+          : (held & HOLD_SPEECH) != 0 ? "Paused while Izuki talks."
+          : held != 0 ? "Paused while Izuki uses the microphone." : "Paused during a call.";
       move(WakeGate.State.PAUSED);
       showState();
-      if (!appInFront) main.postDelayed(rearm, callHoldUntil - now + 50);
+      if (held == 0) main.postDelayed(rearm, callHoldUntil - now + 50);
       return;
     }
     if (now < gate.quietUntil()) {
@@ -587,6 +636,8 @@ public class IzukiWakeService extends Service implements RecognitionListener {
     if (!move(WakeGate.State.HEARING)) return;
     sessionCount++;
     sessionStart = now;
+    sessionWords = false;
+    partialWake = "";
     Intent intent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
         .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
         .putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault().toLanguageTag())
@@ -685,6 +736,9 @@ public class IzukiWakeService extends Service implements RecognitionListener {
   /** Heard something that wasn't the wake phrase (or nothing): back to the quiet gate. */
   private void finishSession() {
     if (state != WakeGate.State.HEARING) return;
+    // The final words never came (or lost the phrase): the partial one still woke Izuki.
+    if (!partialWake.isEmpty()) { String text = partialWake; partialWake = ""; onWake(text); return; }
+    if (piped) checkPipedMode();
     endSession();
     if (budgetSpent) {
       synchronized (gate) { gate.rest(SystemClock.elapsedRealtime()); }
@@ -692,6 +746,20 @@ public class IzukiWakeService extends Service implements RecognitionListener {
       log("resting: lots of speech nearby");
     }
     arm();
+  }
+
+  /** Four piped sessions in a row without a word: this mode doesn't work here, use the next one. */
+  private void checkPipedMode() {
+    if (sessionWords) pipedWords = true;
+    if (pipedWords || ++pipedSessions < 4) return;
+    if (recognizerOnDevice) {
+      onDeviceRefused = true;
+      log("the on-device recognizer returned no words in 4 sessions; using the regular one");
+    } else {
+      sourceRefused = true;
+      log("the recognizer returned no words from Izuki's audio in 4 sessions; it opens its own microphone from now on");
+    }
+    pipedSessions = 0;
   }
 
   private void abandonSession() {
@@ -703,15 +771,21 @@ public class IzukiWakeService extends Service implements RecognitionListener {
     if (state != WakeGate.State.HEARING || results == null) return;
     ArrayList<String> words = results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
     if (words != null) {
+      for (String w : words) if (w != null && !w.trim().isEmpty()) { sessionWords = true; break; }
       for (String text : words) {
-        if (WakeGate.isWake(text, clipped, phrase(this))) { onWake(text); return; }
+        if (WakeGate.isWake(text, clipped, phrase(this))) {
+          if (partial) { partialWake = text; return; }
+          onWake(text);
+          return;
+        }
       }
       if (!words.isEmpty()) synchronized (gate) { gate.worked(); }
     }
     if (!partial) finishSession();
   }
 
-  private void onWake(String phrase) {
+  private void onWake(String heard) {
+    partialWake = "";
     long now = SystemClock.elapsedRealtime();
     endSession();
     closeMic();
@@ -723,19 +797,28 @@ public class IzukiWakeService extends Service implements RecognitionListener {
     showState();
     wakeScreen();
     vibrate();
-    // Show the glass orb over the current app at once. It rests (it doesn't
-    // claim to be listening): the page opens and does the listening.
-    IzukiAccessibilityService.orbFor("wake", "rest", "Hey Nova — tap to talk", 30_000);
     // Voice match on the page needs the phrase itself. Only a piped session
     // kept the microphone stream running through it; otherwise there's none.
     IzukiControlPlugin.setWakeAudio(piped ? wakeWav() : "");
-    String token = IzukiControlPlugin.beginWake(phrase);
-    IzukiControlPlugin.notifyWake(phrase);
+    main.postDelayed(handoffTimeout, 20_000);
+    // Siri-style: the orb pops up over whatever is open (or the lock screen),
+    // listens and answers there, without opening Izuki. The turn holds the
+    // microphone, so this listener pauses until it ends.
+    if (IzukiVoice.canTurn(this)) {
+      log("wake → voice turn over the current screen");
+      IzukiVoice.wake(this, WakeGate.command(heard, clipped, phrase(this)));
+      return;
+    }
+    log("wake → opening Izuki (Android control or the page isn't running)");
+    // Without Android control or a running page: show the orb and open Izuki,
+    // which does the listening.
+    IzukiAccessibilityService.orbFor("wake", "rest", "Hey Nova — opening Izuki…", 30_000);
+    String token = IzukiControlPlugin.beginWake(heard);
+    IzukiControlPlugin.notifyWake(heard);
     Intent open = new Intent(this, MainActivity.class)
         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
         .putExtra("izuki_wake_token", token);
     try { startActivity(open); } catch (Exception e) { log("Android didn't let Izuki open after the wake"); }
-    main.postDelayed(handoffTimeout, 20_000);
   }
 
   /** The last three seconds as a base64 WAV (16 kHz, 16-bit mono), for voice match. */
@@ -765,12 +848,17 @@ public class IzukiWakeService extends Service implements RecognitionListener {
   @Override public void onError(int error) {
     // A cancel() of our own reports an error too: only the live session counts.
     if (state != WakeGate.State.HEARING) return;
+    // The phrase was already heard in a partial result: that still counts.
+    if (!partialWake.isEmpty()) { String text = partialWake; partialWake = ""; onWake(text); return; }
     WakeGate.Failure failure = WakeGate.classify(error);
     long took = SystemClock.elapsedRealtime() - sessionStart;
     if (piped && took < 1500 && (failure == WakeGate.Failure.CLIENT || failure == WakeGate.Failure.UNAVAILABLE)) {
       // This recognizer won't take Izuki's audio (or isn't on the device):
       // fall back once, without counting it as a failure.
       if (recognizerOnDevice) onDeviceRefused = true; else sourceRefused = true;
+      // A new mode starts its own count of sessions without words.
+      pipedSessions = 0;
+      pipedWords = false;
       log("the recognizer refused Izuki's audio (" + error + "); falling back");
       finishSession();
       return;
@@ -836,6 +924,11 @@ public class IzukiWakeService extends Service implements RecognitionListener {
     Intent stop = new Intent(this, IzukiWakeService.class).setAction(ACTION_STOP);
     PendingIntent stopIntent = PendingIntent.getService(this, 1, stop,
         PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+    // Works from the lock screen too: the orb listens and answers there
+    // (general questions only until the phone is unlocked).
+    Intent ask = new Intent(this, IzukiWakeService.class).setAction(ACTION_ASK);
+    PendingIntent askIntent = PendingIntent.getService(this, 3, ask,
+        PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
     Notification.Builder b = Build.VERSION.SDK_INT >= 26
         ? new Notification.Builder(this, CHANNEL)
         : new Notification.Builder(this);
@@ -846,6 +939,7 @@ public class IzukiWakeService extends Service implements RecognitionListener {
         .setOngoing(true)
         .setOnlyAlertOnce(true)
         .setContentIntent(content)
+        .addAction(new Notification.Action.Builder(Icon.createWithResource(this, android.R.drawable.ic_btn_speak_now), "Ask Izuki", askIntent).build())
         .addAction(new Notification.Action.Builder(Icon.createWithResource(this, android.R.drawable.ic_btn_speak_now), "Stop listening", stopIntent).build());
     if (offerRetry) {
       Intent retry = new Intent(this, IzukiWakeService.class).setAction(ACTION_RETRY);

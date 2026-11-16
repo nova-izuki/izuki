@@ -238,10 +238,65 @@ final class WakeGate {
 
   // ---- the phrase --------------------------------------------------------
 
-  private static final Pattern WAKE = Pattern.compile("\\b(?:hey|hi|ok|okay|hay|hei)\\s+(?:nova|izuki)\\b");
+  // Speech services write "Hey Nova" in several ways: "hey nova", "heynova",
+  // "hey, Nova", and "Hanover" for a quick "Hey Nova" at the very start.
+  private static final Pattern WAKE = Pattern.compile("\\b(?:hey|hi|ok|okay|hay|hei)\\s*(?:nova|novah|izuki)\\b|^(?:hannover|hanover)\\b");
   // The start of the phrase can be cut off when the recognizer had to open
   // the microphone itself after speech began: "nova, what's the time".
   private static final Pattern CLIPPED = Pattern.compile("^\\W*(?:a\\s+|ey\\s+)?(?:nova|izuki)\\b");
+  /** Word edges as isWake sees them: letters and digits are words; "_", apostrophes and punctuation aren't. */
+  private static final String NOT_WORD_BEFORE = "(?<![\\p{L}\\p{N}])";
+  private static final String NOT_WORD_AFTER = "(?![\\p{L}\\p{N}])";
+  /** The same phrases on the raw words, case-insensitive, to find where the command starts. */
+  private static final Pattern WAKE_AT = Pattern.compile(
+      "(?iu)(?:" + NOT_WORD_BEFORE + "(?:hey|hi|ok|okay|hay|hei)[^\\p{L}\\p{N}']*(?:nova|novah|izuki)" + NOT_WORD_AFTER
+      + "|^[^\\p{L}\\p{N}]*(?:hannover|hanover)" + NOT_WORD_AFTER + ")[^\\p{L}\\p{N}]*");
+  // The separators and edges above are isWake's: it turns everything but
+  // letters, digits and the apostrophe into spaces (so "_" is a space too),
+  // and both must accept and refuse the same phrases.
+  private static final Pattern CLIPPED_AT = Pattern.compile(
+      "(?iu)^[^\\p{L}\\p{N}]*(?:(?:a|ey)[^\\p{L}\\p{N}']+)?(?:nova|izuki)" + NOT_WORD_AFTER + "[^\\p{L}\\p{N}]*");
+
+  /**
+   * What came after the wake phrase in the same breath ("Hey Nova, what's
+   * the time?" → "what's the time?"), or "" when they only said the phrase.
+   */
+  static String command(String heard, boolean clipped, String custom) {
+    if (heard == null) return "";
+    String phrase = cleanPhrase(custom);
+    // "Hey Nova", their own phrase (any punctuation between its words), or
+    // a clipped start that lost its first word, as isWake accepts: the one
+    // said first is the one that woke Izuki.
+    java.util.List<int[]> found = new java.util.ArrayList<>();
+    found.add(span(WAKE_AT, heard));
+    if (!phrase.isEmpty()) found.add(span(phrasePattern(phrase, false), heard));
+    if (clipped) {
+      found.add(span(CLIPPED_AT, heard));
+      if (phrase.indexOf(' ') > 0) found.add(span(phrasePattern(phrase.substring(phrase.indexOf(' ') + 1), true), heard));
+    }
+    int[] first = null;
+    for (int[] s : found) if (s != null && (first == null || s[0] < first[0])) first = s;
+    return first == null ? "" : heard.substring(first[1]).trim();
+  }
+
+  /** Where a pattern first matches: {start, end}, or null. */
+  private static int[] span(Pattern p, String text) {
+    java.util.regex.Matcher m = p.matcher(text);
+    return m.find() ? new int[] { m.start(), m.end() } : null;
+  }
+
+
+
+  /** A cleaned phrase as a pattern: any spaces or punctuation between its words, optionally only at the start. */
+  private static Pattern phrasePattern(String phrase, boolean atStart) {
+    StringBuilder b = new StringBuilder("(?iu)").append(atStart ? "^[^\\p{L}\\p{N}]*" : NOT_WORD_BEFORE);
+    String[] words = phrase.split(" ");
+    for (int i = 0; i < words.length; i++) {
+      if (i > 0) b.append("[^\\p{L}\\p{N}']+");
+      b.append(Pattern.quote(words[i]));
+    }
+    return Pattern.compile(b.append(NOT_WORD_AFTER).append("[^\\p{L}\\p{N}]*").toString());
+  }
 
   /** Did they say the wake phrase? `clipped` when the first moment may be missing. */
   static boolean isWake(String heard, boolean clipped) {
