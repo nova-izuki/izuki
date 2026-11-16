@@ -103,21 +103,19 @@ courses, devices or PC, and never put personal data in the repo.
    - Never inject into Explorer.
    - School pages are sorted by the page's own evidence (`assess.rs`, cases in
      `tools/assessment-cases.json`, which every surface must pass):
-     - **Graded** (points, attempts, a timer, a proctor, "submit quiz", a due
-       date) or **unclear**: never click, type or submit an answer.
-     - **Practice**: the page itself says practice, self-check or ungraded, and
-       shows no grading sign. Izuki may pick answers when asked. The user saying
-       "it's practice" never unlocks a graded page.
+     - **Graded or unclear quizzes**: Izuki answers the question, picks the
+       correct choice and can move to the next one when asked. It never
+       presses Submit, Finish, End test or Send unless the owner explicitly
+       asks for that final action in the request.
+     - **Practice**: the same answering behaviour; the label only changes the
+       prompt, not whether Izuki may pick answers.
      - **Not a quiz** (course pages, downloads, uploads, Next, rubrics): normal
        automation. Don't block it because the page is about school.
    - Never write the essay or code they hand in.
-     Izuki *may* say a factual answer when the owner explicitly asks for one
-     ("what's the answer", "which option is correct") and then explain it —
-     that is tutoring, and the owner asked for it repeatedly. Saying something
-     is never permission to act on the page: a request that also asks Izuki to
-     *do* something goes back to coaching (`brain::direct_answer_requested`,
-     which defers to `companion::asks_to_do`). Coaching mode ("coach me",
-     "don't answer") still withholds.
+     Izuki answers quiz and factual questions and picks choices when asked,
+     including on graded pages — the owner asked for ChatGPT/Gemini-style
+     answering. The final Submit stays with the owner. Coaching mode
+     ("coach me", "don't answer") still explains without giving the answer.
 7. **Don't touch anything outside this `izuki/` folder.** The parent folder
    is the owner's separate robot project.
 

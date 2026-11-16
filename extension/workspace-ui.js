@@ -126,7 +126,7 @@ export async function setUpWorkspace({windowId,getSource,getConnection,readTab,o
   function paintQuiz(state){
     runs.quiz=state||null;paintRunBar();
     // A run going on: its section opens too, for the answers as they come.
-    if(active(state))$("quiz-tools").open=true;text("quiz-status",state?.text||"Choose your question page, then start. On a page that says it's practice, Izuki picks each answer and presses Next. On a graded or unclear quiz it explains each one and you choose. You press Submit. Stop with Esc on that page or Alt+Shift+X.");$("quiz-start").disabled=active(state);$("quiz-stop").hidden=!active(state);text("quiz-answer",state?.answer||"");}
+    if(active(state))$("quiz-tools").open=true;text("quiz-status",state?.text||"Choose your question page, then start. Izuki answers, picks each choice and presses Next. You press Submit. Stop with Esc on that page or Alt+Shift+X.");$("quiz-start").disabled=active(state);$("quiz-stop").hidden=!active(state);text("quiz-answer",state?.answer||"");}
   async function planLab() {
     if(planning)return;
     const source=getSource();if(!source||!$("share").checked)throw Error("Choose and share the page containing your lab first.");

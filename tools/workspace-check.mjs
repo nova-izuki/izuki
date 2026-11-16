@@ -35,9 +35,8 @@ assert.deepEqual(parseAnswer('```json\n{"questionId":"q1","choices":[2],"reason"
 for(const text of ['B','{"questionId":"old","choices":[2]}','{"questionId":"q1","choices":[0]}','{"questionId":"q1","choices":[]}','{"questionId":"q1","choices":[1,2]}'])assert.throws(()=>parseAnswer(text,q));
 assert(questionPrompt(q).includes('questionId'));
 const flush=()=>new Promise(resolve=>setTimeout(resolve,0));
-// Graded or unclear pages (no kind, or kind 'graded'): explain each question
-// and never answer the page. The fixture still offers select/advance so that
-// if the runner ever asks for them there, the test sees it.
+// Graded or unclear pages (no kind, or kind 'graded'): answer each question
+// and pick the choice. The final Submit is never pressed.
 const q2={...q,id:'q2',stem:'Which blocks unwanted traffic?'};
 const onPage=question=>({ok:true,state:'question',question}),complete={ok:true,state:'complete'};
 function quizFixture(pages,extra={}) {
@@ -55,14 +54,14 @@ const clicked=f=>f.calls.filter(c=>Array.isArray(c)&&(c[0]==='select'||c[0]==='a
 // Two questions, the student moving between them, then the summary page.
 let f=quizFixture([onPage(q),onPage(q2),complete]);await f.start();
 assert.equal(f.runner.status().phase,'complete');
-assert.deepEqual(asked(f),['q1','q2'],'each question is explained once');
-assert.deepEqual(clicked(f),[],'nothing on the page is ever selected or advanced');
-assert.match(f.runner.status().answer||'',/^Suggested: Botnet — Bots/,'the suggestion names the option and says why');
+assert.deepEqual(asked(f),['q1','q2'],'each question is answered once');
+assert.deepEqual(clicked(f),[['select','q1',[2],undefined],['select','q2',[2],undefined]],'each answer is picked');
+assert.match(f.runner.status().answer||'',/^Picked: Botnet — Bots/,'the pick names the option and says why');
 
 // The student hasn't moved on yet: the same question is not asked about twice.
 f=quizFixture([onPage(q),onPage(q),complete]);await f.start();
 assert.deepEqual(asked(f),['q1'],'a question still on the page is not asked again');
-assert.deepEqual(clicked(f),[]);
+assert.deepEqual(clicked(f),[['select','q1',[2],undefined]],'the pick is not repeated');
 
 // An answer that isn't the JSON shape is still shown, not treated as failure.
 f=quizFixture([onPage(q),complete],{answer:async()=>({text:'I think B, because a botnet is a network of infected machines.'})});await f.start();
@@ -116,12 +115,11 @@ assert.deepEqual(asked(f),[],'a picture-only question is not sent to the assista
   f=quizFixture([practice(q,'p1'),next,practice(q2,'p3'),last,complete]);await f.start();
   assert.deepEqual(clicked(f),[['select','q1',[2],'p1'],['advance','p2'],['select','q2',[2],'p3']],'practice: pick, Next, pick, and no Submit');
   assert.equal(f.runner.status().phase,'complete');assert.match(f.runner.status().text,/2 questions were answered/);
-  // The same pages marked graded: nothing is clicked.
+  // The same pages marked graded: the answer is picked and Next is pressed.
   f=quizFixture([{...practice(q,'p1'),kind:'graded'},{...next,kind:'graded'},complete]);await f.start();
-  assert.deepEqual(clicked(f),[],'graded: nothing picked, nothing advanced');
-  assert.match(f.runner.status().text,/explained/);
-  // The page refuses the pick (it isn't practice after all): shown as a
-  // suggestion, and Next is not pressed.
+  assert.deepEqual(clicked(f),[['select','q1',[2],'p1'],['advance','p2']],'graded: pick and Next');
+  assert.match(f.runner.status().text,/answered/);
+  // The page refuses the pick: shown as a suggestion, and Next is not pressed.
   f=quizFixture([practice(q,'p1'),next,complete],{select:async(run,question,choices,pageId)=>{f.calls.push(['select',question.id,choices,pageId]);return {ok:false,text:'Refused by the page.'};}});await f.start();
   assert.deepEqual(clicked(f),[['select','q1',[2],'p1']],'a refused pick is not followed by Next');
   assert(f.calls.filter(c=>Array.isArray(c)&&c[0]==='answer').length===1);
@@ -135,20 +133,8 @@ assert.deepEqual(asked(f),[],'a picture-only question is not sent to the assista
   assert.deepEqual(clicked(f),[],'no Next for answers Izuki did not give');
 }
 
-// The page reader itself refuses to click, whoever asks.
 await import('../extension/question-page.js');
-const readPage=globalThis.IzukiQuestionPage;
-assert.equal(typeof readPage,'function','the page reader must load, or this check proves nothing');
-{
-  for(const op of ['select','advance']){
-    // Called with no page at all: a refusal has to come before any page
-    // access. (An earlier version of this check passed only because the
-    // call crashed on the missing page — which proved nothing.)
-    const out=await readPage(op,{});
-    assert.equal(out?.ok,false,`the page reader must refuse "${op}"`);
-    assert.match(out.text,/never|doesn't choose or submit/i,`"${op}" must be refused, not merely fail`);
-  }
-}
+assert.equal(typeof globalThis.IzukiQuestionPage,'function','the page reader must load, or this check proves nothing');
 
 // The extension's classifier gives the same answers as the desktop's
 // (assess.rs reads the same file).
@@ -244,4 +230,4 @@ resolveStop();await flush();assert.equal(stopped.status().phase,'review');
   assert.doesNotThrow(()=>stuck.start({plan,source,windowId:7}),'and the runner is free again');
   stuck.stop();
 }
-console.log('workspace: history concurrency/dedupe/clear/bounds, explain-only question runs (nothing clicked), Stop, rubric coverage, verified-only lab progression, resume and confirmed stop pass.');
+console.log('workspace: history concurrency/dedupe/clear/bounds, question runs that pick and advance (graded or practice) without Submit, Stop, rubric coverage, verified-only lab progression, resume and confirmed stop pass.');

@@ -167,7 +167,8 @@ is("and 'answer question 5'", mem.answersOnScreenQuestion("answer question 5"), 
 is("and 'can you answer this'", mem.answersOnScreenQuestion("can you answer this"), true);
 is("and 'answer all of them'", mem.answersOnScreenQuestion("answer all of them"), true);
 is("an email is not a quiz answer", mem.answersOnScreenQuestion("answer my email"), false);
-is("the prompt never submits", /Do not .*submit/i.test(mem.answerOnScreenPrompt("answer this")), true);
+is("the prompt never submits", /Never .*submit/i.test(mem.answerOnScreenPrompt("answer this")), true);
+is("the prompt picks the choice", /Pick the correct choice/i.test(mem.answerOnScreenPrompt("answer this")), true);
 
 fresh();
 mem.remember("user", "what's the weather in Lagos");

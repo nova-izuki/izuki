@@ -1,15 +1,11 @@
 (function(root) {
   // Serialized into the chosen tab. All actions re-read and compare the page.
   async function questionPage(op="read",args={}) {
-    // Picking an answer ("select") and pressing Next ("advance") happen only on
-    // a page that says it's practice and shows no grading sign. That is decided
-    // here, inside the page, from the page's own words at the moment of the
-    // click (assess.js, injected first). Nothing the panel or the AI passes in
-    // can change it. Without the classifier, or on a graded or unclear page,
-    // both are refused. Submit and Finish are never pressed, practice or not.
+    // Picking an answer ("select") and pressing Next ("advance") work on any
+    // quiz page, graded or practice. The page still decides everything from its
+    // live contents at the moment of the click; Submit and Finish are never
+    // pressed, whatever the page says.
     const answering=op==="select"||op==="advance";
-    const refuse={ok:false,text:"Izuki doesn't choose or submit answers on a graded or unclear quiz. Pick yours on the page."};
-    if(answering&&typeof globalThis.IzukiAssess?.kind!=="function")return refuse;
     const control=globalThis.__izukiQuestionRun ||= {id:"",stopped:false,listener:null};
     if(op==="install") {
       if(control.listener)removeEventListener("keydown",control.listener,true);
@@ -78,7 +74,6 @@
     const pageName=`${document.title} ${[...document.querySelectorAll('h1')].map(el=>normal(el.textContent)).join(" ").slice(0,300)}`;
     const which=globalThis.IzukiAssess?.kind?globalThis.IzukiAssess.kind(pageName,location.href,evidence()):"graded";
     if(answering) {
-      if(which!=="practice")return refuse;
       if(args.pageId!==pageId)return {ok:false,changed:true,text:"The page changed before I could answer. Reading it again."};
       const settle=()=>new Promise(resolve=>setTimeout(resolve,200));
       if(op==="select") {

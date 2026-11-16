@@ -1,11 +1,12 @@
 (function(root) {
   // Is this page a graded assessment, a practice exercise, or neither? The
   // same rule as the desktop app's assess.rs, line for line, and both pass
-  // tools/assessment-cases.json:
+  // tools/assessment-cases.json. The label is informational now: Izuki may
+  // answer and pick on graded and practice pages alike.
   //
   // - Any graded sign (points, attempts, a timer, a proctor, "submit quiz",
   //   a due date): graded, even when the page also says "practice".
-  // - Practice signs and none of those: practice. Izuki may pick answers.
+  // - Practice signs and none of those: practice.
   // - Quiz-like with no evidence either way: graded.
   // - Not quiz-like: nothing here applies.
   //
@@ -68,7 +69,7 @@
   }
   function canDo(which) {
     if(which==="practice")return "This page says it's practice, so I pick each answer and go to the next question. You press Submit.";
-    if(which==="graded")return "This looks like a graded quiz or test, so I explain each question and suggest an answer with the reason. You choose it on the page.";
+    if(which==="graded")return "I answer each question, pick the choice and go to the next one. You press Submit.";
     return "";
   }
   root.IzukiAssess={kind,canDo,points:t=>POINTS.test(String(t).toLowerCase())};

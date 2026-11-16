@@ -1,7 +1,7 @@
 // The extension's question page script on real pages in headless Edge: it
-// picks and presses Next only where the page itself says practice, and never
+// picks and presses Next on graded and practice pages alike, and never
 // presses Submit. (workspace-check.mjs covers the runner; this covers the
-// page's own decision and the real clicks.)
+// page's own clicks.)
 const fs=require('node:fs'),path=require('node:path'),http=require('node:http'),assert=require('node:assert/strict');
 const {spawn}=require('node:child_process');
 const {closeTestBrowser}=require('./browser-cleanup.cjs');
@@ -80,24 +80,28 @@ let server,browser,profile,ws;
   out=await op('advance',{pageId:read.pageId});
   assert.equal(out.ok,false,'no Next: nothing pressed');assert.deepEqual(await run('pressed'),[],'Finish is never pressed');
 
-  // Graded, timed, long-with-Submit-at-the-bottom and unclear pages: refused,
-  // and nothing changes on the page.
+  // Graded, timed, long-with-Submit-at-the-bottom and unclear pages: the
+  // answer is picked and Next is pressed; Submit is never pressed.
   for(const name of ['graded','timed','long','unclear']){
     await open(name);read=await op('read');
     assert.equal(read.kind,'graded',`${name} reads as graded`);
     out=await op('select',{questionId:read.question.id,choices:[2],pageId:read.pageId});
-    assert.equal(out.ok,false,`${name}: the pick is refused`);assert.match(out.text,/graded or unclear/);
-    assert.deepEqual(await ticked(),[],`${name}: nothing is ticked`);
-    assert.equal((await op('advance',{pageId:read.pageId})).ok,false);assert.deepEqual(await run('pressed'),[]);
+    assert.equal(out.ok,true,`${name}: the pick is made: ${out.text}`);assert.deepEqual(await ticked(),['q1b'],`${name}: the choice is ticked`);
+    read=await op('read');assert.equal(read.state,'question',`${name}: the second question is next`);
+    out=await op('select',{questionId:read.question.id,choices:[2],pageId:read.pageId});
+    assert.equal(out.ok,true,`${name}: the second pick is made: ${out.text}`);assert.deepEqual(await ticked(),['q1b','q2b'],`${name}: both choices are ticked`);
+    read=await op('read');assert.equal(read.state,'next',`${name}: next is offered`);
+    assert.equal((await op('advance',{pageId:read.pageId})).ok,true,`${name}: Next is pressed`);
+    assert.deepEqual(await run('pressed'),['Next'],`${name}: Submit not pressed`);
   }
 
-  // A practice page without the classifier loaded: refused too.
+  // A page without the classifier loaded is still answerable.
   await open('practice',false);read=await op('read');
   assert.equal(read.kind,'graded');
-  assert.equal((await op('select',{questionId:read.question.id,choices:[2],pageId:read.pageId})).ok,false);assert.deepEqual(await ticked(),[]);
+  assert.equal((await op('select',{questionId:read.question.id,choices:[2],pageId:read.pageId})).ok,true);assert.deepEqual(await ticked(),['q1b']);
 
   assert.deepEqual(errors,[]);
-  console.log('Question page: practice pages picked (radio and checkboxes) and Next pressed; stale reads and missing options refused; Finish/Submit never pressed; graded, timed, long and unclear pages and a missing classifier refused with nothing ticked.');
+  console.log('Question page: graded and practice pages picked (radio and checkboxes) and Next pressed; stale reads and missing options refused; Finish/Submit never pressed; a page without the classifier still answerable.');
 })().catch((e)=>{console.error(e);process.exitCode=1;}).finally(async()=>{
   try{ws?.close();}catch{}await closeTestBrowser(browser,profile);server?.closeAllConnections();server?.close();
   if(profile&&path.resolve(profile).startsWith(path.join(root,'.work')+path.sep))try{fs.rmSync(profile,{recursive:true,force:true,maxRetries:3,retryDelay:200});}catch{}
