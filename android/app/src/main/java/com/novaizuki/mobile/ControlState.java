@@ -67,7 +67,9 @@ final class ControlState {
 
   private static String norm(String s) {
     if (s == null) return "";
-    return s.toLowerCase(Locale.ROOT).replace(' ', ' ').replaceAll("[“”\"'‘’]", "").replaceAll("\\s+", " ").trim();
+    // NFC first: "Réinitialiser" written with a separate accent mark must
+    // still match the composed word in the risky list.
+    return java.text.Normalizer.normalize(s, java.text.Normalizer.Form.NFC).toLowerCase(Locale.ROOT).replace(' ', ' ').replaceAll("[“”\"'‘’]", "").replaceAll("\\s+", " ").trim();
   }
 
   static boolean wholeWord(String text, String word) {
