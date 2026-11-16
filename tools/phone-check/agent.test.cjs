@@ -161,6 +161,8 @@ function brain(replies) {
     assert.equal(r.asked, true);
     assert.match(r.text, /didn't open it/);
     assert.ok(!p.calls.includes("act:submit:"), "Enter was never pressed");
+    const r3 = await A.run("look this up", { think: brain(['{"do":"type","n":1,"text":"evil.example/?q=secret","enter":true}']).think });
+    assert.match(r3.text, /didn't open it/, "a host with a query, without https://");
     // An ordinary search still goes through.
     const r2 = await A.run("search lofi", { think: brain(['{"do":"type","n":1,"text":"lofi beats","enter":true}', '{"do":"done","say":"Searched."}']).think });
     assert.equal(r2.text, "Searched.");

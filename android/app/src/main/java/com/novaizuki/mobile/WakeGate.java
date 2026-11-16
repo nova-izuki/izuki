@@ -244,12 +244,18 @@ final class WakeGate {
   // The start of the phrase can be cut off when the recognizer had to open
   // the microphone itself after speech began: "nova, what's the time".
   private static final Pattern CLIPPED = Pattern.compile("^\\W*(?:a\\s+|ey\\s+)?(?:nova|izuki)\\b");
+  /** Word edges as isWake sees them: letters and digits are words; "_", apostrophes and punctuation aren't. */
+  private static final String NOT_WORD_BEFORE = "(?<![\\p{L}\\p{N}])";
+  private static final String NOT_WORD_AFTER = "(?![\\p{L}\\p{N}])";
   /** The same phrases on the raw words, case-insensitive, to find where the command starts. */
   private static final Pattern WAKE_AT = Pattern.compile(
-      "(?iu)(?:\\b(?:hey|hi|ok|okay|hay|hei)[^\\p{L}\\p{N}']*(?:nova|novah|izuki)\\b|^\\W*(?:hannover|hanover)\\b)[\\s,.!?:;-]*");
-  // The separator above is isWake's: anything but letters, digits and the
-  // apostrophe it keeps, so both accept and refuse the same phrases.
-  private static final Pattern CLIPPED_AT = Pattern.compile("(?i)^\\W*(?:a\\s+|ey\\s+)?(?:nova|izuki)\\b[\\s,.!?:;-]*");
+      "(?iu)(?:" + NOT_WORD_BEFORE + "(?:hey|hi|ok|okay|hay|hei)[^\\p{L}\\p{N}']*(?:nova|novah|izuki)" + NOT_WORD_AFTER
+      + "|^[^\\p{L}\\p{N}]*(?:hannover|hanover)" + NOT_WORD_AFTER + ")[^\\p{L}\\p{N}]*");
+  // The separators and edges above are isWake's: it turns everything but
+  // letters, digits and the apostrophe into spaces (so "_" is a space too),
+  // and both must accept and refuse the same phrases.
+  private static final Pattern CLIPPED_AT = Pattern.compile(
+      "(?iu)^[^\\p{L}\\p{N}]*(?:a\\s+|ey\\s+)?(?:nova|izuki)" + NOT_WORD_AFTER + "[^\\p{L}\\p{N}]*");
 
   /**
    * What came after the wake phrase in the same breath ("Hey Nova, what's
@@ -283,13 +289,13 @@ final class WakeGate {
 
   /** A cleaned phrase as a pattern: any spaces or punctuation between its words, optionally only at the start. */
   private static Pattern phrasePattern(String phrase, boolean atStart) {
-    StringBuilder b = new StringBuilder("(?iu)").append(atStart ? "^\\W*" : "\\b");
+    StringBuilder b = new StringBuilder("(?iu)").append(atStart ? "^[^\\p{L}\\p{N}]*" : NOT_WORD_BEFORE);
     String[] words = phrase.split(" ");
     for (int i = 0; i < words.length; i++) {
-      if (i > 0) b.append("[\\W_]+");
+      if (i > 0) b.append("[^\\p{L}\\p{N}']+");
       b.append(Pattern.quote(words[i]));
     }
-    return Pattern.compile(b.append("\\b[\\s,.!?:;-]*").toString());
+    return Pattern.compile(b.append(NOT_WORD_AFTER).append("[^\\p{L}\\p{N}]*").toString());
   }
 
   /** Did they say the wake phrase? `clipped` when the first moment may be missing. */

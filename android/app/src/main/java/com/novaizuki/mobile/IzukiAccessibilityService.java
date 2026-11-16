@@ -280,12 +280,11 @@ public class IzukiAccessibilityService extends AccessibilityService {
     return (!text.isEmpty() ? text : !desc.isEmpty() ? desc : hint).replaceAll("\\s+", " ").trim();
   }
 
-  private static void walk(AccessibilityNodeInfo node, JSONArray items, int depth) throws JSONException {
-    if (node == null || depth > 60 || listed.size() >= MAX_ITEMS) return;
-    if (!node.isVisibleToUser()) return;
-    // Never read a password field, and never let its hint/description stand in
-    // for the value either. Skip its subtree: there is nothing safe in there.
-    if (node.isPassword()) return;
+  /**
+   * The words a screen read lists for this node — exactly what the page and
+   * the phone agent see and plan on — or "" when it isn't listed.
+   */
+  private static String shownLabel(AccessibilityNodeInfo node) {
     String label = labelOf(node);
     boolean acts = node.isClickable() || node.isFocusable() || node.isEditable() || node.isCheckable() || node.isScrollable();
     boolean scrollable = node.isScrollable();
@@ -296,12 +295,23 @@ public class IzukiAccessibilityService extends AccessibilityService {
       label = scrollable ? "Scrollable area"
           : id != null && !id.isEmpty() ? id.substring(id.indexOf('/') + 1) : "Control";
     }
+    return label.length() > 120 ? label.substring(0, 120) : label;
+  }
+
+  private static void walk(AccessibilityNodeInfo node, JSONArray items, int depth) throws JSONException {
+    if (node == null || depth > 60 || listed.size() >= MAX_ITEMS) return;
+    if (!node.isVisibleToUser()) return;
+    // Never read a password field, and never let its hint/description stand in
+    // for the value either. Skip its subtree: there is nothing safe in there.
+    if (node.isPassword()) return;
+    String label = shownLabel(node);
+    boolean scrollable = node.isScrollable();
     if (!label.isEmpty()) {
       Rect r = new Rect();
       node.getBoundsInScreen(r);
       JSONObject it = new JSONObject();
       it.put("n", listed.size() + 1);
-      it.put("text", label.length() > 120 ? label.substring(0, 120) : label);
+      it.put("text", label);
       it.put("kind", node.isEditable() ? "box" : node.isCheckable() ? "switch" : scrollable ? "scroll" : (node.isClickable() || node.isFocusable()) ? "button" : "text");
       it.put("x", r.left); it.put("y", r.top); it.put("w", r.width()); it.put("h", r.height());
       if (node.isFocused() || node.isAccessibilityFocused()) it.put("focused", true);
@@ -446,7 +456,7 @@ public class IzukiAccessibilityService extends AccessibilityService {
     String label = labelOf(node);
     // The caller planned on a label: another screen read since then may have
     // renumbered the list, and n would now be something else.
-    if (expect != null && !expect.trim().isEmpty() && !label.equalsIgnoreCase(expect.trim())) { done.accept(result(false, null, "stale")); return; }
+    if (expect != null && !expect.trim().isEmpty() && !shownLabel(node).equalsIgnoreCase(expect.trim())) { done.accept(result(false, null, "stale")); return; }
     // What actually gets pressed is the nearest pressable parent: a harmless
     // "Continue" inside a "Delete" button is the Delete button.
     String target = targetLabel(node);
