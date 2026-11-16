@@ -327,10 +327,8 @@ let server,browser,profile,ws;
   assert.equal(await run('!!document.getElementById("lab-submit")||!!document.getElementById("quiz-submit")'),false,'no submission switches in the panel');
   await wait('document.getElementById("lab-status").textContent.includes("needs review")');
   assert.equal(await run('document.getElementById("lab-coverage").textContent.includes("0/1 deliverables verified")'),true);
-  // Real DOM: the page reader reads the question, and refuses to answer it.
-  // select and advance used to tick the radio and press Next; now both are
-  // refused before the page is touched, so the radio stays clear and Next is
-  // never pressed — checked here on a live page, not a stub.
+  // Real DOM: the page reader reads the question, picks the choice and presses
+  // Next, while a stale read or a changed page is still refused.
   const questionDOM=await run(`(async()=>{
     const host=document.createElement('div');host.style.cssText='position:fixed;inset:0;background:white;z-index:99999';
     host.innerHTML='<fieldset id="fixture-question"><legend>Which option describes infected devices controlled together?</legend><label><input type="radio" name="fixture-choice">Firewall</label><label><input type="radio" name="fixture-choice">Botnet</label></fieldset><button id="fixture-next">Next</button>';
@@ -338,18 +336,23 @@ let server,browser,profile,ws;
     const page=globalThis.IzukiQuestionPage;await page('install',{runId:'dom-test'});
     const first=await page('read',{runId:'dom-test'});
     const stale=await page('select',{runId:'dom-test',question:{...first.question,stem:'A changed question'},choices:[2]});
-    const selected=await page('select',{runId:'dom-test',question:first.question,choices:[2]});
+    const selected=await page('select',{runId:'dom-test',questionId:first.question.id,choices:[2],pageId:first.pageId});
     const after=await page('read',{runId:'dom-test'});
     const moved=await page('advance',{runId:'dom-test',pageId:after.pageId,proof:after});
     const written=document.createElement('textarea');host.querySelector('fieldset').append(written);
     const blocked=await page('advance',{runId:'dom-test',pageId:after.pageId,proof:after});
     await page('stop',{runId:'dom-test'});const stopped=await page('read',{runId:'dom-test'});
     const ticked=[...host.querySelectorAll('input[type=radio]')].some(r=>r.checked);
-    host.remove();return {first:first.state,options:first.question.options,stale:stale.ok,selected:selected.ok,moved:moved.ok,blocked:blocked.ok,stopped:stopped.ok,next,ticked,refusal:selected.text};
+    host.remove();return {first:first.state,options:first.question.options,stale:stale.ok,selected:selected.ok,moved:moved.ok,blocked:blocked.ok,stopped:stopped.ok,next,ticked};
   })()`);
-  assert.match(questionDOM.refusal||'',/doesn't choose or submit/,'select is refused, not merely failing');
-  delete questionDOM.refusal;
-  assert.deepEqual(questionDOM,{first:'question',options:['Firewall','Botnet'],stale:false,selected:false,moved:false,blocked:false,stopped:false,next:0,ticked:false});
+  assert.equal(questionDOM.selected,true,'the page reader picks the choice');
+  assert.equal(questionDOM.ticked,true,'the choice is ticked');
+  assert.equal(questionDOM.stale,false,'a stale read is refused');
+  assert.equal(questionDOM.moved,true,'Next is pressed after the answer');
+  assert.equal(questionDOM.blocked,false,'a changed page is not advanced');
+  assert.equal(questionDOM.next,1,'Next runs exactly once');
+  assert.equal(questionDOM.stopped,false,'a stopped run does not read');
+  assert.equal(questionDOM.first,'question');assert.deepEqual(questionDOM.options,['Firewall','Botnet']);
   const readback=await run(`(async()=>{
     await import('/extension/providers.js');
     const host=document.createElement('div');host.style.cssText='position:fixed;inset:0;background:white;z-index:99999';
