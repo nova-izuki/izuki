@@ -211,6 +211,14 @@ function brain(replies) {
     assert.match(r.text, /quiz or test/);
     assert.ok(!p.calls.some((c) => c.startsWith("act:click")), "no answer was picked");
     assert.equal(A._test.testPage({ items: [{ text: "Storage" }, { text: "Apps 38 GB" }] }), false);
+    assert.equal(A._test.testPage({ items: [{ text: "Question 3/20" }] }), true, "a compact counter");
+    // The word "quiz" alone isn't a test: a search for "pub quiz" can be changed to "weather".
+    const q = phone();
+    q.native.screen = async () => ({ app: "com.android.chrome", items: [{ n: 1, text: "pub quiz near me", hint: "Search", id: "search_box", kind: "box" }, { n: 2, text: "Quiz night at The Crown", kind: "text" }] });
+    const B = load(q.native);
+    const typed = await B.run("search the weather instead", { think: brain(['{"do":"type","n":1,"text":"weather","enter":true}', '{"do":"done","say":"Searched."}']).think });
+    assert.equal(typed.text, "Searched.");
+    assert.ok(q.calls.some((c) => c.startsWith("act:type")), "typing went ahead");
   }
 
   // 10. Parsing what small models really send.

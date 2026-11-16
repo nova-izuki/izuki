@@ -127,7 +127,8 @@
   }
 
   /** A quiz, test or exam page, from its own words ("Question 3 of 20", "Submit quiz", "Time remaining"). */
-  const TEST_WORDS = /\b(question \d+ (?:of|\/) \d+|\d+ of \d+ questions|quiz|exam|assessment|midterm|final test|practice test|test results|time (?:left|remaining)|submit (?:test|quiz|exam|answers|attempt)|finish (?:test|attempt|quiz)|attempt \d+)\b/i;
+  // Assessment markers, not just the word "quiz" (a search for "pub quiz" isn't a test).
+  const TEST_WORDS = /\b(question \d+(?:\s+of\s+|\s*\/\s*)\d+|\d+ of \d+ questions|time (?:left|remaining)|submit (?:test|quiz|exam|answers|attempt|assessment)|finish (?:test|attempt|quiz|exam)|attempt \d+(?: of \d+)?|(?:quiz|exam|test|assessment) (?:in progress|timer|results)|end (?:test|exam|quiz))\b/i;
   const testPage = (screen) => TEST_WORDS.test((screen?.items || []).slice(0, 120).map((i) => i.text || "").join(" \n "));
 
   const SEARCHY = /(^|[^a-z])(search|find|query|url|address|omnibox|urlbar|searchbar|searchbox)([^a-z]|$)/i;
