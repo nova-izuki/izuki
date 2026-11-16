@@ -898,6 +898,8 @@ public class IzukiAccessibilityService extends AccessibilityService {
     box.setClickable(true);
     box.setClipChildren(false);
     box.setClipToPadding(false);
+    // TalkBack and Switch Access "click" the orb without a touch: same as a tap.
+    box.setOnClickListener(v -> IzukiVoice.tap(service));
     dot = new OrbDot(service);
     box.addView(dot, new LinearLayout.LayoutParams(dp(service, 56), dp(service, 56)));
     // Room for the orb to grow while it listens and talks.
@@ -1002,10 +1004,10 @@ public class IzukiAccessibilityService extends AccessibilityService {
           ui.removeCallbacks(longPress);
           settle();
           if (!dragging) {
-            v.performClick();
             v.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY);
-            // Tap to talk, right here (Siri-style); tap again to stop.
-            IzukiVoice.tap(context);
+            // Tap to talk, right here (Siri-style); tap again to stop. The
+            // click listener does it, so touch and accessibility clicks match.
+            v.performClick();
             return true;
           }
           if (orbView == null) return true; // the long press hid it

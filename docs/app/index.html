@@ -1403,10 +1403,16 @@
   // Google Search makes every answer slower. Attach it only when the words
   // ask for something current or factual, not for "hi" or "make it shorter".
   const WEB_WORDS = /\b(news|today|tonight|tomorrow|yesterday|latest|current(?:ly)?|right now|this week|weather|forecast|temperature|score|scores|match|price|prices|cost|stock|exchange rate|open now|opening hours|hours|near me|nearby|who is|who's|who was|what is|what's|when is|when's|when did|where is|how much|how many|search|look up|google|website|link|recent|update|release|election|president|population|capital)\b|https?:\/\/|www\.|\b20\d\d\b/i;
+  // The same in the other languages people use here most.
+  const WEB_WORDS_OTHER = /\b(hoy|mañana|ayer|tiempo|clima|lluvia|noticias|precio|quién es|aujourd'hui|demain|météo|pluie|actualités|prix|qui est|heute|morgen|wetter|regen|nachrichten|preis|wer ist)\b/i;
   const needsWeb = (contents) => {
-    const last = [...(contents || [])].reverse().find((c) => c.role === "user");
-    const words = (last?.parts || []).map((p) => p.text || "").join(" ");
-    return !!words && WEB_WORDS.test(words);
+    // The last two things they asked: "and in Paris?" follows a weather question.
+    const asked = (contents || []).filter((c) => c.role === "user").slice(-2);
+    const words = asked.map((c) => (c.parts || []).map((p) => p.text || "").join(" ")).join(" ");
+    if (!words.trim()) return false;
+    // A language the word lists don't cover: let Gemini decide, as before.
+    if (!["auto", "english", "pidgin"].includes(speechLanguage)) return true;
+    return WEB_WORDS.test(words) || WEB_WORDS_OTHER.test(words);
   };
   const usesGemini = () => brain === "gemini" || !brainKeys[brain];
   let liteUntil = store.get("liteUntil", 0);
@@ -5044,42 +5050,56 @@
   // ---- voice turns (Android): the orb, "Hey Nova", the tile, the notification
   // Android listened over whatever app was open; the answer is spoken there
   // by Android's voice, and the chat keeps it for when Izuki is opened.
-  async function turnSay(id, words, locked = false) {
-    const mine = { id, locked, cancelled: false };
-    turnCtx = mine;
-    try { lastSpoken = words; await speakWithPhone(words, () => {}); }
-    finally { if (turnCtx === mine) turnCtx = null; }
-  }
   window.IzukiNative?.onTurn?.(async (d) => {
     const id = String(d?.id || "");
     const said = String(d?.text || "").trim();
     if (!id) return;
     const finish = (follow) => window.IzukiNative.turnDone(id, follow);
     if (!said) return finish(false);
-    if (busy || turnCtx) { await turnSay(id, "I'm still on the last thing. Tap the orb to stop it."); return finish(false); }
-    // Voice match is a safety switch: "Hey Nova" goes ahead only for the taught voice.
-    if (d.wake) {
-      const vm = window.IzukiVoiceMatch?.read?.();
-      if (vm?.enabled && vm.profiles?.length) {
-        await window.IzukiNative.takeWake?.();
-        const extra = window.IzukiNative.takeWakeAudio?.() || {};
-        window.IzukiNative.turnState(id, "think", "Checking it's you…");
-        const heard = extra.audio ? await window.IzukiVoiceMatch.check({ type: "audio/wav", b64: extra.audio }) : { ok: false, why: "no-audio" };
-        if (!heard.ok) {
-          await turnSay(id, heard.why === "not-you"
-            ? "That didn't sound like you, so I won't do it. If it's you, tap the orb and ask."
-            : "I couldn't hear “Hey Nova” clearly enough to check it's you. Tap the orb and ask instead.", !!d.locked);
-          return finish(false);
-        }
-      }
+    // A new turn replaces the one before it (Android already sent its cancel):
+    // give that request a moment to stop before calling Izuki busy.
+    const until = Date.now() + 2500;
+    while ((busy || turnCtx) && Date.now() < until) await window.IzukiNative.pause(100);
+    if (busy || turnCtx) {
+      // Spoken to this turn only: the running turn keeps its own context.
+      await window.IzukiNative.speak("I'm still on the last thing. Tap the orb to stop it.", { turn: id });
+      return finish(false);
     }
-    if (!ready()) { await turnSay(id, "I need an AI key first. Open Izuki and add a free Gemini key in Settings.", !!d.locked); return finish(false); }
+    // This turn owns the page from here, verification included, so a cancel
+    // (a tap on the orb) or a second turn is seen while it is still checking.
     const mine = { id, locked: !!d.locked, source: String(d.source || ""), cancelled: false };
     turnCtx = mine;
     lastSpoken = "";
-    try { await ask(said); }
-    catch (e) { note("voice turn failed: " + (e?.message || e)); }
-    finally {
+    const say = async (words) => { lastSpoken = words; await speakWithPhone(words, () => {}); };
+    try {
+      // Voice match is a safety switch: "Hey Nova" goes ahead only for the taught voice.
+      if (d.wake) {
+        const vm = window.IzukiVoiceMatch?.read?.();
+        if (vm?.enabled && vm.profiles?.length) {
+          await window.IzukiNative.takeWake?.();
+          const extra = window.IzukiNative.takeWakeAudio?.() || {};
+          if (mine.cancelled) return;
+          window.IzukiNative.turnState(id, "think", "Checking it's you…");
+          const heard = extra.audio ? await window.IzukiVoiceMatch.check({ type: "audio/wav", b64: extra.audio }) : { ok: false, why: "no-audio" };
+          if (mine.cancelled) return;
+          if (!heard.ok) {
+            await say(heard.why === "not-you"
+              ? "That didn't sound like you, so I won't do it. If it's you, tap the orb and ask."
+              : "I couldn't hear “Hey Nova” clearly enough to check it's you. Tap the orb and ask instead.");
+            lastSpoken = "";
+            return;
+          }
+        }
+      }
+      if (!ready()) {
+        await say("I need an AI key first. Open Izuki and add a free Gemini key in Settings.");
+        lastSpoken = "";
+        return;
+      }
+      await ask(said);
+    } catch (e) {
+      note("voice turn failed: " + (e?.message || e));
+    } finally {
       // Siri-style: an answer that asks something listens for the reply.
       const follow = !mine.cancelled && /\?["”'’)]*$/.test(lastSpoken.trim());
       if (turnCtx === mine) turnCtx = null;

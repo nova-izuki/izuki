@@ -840,6 +840,9 @@ public class IzukiWakeService extends Service implements RecognitionListener {
       // This recognizer won't take Izuki's audio (or isn't on the device):
       // fall back once, without counting it as a failure.
       if (recognizerOnDevice) onDeviceRefused = true; else sourceRefused = true;
+      // A new mode starts its own count of sessions without words.
+      pipedSessions = 0;
+      pipedWords = false;
       log("the recognizer refused Izuki's audio (" + error + "); falling back");
       finishSession();
       return;

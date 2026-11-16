@@ -153,6 +153,9 @@ public class WakeGateTest {
     assertEquals("turn on the flashlight", WakeGate.command("HeyNova turn on the flashlight", false, ""));
     assertEquals("play some music", WakeGate.command("Hanover, play some music", false, ""));
     assertEquals("open YouTube", WakeGate.command("Hey Jarvis open YouTube", false, "hey jarvis"));
+    assertEquals("punctuation between the words", "open YouTube", WakeGate.command("Hey, Jarvis! open YouTube", false, "hey jarvis"));
+    assertEquals("a clipped start of their own phrase", "what's the time", WakeGate.command("jarvis, what's the time", true, "hey jarvis"));
+    assertEquals("not clipped: the whole phrase is needed", "", WakeGate.command("jarvis, what's the time", false, "hey jarvis"));
     assertEquals("what's the time", WakeGate.command("nova what's the time", true, ""));
     assertEquals("not clipped: no phrase, no command", "", WakeGate.command("nova what's the time", false, ""));
     assertEquals("", WakeGate.command(null, true, ""));

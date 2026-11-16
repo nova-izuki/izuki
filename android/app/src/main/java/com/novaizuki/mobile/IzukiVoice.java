@@ -125,9 +125,18 @@ final class IzukiVoice {
       String words = text == null ? "" : text.trim();
       String uid = id == null || id.isEmpty() ? "say-" + System.currentTimeMillis() : id;
       if (words.isEmpty()) { IzukiControlPlugin.speechEvent(uid, "done"); return; }
-      withTts(() -> speakNow(words, uid, turnId == null ? "" : turnId, rate));
+      // A Stop (or the turn ending) while the voice engine is still starting
+      // cancels this line too: it must not start talking afterwards.
+      int gen = speechGen;
+      withTts(() -> {
+        if (gen != speechGen) { IzukiControlPlugin.speechEvent(uid, "stopped"); return; }
+        speakNow(words, uid, turnId == null ? "" : turnId, rate);
+      });
     });
   }
+
+  /** Bumped by every Stop and turn end: lines still waiting for the engine are dropped. */
+  private static int speechGen = 0;
 
   private static void speakNow(String words, String id, String turnId, float rate) {
     if (!ttsReady || tts == null) { IzukiControlPlugin.speechEvent(id, "error"); return; }
@@ -189,6 +198,7 @@ final class IzukiVoice {
   /** Stop talking now (the page's Stop, a tap on the orb). */
   static void hush() {
     ui.post(() -> {
+      speechGen++;
       if (tts != null) { try { tts.stop(); } catch (Exception ignored) { } }
       if (!speakingId.isEmpty()) ended(speakingId + "#0", "stopped");
     });
@@ -468,15 +478,20 @@ final class IzukiVoice {
   }
 
   private static void end() {
+    // The turn is over before anything is cleaned up, so no completion
+    // handler (a "Yes?" that just finished, a recognizer's last callback)
+    // can start listening again during the teardown.
+    String old = turn;
+    turn = ""; phase = ""; source = ""; followUp = false; pendingDone = 0;
+    speechGen++;
     finishEars("", "cancelled");
-    if (!speakingTurn.isEmpty() && speakingTurn.equals(turn) && tts != null) {
+    if (!speakingTurn.isEmpty() && speakingTurn.equals(old) && tts != null) {
       try { tts.stop(); } catch (Exception ignored) { }
       ended(speakingId + "#0", "stopped");
     }
     ui.removeCallbacks(pageTimeout);
     ui.removeCallbacks(afterTalk);
     ui.removeCallbacks(greetGuard);
-    turn = ""; phase = ""; source = ""; followUp = false; pendingDone = 0;
     IzukiWakeService.hold(IzukiWakeService.HOLD_TURN, false);
     holdScreen(false);
   }

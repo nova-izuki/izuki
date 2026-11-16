@@ -255,22 +255,30 @@ final class WakeGate {
    */
   static String command(String heard, boolean clipped, String custom) {
     if (heard == null) return "";
-    java.util.regex.Matcher m = WAKE_AT.matcher(heard);
-    int end = -1;
-    if (m.find()) end = m.end();
-    else {
-      String phrase = cleanPhrase(custom);
-      if (!phrase.isEmpty()) {
-        Pattern own = Pattern.compile("(?i)\\b" + phrase.replace("'", "'?").replace(" ", "[\\s,]+") + "\\b[\\s,.!?:;-]*");
-        java.util.regex.Matcher o = own.matcher(heard);
-        if (o.find()) end = o.end();
-      }
-      if (end < 0 && clipped) {
-        java.util.regex.Matcher c = CLIPPED_AT.matcher(heard);
-        if (c.find()) end = c.end();
-      }
-    }
+    int end = endOf(WAKE_AT, heard);
+    String phrase = cleanPhrase(custom);
+    // Their own phrase, written with any punctuation between its words.
+    if (end < 0 && !phrase.isEmpty()) end = endOf(phrasePattern(phrase, false), heard);
+    // A clipped start may have lost the first word, as isWake accepts.
+    if (end < 0 && clipped) end = endOf(CLIPPED_AT, heard);
+    if (end < 0 && clipped && phrase.indexOf(' ') > 0) end = endOf(phrasePattern(phrase.substring(phrase.indexOf(' ') + 1), true), heard);
     return end < 0 ? "" : heard.substring(end).trim();
+  }
+
+  private static int endOf(Pattern p, String text) {
+    java.util.regex.Matcher m = p.matcher(text);
+    return m.find() ? m.end() : -1;
+  }
+
+  /** A cleaned phrase as a pattern: any spaces or punctuation between its words, optionally only at the start. */
+  private static Pattern phrasePattern(String phrase, boolean atStart) {
+    StringBuilder b = new StringBuilder("(?iu)").append(atStart ? "^\\W*" : "\\b");
+    String[] words = phrase.split(" ");
+    for (int i = 0; i < words.length; i++) {
+      if (i > 0) b.append("[\\W_]+");
+      b.append(Pattern.quote(words[i]));
+    }
+    return Pattern.compile(b.append("\\b[\\s,.!?:;-]*").toString());
   }
 
   /** Did they say the wake phrase? `clipped` when the first moment may be missing. */
