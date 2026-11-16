@@ -126,6 +126,18 @@
     };
   }
 
+  /** A quiz, test or exam page, from its own words ("Question 3 of 20", "Submit quiz", "Time remaining"). */
+  // Assessment markers, not just the word "quiz" (a search for "pub quiz" isn't a test).
+  const TEST_WORDS = /\b(question \d+(?:\s+of\s+|\s*\/\s*)\d+|\d+ of \d+ questions|submit (?:test|quiz|exam|answers|attempt|assessment)|finish (?:test|attempt|quiz|exam)|attempt \d+(?: of \d+)?|(?:quiz|exam|test|assessment) (?:in progress|timer|results)|end (?:test|exam|quiz))\b/i;
+  // A timer alone is a video or a download; with questions or answers it's a test.
+  const TIMED = /\btime (?:left|remaining)\b/i;
+  const ASKS = /\b(?:question|answer)s?\b/i;
+  const testPage = (screen) => {
+    // One line of text: a marker split across items ("Question 3" / "of 20") still reads as one.
+    const text = norm((screen?.items || []).slice(0, 120).map((i) => i.text || "").join(" "));
+    return TEST_WORDS.test(text) || (TIMED.test(text) && ASKS.test(text));
+  };
+
   const SEARCHY = /(^|[^a-z])(search|find|query|url|address|omnibox|urlbar|searchbar|searchbox)([^a-z]|$)/i;
   const forSearch = (item) => !!item && (SEARCHY.test(String(item.hint || "")) || SEARCHY.test(String(item.id || "")) || SEARCHY.test(String(item.desc || "")));
   const look = (screen) => `${screen?.app || ""}|${(screen?.items || []).slice(0, 40).map((i) => `${i.kind}:${i.text}${i.focused ? "*" : ""}${i.on ? "+" : ""}`).join("|")}`;
@@ -185,6 +197,10 @@
     async function act(a, screen) {
       const items = screen?.items || [];
       const own = screen?.app === OWN;
+      // A quiz, test or exam on screen: Izuki explains, but never picks or types answers.
+      if ((a.do === "tap" || a.do === "type") && testPage(screen)) {
+        return { ok: false, stop: true, note: "This looks like a quiz or test, so I won't pick or type answers for you. Say “explain this” and I'll walk you through the question." };
+      }
       switch (a.do) {
         case "open": {
           if (!a.app) return { ok: false, note: "no app was named" };
@@ -326,5 +342,5 @@
   /** Autopilot and the agent take turns: both use Android's one numbered screen list. */
   let agentBusy = false;
 
-  window.IzukiAgent = { run, get busy() { return agentBusy; }, _test: { parse, describe, facts, RISKY, SYSTEM, PAGES } };
+  window.IzukiAgent = { run, get busy() { return agentBusy; }, _test: { parse, describe, facts, RISKY, SYSTEM, PAGES, testPage } };
 })();

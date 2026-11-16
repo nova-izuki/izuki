@@ -198,6 +198,32 @@ function brain(replies) {
     assert.equal(A.busy, false);
   }
 
+  // 9c. A quiz or test on screen: Izuki explains, never picks or types answers.
+  {
+    const p = phone();
+    p.native.screen = async () => ({ app: "com.android.chrome", items: [
+      { n: 1, text: "Question 3 of 20", kind: "text" }, { n: 2, text: "Which port does HTTPS use?", kind: "text" },
+      { n: 3, text: "443", kind: "button" }, { n: 4, text: "80", kind: "button" }, { n: 5, text: "Time remaining 12:40", kind: "text" },
+    ] });
+    const A = load(p.native);
+    const r = await A.run("answer this", { think: brain(['{"do":"tap","n":3}']).think });
+    assert.equal(r.asked, true);
+    assert.match(r.text, /quiz or test/);
+    assert.ok(!p.calls.some((c) => c.startsWith("act:click")), "no answer was picked");
+    assert.equal(A._test.testPage({ items: [{ text: "Storage" }, { text: "Apps 38 GB" }] }), false);
+    assert.equal(A._test.testPage({ items: [{ text: "Question 3/20" }] }), true, "a compact counter");
+    assert.equal(A._test.testPage({ items: [{ text: "Question 3" }, { text: "of 20" }] }), true, "a counter split across items");
+    assert.equal(A._test.testPage({ items: [{ text: "Episode 4" }, { text: "Time remaining 12:40" }] }), false, "a video's timer isn't a test");
+    assert.equal(A._test.testPage({ items: [{ text: "Which port does HTTPS use?" }, { text: "Choose one answer" }, { text: "Time left 08:12" }] }), true, "a timer with answers is");
+    // The word "quiz" alone isn't a test: a search for "pub quiz" can be changed to "weather".
+    const q = phone();
+    q.native.screen = async () => ({ app: "com.android.chrome", items: [{ n: 1, text: "pub quiz near me", hint: "Search", id: "search_box", kind: "box" }, { n: 2, text: "Quiz night at The Crown", kind: "text" }] });
+    const B = load(q.native);
+    const typed = await B.run("search the weather instead", { think: brain(['{"do":"type","n":1,"text":"weather","enter":true}', '{"do":"done","say":"Searched."}']).think });
+    assert.equal(typed.text, "Searched.");
+    assert.ok(q.calls.some((c) => c.startsWith("act:type")), "typing went ahead");
+  }
+
   // 10. Parsing what small models really send.
   {
     const A = load(phone().native);

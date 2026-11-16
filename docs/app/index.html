@@ -1616,6 +1616,49 @@
   }
   document.addEventListener("visibilitychange", () => { if (!document.hidden) warmBrain(); });
 
+  // ---- the screen assistant (Android) ------------------------------------
+  // On any site or app: "explain this", "what does this mean", "help me with
+  // this page", "summarize this". Izuki reads the screen (its text, and a
+  // picture of it when Android allows) and answers about it. Asking it to do
+  // something there goes to the phone agent instead.
+  const SCREEN_HELP = /\b(?:explain (?:this|that|it|what i'?m looking at)|what(?:'s| is) (?:this|that)(?: (?:page|screen|app|message|error|thing|word|button|notification))?(?: about| saying| mean)?(?=\s*[?.!]*\s*$)|what does (?:this|that|it) (?:mean|say)|what am i looking at|help me (?:with |understand |read )?(?:this|that|here)|(?:summari[sz]e|translate|read|check) (?:this|that|it)(?: (?:page|screen|article|message|email|post|text|for me))?|(?:on|of) (?:my|the|this) screen|this (?:page|screen|site|article|message|error|email|post|form|question|chat|notification))\b/i;
+  const wantsScreenHelp = (said) => SCREEN_HELP.test(String(said || ""));
+  const SCREEN_SYSTEM = [
+    "You are Izuki, helping with what is on the person's phone screen right now.",
+    "You get the screen's text from top to bottom, and a picture of it when Android allows one. Do what they asked: explain it simply, summarize it, translate it, answer their question about it, or say what to do next and which visible button or field to use (by its label).",
+    "If it's a quiz, test or exam: explain the idea behind the question; state the answer only if they asked for the answer; never say you will choose, type or submit anything.",
+    "If the screen doesn't show what they asked about, say so plainly. Never invent text that isn't there.",
+    "Answer in a few spoken sentences unless they asked for detail: plain words, no markdown, no lists unless they asked. Answer in the language they used.",
+  ].join("\n");
+  async function screenHelp(said, onText) {
+    const n = window.IzukiNative;
+    const screen = await n.screen().catch(() => null);
+    if (!screen) {
+      const d = await n.device?.().catch(() => null);
+      return d?.locked ? "Unlock your phone first, then ask me again." : "I can't read the screen right now. Check that Android control is on in Settings → Phone → Phone readiness.";
+    }
+    if (screen.app === "com.novaizuki.mobile") {
+      return "Open the page or app you want help with, then tap the orb or say “Hey Nova, explain this”, and I'll look at it there.";
+    }
+    const lines = [];
+    for (const it of screen.items || []) {
+      const t = String(it.text || "").replace(/\s+/g, " ").trim();
+      if (!t || /^(Scrollable area|Control)$/.test(t)) continue;
+      if (lines.length && lines[lines.length - 1].endsWith(t)) continue;
+      lines.push((it.kind && it.kind !== "text" ? `[${it.kind}] ` : "") + t.slice(0, 300));
+      if (lines.length >= 220) break;
+    }
+    const shot = await n.snapshot?.().catch(() => null);
+    const parts = [{ text: `What they asked: ${said}\n\nApp on screen: ${screen.app || "unknown"}\nThe screen's text, top to bottom:\n${lines.join("\n") || "(no readable text)"}` }];
+    if (shot?.image) parts.unshift({ inline_data: { mime_type: shot.type || "image/jpeg", data: shot.image } });
+    const contents = [{ role: "user", parts }];
+    // The screen is the question: no web search, which only slows this down.
+    const words = usesGemini()
+      ? await gemini(contents, onText, undefined, true, SCREEN_SYSTEM)
+      : await otherBrain(contents, onText, undefined, SCREEN_SYSTEM).catch((e) => (key ? gemini(contents, onText, undefined, true, SCREEN_SYSTEM) : Promise.reject(e)));
+    return shown(words) || "I looked, but I couldn't make out an answer from this screen.";
+  }
+
   /** The phone agent's brain: the same keys, its own instructions, no web search (faster). */
   async function agentThink(system, prompt) {
     const contents = [{ role: "user", parts: [{ text: prompt }] }];
@@ -2515,12 +2558,34 @@
       const haveApps = !!window.izukiApps?.configured();
       // A PC this network can't reach: only an "on my PC" request tries again.
       const lane = requestLane(said, haveApps, !!pc && (Date.now() > pcAway || pcTarget(said)));
-      if (lane === "web-unavailable") {
-        reply = "Pair with your running PC to read webpages in the background. I haven't fetched those pages yet.";
+      // A link to read with no PC: Gemini reads it itself (its link reader and
+      // Google Search), so the phone doesn't need the PC for that any more.
+      const readsWeb = lane === "web-unavailable" && !!key;
+      if (lane === "web-unavailable" && !readsWeb) {
+        reply = "Add a free Gemini key in Settings and I can read web pages here, or pair with your running PC. I haven't fetched those pages yet.";
         out.textContent = reply;
         history.push({ role: "user", text: said }, { role: "model", text: reply }); saveAll();
         answered();
         await speak(reply); return;
+      }
+      // A voice turn over another app (or Izuki in the background) means that
+      // app's screen; typed in Izuki, "explain this" is about the chat unless
+      // they name the screen or page.
+      const aboutScreen = wantsScreenHelp(said) && (!!turnCtx || document.hidden || /\b(?:screen|page|site|app)\b/i.test(said));
+      if (!files.length && aboutScreen && agentReady() && !PHONE_DO.test(said.trim())) {
+        // The screen assistant: what's on the phone's screen, explained.
+        history.push({ role: "user", text: said });
+        stage("Looking at your screen…");
+        if (turnCtx) window.IzukiNative.turnState(turnCtx.id, "think", "Looking at your screen…");
+        reply = await screenHelp(said, (t) => { if (!requestEnd) out.textContent = t || "…"; });
+        if (requestEnd) throw new Error("stopped");
+        out.remove();
+        bubble("izuki", reply);
+        history.push({ role: "model", text: reply });
+        saveAll();
+        answered();
+        await speak(reply);
+        return;
       }
       if (!files.length && phoneAgentLane(said, lane)) {
         // The phone agent: the AI works the phone's screen, step by checked step.
@@ -2600,9 +2665,9 @@
       if (geminiOnly && !key) throw new Error("To look at that kind of file, add a free Gemini key in Settings (pictures and text files work with any brain).");
       // On a call, Izuki starts talking as soon as the first sentence is written.
       early = talking && voiceOn && !files.length ? voiceStream() : null;
-      stage(`Asking ${audio || geminiOnly ? "Gemini" : brainName()}…`);
+      stage(readsWeb ? "Reading the page…" : `Asking ${audio || geminiOnly ? "Gemini" : brainName()}…`);
       let writing = false;
-      reply = await (audio || geminiOnly ? gemini : think)(contents, (t) => {
+      reply = await (audio || geminiOnly || readsWeb ? gemini : think)(contents, (t) => {
         if (requestEnd) return; // stopped: nothing more appears
         if (!writing && t.trim()) { writing = true; stage(""); }
         const heard = t.match(/^\s*\[HEARD:\s*([^\]]*)\]?/i);
