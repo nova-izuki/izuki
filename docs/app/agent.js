@@ -235,7 +235,7 @@
             // something private off the phone: opening one needs the person's yes.
             // A scheme, "www.", a dotted host with a path or query ("x.example/?q="),
             // or a bare host with a common ending.
-            else if (/:\/\/|\bwww\.|\b[a-z0-9-]+(?:\.[a-z0-9-]+)+[/?#]|\b[a-z0-9-]+\.(?:com|net|org|io|ai|co|me|ly|app|dev|xyz|info|ru|cn|uk|ng|de|fr|tk|top|site|online|link)\b/i.test(a.text)) {
+            else if (/:\/\/|\bwww\.|\blocalhost\b|\b[a-z0-9-]+(?:\.[a-z0-9-]+)+(?:[/?#]|:\d)|\b[a-z0-9-]+\.(?:com|net|org|io|ai|co|me|ly|app|dev|xyz|info|ru|cn|uk|ng|de|fr|tk|top|site|online|link)\b/i.test(a.text)) {
               return { ok: false, stop: true, note: `I typed the address “${a.text.slice(0, 80)}” but didn't open it: press Enter yourself if you want to go there.` };
             } else {
               const s = await n.act({ op: "submit" });

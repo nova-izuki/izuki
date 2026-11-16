@@ -167,6 +167,8 @@ public class WakeGateTest {
     assertTrue(WakeGate.isWake("Hey Nova_turn on the flashlight", false));
     assertEquals("an underscore is a space, as isWake reads it", "turn on the flashlight", WakeGate.command("Hey Nova_turn on the flashlight", false, ""));
     assertEquals("and in their own phrase", "open maps", WakeGate.command("hey_jarvis_open maps", false, "hey jarvis"));
+    assertTrue(WakeGate.isWake("a_nova turn on the flashlight", true));
+    assertEquals("a clipped start's prefix, any separator", "turn on the flashlight", WakeGate.command("a_nova turn on the flashlight", true, ""));
     assertEquals("", WakeGate.command(null, true, ""));
   }
 

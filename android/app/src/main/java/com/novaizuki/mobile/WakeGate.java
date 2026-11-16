@@ -255,7 +255,7 @@ final class WakeGate {
   // letters, digits and the apostrophe into spaces (so "_" is a space too),
   // and both must accept and refuse the same phrases.
   private static final Pattern CLIPPED_AT = Pattern.compile(
-      "(?iu)^[^\\p{L}\\p{N}]*(?:a\\s+|ey\\s+)?(?:nova|izuki)" + NOT_WORD_AFTER + "[^\\p{L}\\p{N}]*");
+      "(?iu)^[^\\p{L}\\p{N}]*(?:(?:a|ey)[^\\p{L}\\p{N}']+)?(?:nova|izuki)" + NOT_WORD_AFTER + "[^\\p{L}\\p{N}]*");
 
   /**
    * What came after the wake phrase in the same breath ("Hey Nova, what's
