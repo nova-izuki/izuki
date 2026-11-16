@@ -181,6 +181,23 @@ function brain(replies) {
     assert.equal(window.IzukiAgent.busy, false);
   }
 
+  // 9b. A second run while one is working is refused, and doesn't end the first one's busy state.
+  {
+    const p = phone();
+    const A = load(p.native);
+    let release;
+    const slow = brain([() => new Promise((r) => { release = () => r('{"do":"done","say":"first"}'); })]);
+    const first = A.run("check storage", { think: slow.think });
+    await new Promise((r) => setTimeout(r, 10));
+    assert.equal(A.busy, true);
+    const second = await A.run("open settings", { think: brain(['{"do":"done","say":"second"}']).think });
+    assert.match(second.text, /already working/);
+    assert.equal(A.busy, true, "the refused call left the running one alone");
+    release();
+    assert.equal((await first).text, "first");
+    assert.equal(A.busy, false);
+  }
+
   // 10. Parsing what small models really send.
   {
     const A = load(phone().native);

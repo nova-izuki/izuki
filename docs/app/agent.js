@@ -262,6 +262,8 @@
       }
     }
 
+    // One run at a time; a refused call never reaches the running one's cleanup.
+    if (agentBusy) return { text: "I'm already working on the phone. Wait for that to finish, then ask again.", ok: false };
     if (window.IzukiAutopilot?.state?.running) return { text: "Autopilot is running a routine on the phone. Stop it first, then ask me again.", ok: false };
     agentBusy = true;
     try {
