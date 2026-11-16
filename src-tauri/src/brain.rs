@@ -1276,7 +1276,11 @@ fn chain_for(settings: &crate::settings::Settings) -> Vec<crate::settings::Provi
         return chain;
     }
     if let Some(f) = settings.fallback_provider.and_then(|id| settings.provider(id).cloned()) {
-        if f.id != chain[0].id && (!f.api_key.trim().is_empty() || f.on_this_pc()) {
+        // Ollama is normally keyless, including a LAN server. Locality still
+        // matters for Offline mode, but it must not remove a valid backup
+        // when Offline mode is off.
+        let keyless_ok = f.id == crate::settings::ProviderId::Ollama || f.on_this_pc();
+        if f.id != chain[0].id && (!f.api_key.trim().is_empty() || keyless_ok) {
             chain.push(f);
         }
     }
@@ -7151,6 +7155,17 @@ mod honesty_tests {
         assert_eq!(ids(&s), vec![ProviderId::Gemini], "only my brain");
         s.brain_mode = BrainMode::Backup;
         assert_eq!(ids(&s), vec![ProviderId::Gemini, ProviderId::Groq], "my brain, then the fallback, nothing else");
+        // A keyless Ollama on the LAN remains usable as a backup when
+        // Offline mode is off; the locality check only governs Offline mode.
+        let mut lan = Settings::default();
+        lan.active_provider = ProviderId::Gemini;
+        lan.fallback_provider = Some(ProviderId::Ollama);
+        lan.brain_mode = BrainMode::Backup;
+        lan.providers.iter_mut().find(|p| p.id == ProviderId::Gemini).unwrap().api_key = "test-key".into();
+        let ollama = lan.providers.iter_mut().find(|p| p.id == ProviderId::Ollama).unwrap();
+        ollama.api_key.clear();
+        ollama.base_url = "http://192.168.1.20:11434".into();
+        assert_eq!(ids(&lan), vec![ProviderId::Gemini, ProviderId::Ollama], "a keyless LAN Ollama is still a backup");
         s.brain_mode = BrainMode::Auto;
         let all = ids(&s);
         assert_eq!(&all[..2], &[ProviderId::Gemini, ProviderId::Groq]);

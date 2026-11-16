@@ -54,9 +54,6 @@ export function FloatingChat() {
    *  which is the window that actually keeps the thread). */
   const [chips, setChips] = useState<string[]>([]);
   const live = useRef<object | null>(null);
-  /** Set when the shared engine reports that this turn started thinking, so a
-   *  later `thinking=false` is a real completion, not an idle stale value. */
-  const sawThinking = useRef(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   const bubble = useFloating(
@@ -118,7 +115,6 @@ export function FloatingChat() {
     if (value === undefined) rememberPrompt(t);
     setText("");
     setStuck("");
-    sawThinking.current = false;
     setBusy(true);
     // Marks this exact request, so closing the chat mid-flight abandons the
     // wait instead of the reply arriving later into a box that's gone.
@@ -151,7 +147,6 @@ export function FloatingChat() {
    */
   const closeChat = () => {
     live.current = null;
-    sawThinking.current = false;
     setBusy(false);
     setStuck("");
     setChips([]);
@@ -161,24 +156,6 @@ export function FloatingChat() {
   // The conversation lives in the config panel, so it's told what to offer.
   useEffect(() => {
     const off = on<string[]>(EV.suggestions, (list) => setChips(Array.isArray(list) ? list.slice(0, 4) : []));
-    return () => void off.then((f) => f());
-  }, []);
-
-  // `chatDone` is the normal completion signal, but it is a cross-window
-  // event. The engine's thinking flag is published by the same request, so a
-  // true→false turn is a reliable fallback if that one event is missed.
-  useEffect(() => {
-    const off = on<boolean>(EV.thinking, (active) => {
-      if (active) {
-        sawThinking.current = true;
-        return;
-      }
-      if (!sawThinking.current || !live.current) return;
-      sawThinking.current = false;
-      live.current = null;
-      setBusy(false);
-      focusInput();
-    });
     return () => void off.then((f) => f());
   }, []);
 
