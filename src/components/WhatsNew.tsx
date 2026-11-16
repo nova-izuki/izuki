@@ -23,6 +23,7 @@ interface Item {
 }
 
 const ITEMS: Item[] = [
+  { icon: "👀", title: "Android: a screen assistant", how: "On any site or app, say “Hey Nova, explain this” (or “what does this mean”, “help me with this page”, “summarize this”): Izuki reads what's on the phone's screen and answers right there. Links are read on the phone without your PC, and on a quiz or test the phone agent explains instead of picking answers." },
   { icon: "🏝️", title: "The Island stays out of the way", how: "Nothing sits at the top any more: move the mouse to the top of the screen and the Island slides down. The Screen notch has the laptop-notch shape and only comes down from the top middle. Settings → Always show the Island brings the sliver back." },
   { icon: "🗂️", title: "Storage in short lines", how: "“What's taking up space” answers with a headline, the top folders and what's inside them, the biggest apps and files (a split archive counts once) and what you can clear.", try: { label: "Check my storage", say: "what's taking up space on my PC" } },
   { icon: "🗣️", title: "Android: talk to the orb, it answers right there", how: "On the phone, “Hey Nova” or a tap on the orb listens and answers out loud over any app, without opening Izuki. On the lock screen it answers general questions only; anything personal or done on the phone waits until you unlock. Replies use Android's own voice, calls hear quiet speech, and phone jobs (“what's taking space on my phone”) are done on the phone by its own AI agent." },

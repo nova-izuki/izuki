@@ -89,3 +89,10 @@ Install the 1.0.217 APK (Settings → Phone → App updates). Android control an
 1. **Island**: at rest nothing shows at the top. Move the mouse to the top edge: it slides down and opens. Move away: it slides back up.
 2. **Screen notch** (Shape Studio → Screen notch): its top corners curve out into the screen edge; it only comes down from the top middle (the top-left corner does nothing).
 3. "what's taking up space on my PC": short lines, a split archive counted once, no "want me to find what's taking space?" right after it.
+
+## 1.0.218: Android screen assistant
+
+1. Open a web page in Chrome, say "Hey Nova, explain this": the orb answers about that page, out loud, without opening Izuki. Try "what does this mean" on a message and "summarize this" on an article.
+2. "Hey Nova, open the second link" on that page: the phone agent does it (a doing request), not an explanation.
+3. In Izuki, send "summarize https://izukinova.ai" with no PC linked: it reads the page and summarizes it.
+4. On a practice quiz page, "Hey Nova, answer this" with the phone agent: it explains (and says the answer if asked) but doesn't tap an option.
