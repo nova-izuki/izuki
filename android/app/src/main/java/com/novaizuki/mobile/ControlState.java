@@ -107,6 +107,10 @@ final class ControlState {
       "\\b(send|call|dial|pay|buy|order|purchase|delete|erase|remove|uninstall|check ?out|subscribe|transfer|place order"
       + "|reset|format|wipe|factory|sign out|log ?out|force stop|disable|install|allow|grant|accept"
       + "|enviar|llamar|eliminar|borrar|pagar|comprar|instalar|desinstalar|permitir|aceptar|excluir|aceitar"
+      // Reset, sign out, disable, format: Spanish/Portuguese, French, German.
+      + "|restablecer|redefinir|formatear|formatar|desactivar|desativar|cerrar sesión|sair da conta"
+      + "|réinitialiser|formater|désactiver|déconnexion|se déconnecter"
+      + "|zurücksetzen|formatieren|deaktivieren|abmelden"
       + "|envoyer|appeler|supprimer|effacer|payer|acheter|installer|désinstaller|autoriser|accepter"
       + "|senden|anrufen|löschen|entfernen|bezahlen|kaufen|installieren|deinstallieren|zulassen|erlauben|akzeptieren)\\b");
 

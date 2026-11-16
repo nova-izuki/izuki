@@ -89,6 +89,8 @@ public class ControlStateTest {
     assertTrue("the same list the agent blocks", ControlState.risky("Reset network settings") && ControlState.risky("Force stop")
         && ControlState.risky("Sign out") && ControlState.risky("Log out") && ControlState.risky("Factory data reset"));
     assertTrue("named in the request, it's allowed", ControlState.riskyAllowed("Reset", "tap reset"));
+    assertTrue("reset and sign out in other languages", ControlState.risky("Restablecer") && ControlState.risky("Réinitialiser")
+        && ControlState.risky("Zurücksetzen") && ControlState.risky("Cerrar sesión") && ControlState.risky("Abmelden"));
     assertFalse(ControlState.risky("Calendar"));
     assertTrue(ControlState.wholeWord("Voice search", "search"));
     assertFalse(ControlState.wholeWord("Researchers", "search"));
