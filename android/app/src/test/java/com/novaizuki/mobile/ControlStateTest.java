@@ -86,6 +86,9 @@ public class ControlStateTest {
     assertFalse(ControlState.risky("Sender settings"));
     assertTrue("other languages", ControlState.risky("Enviar") && ControlState.risky("Supprimer") && ControlState.risky("Löschen"));
     assertTrue("installing and permissions", ControlState.risky("Install") && ControlState.risky("Allow"));
+    assertTrue("the same list the agent blocks", ControlState.risky("Reset network settings") && ControlState.risky("Force stop")
+        && ControlState.risky("Sign out") && ControlState.risky("Log out") && ControlState.risky("Factory data reset"));
+    assertTrue("named in the request, it's allowed", ControlState.riskyAllowed("Reset", "tap reset"));
     assertFalse(ControlState.risky("Calendar"));
     assertTrue(ControlState.wholeWord("Voice search", "search"));
     assertFalse(ControlState.wholeWord("Researchers", "search"));

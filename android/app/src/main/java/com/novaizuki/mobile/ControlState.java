@@ -104,7 +104,8 @@ final class ControlState {
   // (a phone set to another language shows its buttons in that language),
   // plus installing apps and granting permissions.
   private static final Pattern RISKY = Pattern.compile(
-      "\\b(send|call|dial|pay|buy|order|purchase|delete|erase|remove|uninstall|check ?out|subscribe|transfer|place order|install|allow|grant|accept"
+      "\\b(send|call|dial|pay|buy|order|purchase|delete|erase|remove|uninstall|check ?out|subscribe|transfer|place order"
+      + "|reset|format|wipe|factory|sign out|log ?out|force stop|disable|install|allow|grant|accept"
       + "|enviar|llamar|eliminar|borrar|pagar|comprar|instalar|desinstalar|permitir|aceptar|excluir|aceitar"
       + "|envoyer|appeler|supprimer|effacer|payer|acheter|installer|désinstaller|autoriser|accepter"
       + "|senden|anrufen|löschen|entfernen|bezahlen|kaufen|installieren|deinstallieren|zulassen|erlauben|akzeptieren)\\b");
