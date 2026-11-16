@@ -150,6 +150,12 @@
       if (!p?.addListener) return null;
       try { return p.addListener("turn", (d) => { try { callback?.(d || {}); } catch {} }); } catch { return null; }
     },
+    /** A tap on the orb while it shows the page's own work ("Tap to stop"). */
+    onStop(callback) {
+      const p = control();
+      if (!p?.addListener) return null;
+      try { return p.addListener("stop", () => { try { callback?.(); } catch {} }); } catch { return null; }
+    },
     /** The person stopped a turn (a tap on the orb): {id}. */
     onTurnCancel(callback) {
       const p = control();

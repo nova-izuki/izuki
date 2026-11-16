@@ -4117,15 +4117,34 @@
     vmNote("Done ✓ Voice match is on. Say “Hey Nova”: other voices won't start Izuki now. A tap on the orb still works.");
     paintVoiceMatch();
   }
+  let vmOpener = null;
   function teachVoice() {
     vm = { clips: [null, null, null], step: 0, busy: false, learned: false, prep: null };
     $("vm-finish").hidden = true;
     vmNote("");
+    vmOpener = document.activeElement;
     $("vm-sheet").hidden = false;
     vmPaint();
     vmPrepare();
+    // A dialog: focus goes in, stays in (Tab wraps), Escape closes, and
+    // focus returns to "Teach my voice" afterwards.
+    setTimeout(() => $("vm-rec").focus(), 0);
   }
-  const vmClose = () => { if (vm?.busy) return; $("vm-sheet").hidden = true; paintVoiceMatch(); };
+  const vmClose = () => {
+    if (vm?.busy) return;
+    $("vm-sheet").hidden = true;
+    paintVoiceMatch();
+    try { vmOpener?.focus?.(); } catch {}
+  };
+  $("vm-sheet").addEventListener("keydown", (e) => {
+    if (e.key === "Escape") { e.preventDefault(); vmClose(); return; }
+    if (e.key !== "Tab") return;
+    const stops = [...$("vm-sheet").querySelectorAll("button:not([disabled])")].filter((b) => !b.hidden && b.offsetParent !== null);
+    if (!stops.length) return;
+    const first = stops[0], last = stops[stops.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  });
   $("vm-rec").onclick = () => void vmRecord();
   $("vm-close").onclick = vmClose;
   $("vm-finish").onclick = vmClose;
@@ -5111,6 +5130,12 @@
       if (turnCtx === mine) turnCtx = null;
       finish(follow);
     }
+  });
+  // A tap on the orb while it says "Tap to stop" over Izuki's own reply or phone agent run.
+  window.IzukiNative?.onStop?.(() => {
+    if (busy) endRequest("cancelled");
+    else hush();
+    setStatus("Stopped.");
   });
   window.IzukiNative?.onTurnCancel?.((d) => {
     if (d?.id) cancelledTurns.add(String(d.id));

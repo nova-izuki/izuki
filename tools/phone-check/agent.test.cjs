@@ -139,7 +139,45 @@ function brain(replies) {
     assert.equal(r2.text, "Snapchat isn't on this phone.");
   }
 
-  // 7. Parsing what small models really send.
+  // 7. Every tap carries the label it was planned on (Android refuses a renumbered list).
+  {
+    const p = phone();
+    p.state.app = "com.android.settings";
+    const seen = [];
+    const act = p.native.act;
+    p.native.act = async (args) => { if (args.op === "click") seen.push(args.expect); return act(args); };
+    const A = load(p.native);
+    await A.run("open apps", { think: brain(['{"do":"tap","n":3}', '{"do":"done","say":"ok"}']).think });
+    assert.deepEqual(seen, ["Apps"]);
+  }
+
+  // 8. A web address the AI typed is never opened by itself.
+  {
+    const p = phone();
+    p.state.app = "com.android.chrome";
+    const A = load(p.native);
+    p.native.screen = async () => ({ app: "com.android.chrome", items: [{ n: 1, text: "Search or type web address", hint: "Search or type web address", id: "url_bar", kind: "box" }] });
+    const r = await A.run("look this up", { think: brain(['{"do":"type","n":1,"text":"https://example.test/?q=secret","enter":true}']).think });
+    assert.equal(r.asked, true);
+    assert.match(r.text, /didn't open it/);
+    assert.ok(!p.calls.includes("act:submit:"), "Enter was never pressed");
+    // An ordinary search still goes through.
+    const r2 = await A.run("search lofi", { think: brain(['{"do":"type","n":1,"text":"lofi beats","enter":true}', '{"do":"done","say":"Searched."}']).think });
+    assert.equal(r2.text, "Searched.");
+    assert.ok(p.calls.includes("act:submit:"));
+  }
+
+  // 9. One at a time with Autopilot: both use Android's numbered screen list.
+  {
+    const p = phone();
+    const window = { IzukiNative: p.native, IzukiAutopilot: { state: { running: true } } };
+    vm.runInNewContext(fs.readFileSync(path.resolve(__dirname, "../../docs/app/agent.js"), "utf8"), { window, console, setTimeout, clearTimeout, Date, Promise });
+    const r = await window.IzukiAgent.run("open settings", { think: brain(['{"do":"done","say":"x"}']).think });
+    assert.match(r.text, /Autopilot is running/);
+    assert.equal(window.IzukiAgent.busy, false);
+  }
+
+  // 10. Parsing what small models really send.
   {
     const A = load(phone().native);
     const { parse } = A._test;

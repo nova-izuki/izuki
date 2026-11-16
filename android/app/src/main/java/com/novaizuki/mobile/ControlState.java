@@ -100,8 +100,14 @@ final class ControlState {
     return best;
   }
 
+  // English, and the same actions in Spanish, Portuguese, French and German
+  // (a phone set to another language shows its buttons in that language),
+  // plus installing apps and granting permissions.
   private static final Pattern RISKY = Pattern.compile(
-      "\\b(send|pay|buy|order|purchase|delete|erase|remove|uninstall|check ?out|subscribe|transfer|place order)\\b");
+      "\\b(send|call|dial|pay|buy|order|purchase|delete|erase|remove|uninstall|check ?out|subscribe|transfer|place order|install|allow|grant|accept"
+      + "|enviar|llamar|eliminar|borrar|pagar|comprar|instalar|desinstalar|permitir|aceptar|excluir|aceitar"
+      + "|envoyer|appeler|supprimer|effacer|payer|acheter|installer|désinstaller|autoriser|accepter"
+      + "|senden|anrufen|löschen|entfernen|bezahlen|kaufen|installieren|deinstallieren|zulassen|erlauben|akzeptieren)\\b");
 
   /** A control that sends, pays, buys or deletes: pressed only when the request named it. */
   static boolean risky(String label) {

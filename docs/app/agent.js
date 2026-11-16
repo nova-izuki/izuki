@@ -15,8 +15,10 @@
   "use strict";
   const MAX_STEPS = 14;
   const OWN = "com.novaizuki.mobile";
-  // Calling someone is an outward action too: the person presses Call.
-  const RISKY = /\b(send|call|dial|video call|pay|buy|order|purchase|delete|erase|remove|uninstall|check ?out|subscribe|transfer|place order|reset|format|wipe|clear (?:data|storage|cache|history|all)|factory|sign out|log ?out|force stop|disable)\b/i;
+  // Calling someone is an outward action too: the person presses Call. So
+  // are installing apps and granting permissions. The same actions in
+  // Spanish, Portuguese, French and German, for phones set to those.
+  const RISKY = /\b(send|call|dial|video call|pay|buy|order|purchase|delete|erase|remove|uninstall|check ?out|subscribe|transfer|place order|reset|format|wipe|clear (?:data|storage|cache|history|all)|factory|sign out|log ?out|force stop|disable|install|allow|grant|accept|enviar|llamar|eliminar|borrar|pagar|comprar|instalar|desinstalar|permitir|aceptar|excluir|aceitar|envoyer|appeler|supprimer|effacer|payer|acheter|installer|désinstaller|autoriser|accepter|senden|anrufen|löschen|entfernen|bezahlen|kaufen|installieren|deinstallieren|zulassen|erlauben|akzeptieren)\b/i;
   const PAGES = ["wifi", "internet", "bluetooth", "volume", "nfc", "storage", "battery", "battery_saver", "display", "sound", "apps",
     "notifications", "location", "data", "dnd", "about", "date", "language", "keyboard", "airplane", "camera", "settings"];
   const PAGE_ALIASES = {
@@ -208,7 +210,8 @@
             return { ok: false, stop: true, note: `That last step needs your finger: tap “${norm(item.text)}” yourself if you want it. I don't press buttons that call, send, pay, buy, delete or reset.` };
           }
           const before = look(screen);
-          const r = await n.act({ op: "click", n: a.n });
+          // `expect`: Android refuses if that number is something else by now.
+          const r = await n.act({ op: "click", n: a.n, expect: item.text });
           if (!r?.done) {
             if (r?.reason === "needs-person") return { ok: false, stop: true, note: `That needs your finger: tap “${norm(r.matched || item.text)}” yourself if you want it.` };
             return { ok: false, note: n.why?.(r, `“${norm(item.text)}”`) || `Android didn't press “${norm(item.text)}”` };
@@ -228,7 +231,11 @@
           let note = r.verified === false ? `typed “${a.text}” (the box didn't show it back)` : `typed “${a.text}”`;
           if (a.enter) {
             if (!forSearch(item)) note += "; didn't press Enter (it isn't a search box)";
-            else {
+            // Screen text reaches the AI, so a web address it typed could carry
+            // something private off the phone: opening one needs the person's yes.
+            else if (/:\/\/|\bwww\.|\b[a-z0-9-]+\.(?:com|net|org|io|ai|co|me|ly|app|dev|xyz|info|ru|cn)\b/i.test(a.text)) {
+              return { ok: false, stop: true, note: `I typed the address “${a.text.slice(0, 80)}” but didn't open it: press Enter yourself if you want to go there.` };
+            } else {
               const s = await n.act({ op: "submit" });
               note += s?.done ? " and pressed Search" : "; couldn't find a Search key";
               await nap(900);
@@ -253,6 +260,14 @@
       }
     }
 
+    if (window.IzukiAutopilot?.state?.running) return { text: "Autopilot is running a routine on the phone. Stop it first, then ask me again.", ok: false };
+    agentBusy = true;
+    try {
+      return await steps();
+    } finally {
+      agentBusy = false;
+    }
+    async function steps() {
     const known = await facts(n);
     const done = [];
     let misses = 0, fails = 0;
@@ -300,7 +315,11 @@
       else if (++fails >= 4) return { text: `I got stuck: ${r.note}. ${done.length > 1 ? "I left the phone where it is so you can take over." : ""}`.trim(), ok: false };
     }
     return { text: "That took more steps than I allow myself, so I stopped where it is. Tell me what to do next, or take over from here.", ok: false };
+    }
   }
 
-  window.IzukiAgent = { run, _test: { parse, describe, facts, RISKY, SYSTEM, PAGES } };
+  /** Autopilot and the agent take turns: both use Android's one numbered screen list. */
+  let agentBusy = false;
+
+  window.IzukiAgent = { run, get busy() { return agentBusy; }, _test: { parse, describe, facts, RISKY, SYSTEM, PAGES } };
 })();

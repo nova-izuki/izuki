@@ -84,6 +84,9 @@ public class ControlStateTest {
     assertTrue(ControlState.risky("Delete chat"));
     assertFalse(ControlState.risky("Search"));
     assertFalse(ControlState.risky("Sender settings"));
+    assertTrue("other languages", ControlState.risky("Enviar") && ControlState.risky("Supprimer") && ControlState.risky("Löschen"));
+    assertTrue("installing and permissions", ControlState.risky("Install") && ControlState.risky("Allow"));
+    assertFalse(ControlState.risky("Calendar"));
     assertTrue(ControlState.wholeWord("Voice search", "search"));
     assertFalse(ControlState.wholeWord("Researchers", "search"));
   }

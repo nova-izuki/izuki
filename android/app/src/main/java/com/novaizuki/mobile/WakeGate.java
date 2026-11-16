@@ -258,16 +258,19 @@ final class WakeGate {
   static String command(String heard, boolean clipped, String custom) {
     if (heard == null) return "";
     String phrase = cleanPhrase(custom);
-    // "Hey Nova" or their own phrase (any punctuation between its words):
-    // the one said first is the one that woke Izuki.
-    int[] built = span(WAKE_AT, heard);
-    int[] own = phrase.isEmpty() ? null : span(phrasePattern(phrase, false), heard);
-    int[] first = built == null ? own : own == null ? built : (own[0] < built[0] ? own : built);
-    int end = first == null ? -1 : first[1];
-    // A clipped start may have lost the first word, as isWake accepts.
-    if (end < 0 && clipped) end = endOf(CLIPPED_AT, heard);
-    if (end < 0 && clipped && phrase.indexOf(' ') > 0) end = endOf(phrasePattern(phrase.substring(phrase.indexOf(' ') + 1), true), heard);
-    return end < 0 ? "" : heard.substring(end).trim();
+    // "Hey Nova", their own phrase (any punctuation between its words), or
+    // a clipped start that lost its first word, as isWake accepts: the one
+    // said first is the one that woke Izuki.
+    java.util.List<int[]> found = new java.util.ArrayList<>();
+    found.add(span(WAKE_AT, heard));
+    if (!phrase.isEmpty()) found.add(span(phrasePattern(phrase, false), heard));
+    if (clipped) {
+      found.add(span(CLIPPED_AT, heard));
+      if (phrase.indexOf(' ') > 0) found.add(span(phrasePattern(phrase.substring(phrase.indexOf(' ') + 1), true), heard));
+    }
+    int[] first = null;
+    for (int[] s : found) if (s != null && (first == null || s[0] < first[0])) first = s;
+    return first == null ? "" : heard.substring(first[1]).trim();
   }
 
   /** Where a pattern first matches: {start, end}, or null. */
@@ -276,10 +279,7 @@ final class WakeGate {
     return m.find() ? new int[] { m.start(), m.end() } : null;
   }
 
-  private static int endOf(Pattern p, String text) {
-    int[] s = span(p, text);
-    return s == null ? -1 : s[1];
-  }
+
 
   /** A cleaned phrase as a pattern: any spaces or punctuation between its words, optionally only at the start. */
   private static Pattern phrasePattern(String phrase, boolean atStart) {

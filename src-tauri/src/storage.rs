@@ -284,7 +284,6 @@ struct FolderLine {
 
 /// The answer, in plain words.
 pub fn report() -> String {
-    *LAST_REPORT.lock() = Some(Instant::now());
     let started = Instant::now();
     let ds = drives();
     let apps = biggest_apps(8);
@@ -349,7 +348,10 @@ pub fn report() -> String {
     if let Some((items, mb)) = crate::recyclebin::size().filter(|(items, _)| *items > 0) {
         safe.push(format!("The Recycle Bin, {} ({items} item{}): say “empty the Recycle Bin” if you're sure", gb(mb as f64 / 1000.0), if items == 1 { "" } else { "s" }));
     }
-    compose(&ds, &apps, &folders, &files, &safe)
+    let text = compose(&ds, &apps, &folders, &files, &safe);
+    // Only a report actually given holds the low-disk nudge back.
+    *LAST_REPORT.lock() = Some(Instant::now());
+    text
 }
 
 /// The report's words: a headline, then a few short lines, not a paragraph.

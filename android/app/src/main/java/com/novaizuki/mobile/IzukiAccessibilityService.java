@@ -439,18 +439,30 @@ public class IzukiAccessibilityService extends AccessibilityService {
    * pays, buys or deletes is refused unless the caller says the person asked
    * for exactly that (`risky`): the phone agent never does.
    */
-  static void click(int n, boolean risky, Consumer<JSONObject> done) {
+  static void click(int n, boolean risky, String expect, Consumer<JSONObject> done) {
     AccessibilityNodeInfo node = item(n);
     if (active == null) { off(done); return; }
     if (node == null) { done.accept(result(false, null, "stale")); return; }
     String label = labelOf(node);
-    if (!risky && ControlState.risky(label)) {
+    // The caller planned on a label: another screen read since then may have
+    // renumbered the list, and n would now be something else.
+    if (expect != null && !expect.trim().isEmpty() && !label.equalsIgnoreCase(expect.trim())) { done.accept(result(false, null, "stale")); return; }
+    // What actually gets pressed is the nearest pressable parent: a harmless
+    // "Continue" inside a "Delete" button is the Delete button.
+    String target = targetLabel(node);
+    if (!risky && (ControlState.risky(label) || ControlState.risky(target))) {
       JSONObject r = result(false, null, "needs-person");
-      put(r, "matched", label);
+      put(r, "matched", ControlState.risky(label) ? label : target);
       done.accept(r);
       return;
     }
     press(node, label, preferTouch(node, active), done);
+  }
+
+  /** The label of what a press on `node` really activates (its pressable parent), or "". */
+  private static String targetLabel(AccessibilityNodeInfo node) {
+    AccessibilityNodeInfo target = pressable(node);
+    return target == null || target == node ? "" : labelOf(target);
   }
 
   /** Move the TV's focus to thing number n (the highlight, as with the remote). */
@@ -592,9 +604,10 @@ public class IzukiAccessibilityService extends AccessibilityService {
     int best = ControlState.bestLabel(labels, q);
     if (best < 0) { done.accept(result(false, null, "not-found")); return; }
     String matched = labels.get(best);
-    if (!ControlState.riskyAllowed(matched, q)) {
+    String target = targetLabel(nodes.get(best));
+    if (!ControlState.riskyAllowed(matched, q) || !ControlState.riskyAllowed(target, q)) {
       JSONObject r = result(false, null, "needs-person");
-      put(r, "matched", matched);
+      put(r, "matched", ControlState.riskyAllowed(matched, q) ? target : matched);
       done.accept(r);
       return;
     }
@@ -1028,6 +1041,11 @@ public class IzukiAccessibilityService extends AccessibilityService {
           return false;
       }
     }
+  }
+
+  /** The page's own reply or phone agent run is showing on the orb ("Tap to stop"). */
+  static boolean pageWorking() {
+    return orbView != null && "page".equals(orbOwner) && ("think".equals(orbState) || "talk".equals(orbState));
   }
 
   /** For the diagnostics screen and the Phone Readiness check. */

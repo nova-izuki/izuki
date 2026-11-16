@@ -140,6 +140,12 @@ public class IzukiWakeService extends Service implements RecognitionListener {
   private int pipedSessions;
   private boolean pipedWords;
   private boolean sessionWords;
+  /**
+   * The wake phrase seen in a partial result. The person may still be saying
+   * the command ("Hey Nova, what's the weather in…"), so Izuki waits for the
+   * final words and uses this only if none come.
+   */
+  private String partialWake = "";
   private String noteText = "";
   private SpeechRecognizer recognizer;
 
@@ -631,6 +637,7 @@ public class IzukiWakeService extends Service implements RecognitionListener {
     sessionCount++;
     sessionStart = now;
     sessionWords = false;
+    partialWake = "";
     Intent intent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
         .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
         .putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault().toLanguageTag())
@@ -729,6 +736,8 @@ public class IzukiWakeService extends Service implements RecognitionListener {
   /** Heard something that wasn't the wake phrase (or nothing): back to the quiet gate. */
   private void finishSession() {
     if (state != WakeGate.State.HEARING) return;
+    // The final words never came (or lost the phrase): the partial one still woke Izuki.
+    if (!partialWake.isEmpty()) { String text = partialWake; partialWake = ""; onWake(text); return; }
     if (piped) checkPipedMode();
     endSession();
     if (budgetSpent) {
@@ -764,7 +773,11 @@ public class IzukiWakeService extends Service implements RecognitionListener {
     if (words != null) {
       for (String w : words) if (w != null && !w.trim().isEmpty()) { sessionWords = true; break; }
       for (String text : words) {
-        if (WakeGate.isWake(text, clipped, phrase(this))) { onWake(text); return; }
+        if (WakeGate.isWake(text, clipped, phrase(this))) {
+          if (partial) { partialWake = text; return; }
+          onWake(text);
+          return;
+        }
       }
       if (!words.isEmpty()) synchronized (gate) { gate.worked(); }
     }
@@ -772,6 +785,7 @@ public class IzukiWakeService extends Service implements RecognitionListener {
   }
 
   private void onWake(String heard) {
+    partialWake = "";
     long now = SystemClock.elapsedRealtime();
     endSession();
     closeMic();
@@ -834,6 +848,8 @@ public class IzukiWakeService extends Service implements RecognitionListener {
   @Override public void onError(int error) {
     // A cancel() of our own reports an error too: only the live session counts.
     if (state != WakeGate.State.HEARING) return;
+    // The phrase was already heard in a partial result: that still counts.
+    if (!partialWake.isEmpty()) { String text = partialWake; partialWake = ""; onWake(text); return; }
     WakeGate.Failure failure = WakeGate.classify(error);
     long took = SystemClock.elapsedRealtime() - sessionStart;
     if (piped && took < 1500 && (failure == WakeGate.Failure.CLIENT || failure == WakeGate.Failure.UNAVAILABLE)) {

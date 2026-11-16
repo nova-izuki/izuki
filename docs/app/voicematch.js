@@ -151,10 +151,17 @@
           // Still downloading: show how far, and don't call it "too long" while bytes arrive.
           const f = e.data.progress;
           p.files.set(f.file, f);
+          // Only the big files count: the small config files finishing first
+          // used to show 100%, then drop back when the model file started.
           let loaded = 0, total = 0;
-          for (const x of p.files.values()) { loaded += x.loaded; total += x.total; }
+          for (const x of p.files.values()) if (x.total >= 1_000_000) { loaded += x.loaded; total += x.total; }
           clearTimeout(p.timer);
-          p.timer = setTimeout(() => stopWorker("The voice model stopped downloading. Check the connection and try again."), 60000);
+          // Bytes still coming: a minute without any is a stalled download.
+          // All in: the model is starting up, which can take a while on a slow phone.
+          const allIn = [...p.files.values()].every((x) => !x.total || x.loaded >= x.total);
+          p.timer = allIn
+            ? setTimeout(() => stopWorker("The voice model downloaded but took too long to start. Try again."), 240000)
+            : setTimeout(() => stopWorker("The voice model stopped downloading. Check the connection and try again."), 60000);
           if (total > 0) { try { p.onProgress?.((loaded / total) * 100); } catch {} }
           return;
         }

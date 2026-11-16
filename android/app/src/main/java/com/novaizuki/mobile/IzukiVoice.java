@@ -140,6 +140,8 @@ final class IzukiVoice {
 
   private static void speakNow(String words, String id, String turnId, float rate) {
     if (!ttsReady || tts == null) { IzukiControlPlugin.speechEvent(id, "error"); return; }
+    // A line for a turn that's already over (stopped by a tap) stays unsaid.
+    if (!turnId.isEmpty() && !turnId.equals(turn)) { IzukiControlPlugin.speechEvent(id, "stopped"); return; }
     // The voice engine took a moment to start and the turn already moved on to listening.
     if (id.startsWith("greet:") && !"greet".equals(phase)) { IzukiControlPlugin.speechEvent(id, "done"); return; }
     // A newer line replaces the old one, as the page's own voice does.
@@ -351,12 +353,16 @@ final class IzukiVoice {
   /** "Hey Nova", with whatever was said after it in the same breath. */
   static void wake(Context c, String command) { ui.post(() -> { bind(c); start("wake", command == null ? "" : command.trim()); }); }
 
-  /** The orb was tapped: start a turn, or stop the one that's running. */
+  /** The orb was tapped: start a turn, or stop what's running (a turn, or the page's own work). */
   static void tap(Context c) {
     ui.post(() -> {
       bind(c);
       if (active()) stop();
-      else start("orb", "");
+      else if (IzukiAccessibilityService.pageWorking()) {
+        // The orb says "Tap to stop" over the page's reply or phone agent run.
+        IzukiControlPlugin.pageStop();
+        hush();
+      } else start("orb", "");
     });
   }
 

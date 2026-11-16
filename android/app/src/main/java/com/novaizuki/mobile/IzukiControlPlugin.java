@@ -140,6 +140,13 @@ public class IzukiControlPlugin extends Plugin {
     return true;
   }
 
+  /** A tap on the orb while the page itself is working or talking: stop that, don't start a new turn. */
+  static void pageStop() {
+    IzukiControlPlugin p = instance;
+    if (p == null) return;
+    p.notifyListeners("stop", new JSObject(), false);
+  }
+
   /** The person stopped a turn (a tap on the orb, or a new wake): the page drops its request. */
   static void turnCancelled(String id) {
     IzukiControlPlugin p = instance;
@@ -1061,7 +1068,7 @@ public class IzukiControlPlugin extends Plugin {
       catch (Exception e) { JSObject r = new JSObject(); r.put("done", outcome.optBoolean("done")); call.resolve(r); }
     };
     switch (op) {
-      case "click": IzukiAccessibilityService.click(n, Boolean.TRUE.equals(call.getBoolean("risky", false)), answer); break;
+      case "click": IzukiAccessibilityService.click(n, Boolean.TRUE.equals(call.getBoolean("risky", false)), call.getString("expect", ""), answer); break;
       case "tapText": IzukiAccessibilityService.tapText(call.getString("text", ""), answer); break;
       case "submit": IzukiAccessibilityService.submit(answer); break;
       case "tap": IzukiAccessibilityService.gesture("tap", x, y, 0, 0, 60, answer); break;

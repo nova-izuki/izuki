@@ -163,6 +163,7 @@ public class WakeGateTest {
     assertEquals("not clipped: the whole phrase is needed", "", WakeGate.command("jarvis, what's the time", false, "hey jarvis"));
     assertEquals("what's the time", WakeGate.command("nova what's the time", true, ""));
     assertEquals("not clipped: no phrase, no command", "", WakeGate.command("nova what's the time", false, ""));
+    assertEquals("a clipped start said first wins too", "explain hey nova", WakeGate.command("nova, explain hey nova", true, ""));
     assertEquals("", WakeGate.command(null, true, ""));
   }
 

@@ -70,6 +70,8 @@ function islandScale(size: string): number {
 
 /** How close to the top edge counts as "reaching for the Island". */
 const PEEK_EDGE = 4;
+/** Once revealed, it stays while the pointer is this close to the top (moving into it). */
+const PEEK_HOLD = 140;
 /** Dragged this far down from the top and it leaves the edge for good. */
 const UNDOCK_AT = 46;
 const ISLAND_DOCKED_KEY = "izk.island.docked";
@@ -228,15 +230,19 @@ export function Island({
       setPeeking(false);
       return;
     }
+    let shown = false;
     const off = watchPointer((x, y) => {
-      const atTop = y - workArea().top <= PEEK_EDGE;
-      if (atTop && lookRef.current === "notch") {
-        const r = pill.current?.getBoundingClientRect();
-        const middle = r && r.width > 0 ? r.left + r.width / 2 : window.innerWidth / 2;
-        setPeeking(Math.abs(x - middle) < EDGE_BAND);
-        return;
-      }
-      setPeeking(atTop);
+      const fromTop = y - workArea().top;
+      const r = pill.current?.getBoundingClientRect();
+      const middle = r && r.width > 0 ? r.left + r.width / 2 : window.innerWidth / 2;
+      const nearMiddle = Math.abs(x - middle) < EDGE_BAND;
+      // The Screen notch answers only the top middle, like a laptop's notch.
+      const reaching = fromTop <= PEEK_EDGE && (lookRef.current !== "notch" || nearMiddle);
+      // Once it's coming down, it stays while the pointer moves on into it
+      // (before the hover opens it): leaving the 4 px edge used to hide it
+      // again, so the pointer missed it.
+      shown = reaching || (shown && fromTop < PEEK_HOLD && nearMiddle);
+      setPeeking(shown);
     });
     return off;
   }, [docked]);
