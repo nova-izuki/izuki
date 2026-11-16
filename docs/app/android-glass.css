@@ -596,12 +596,17 @@ html[data-os="android"] .phone-grid {
   margin-top: 8px;
 }
 
+/* Icon above the words, like Quick Settings tiles: "Notifications" stays
+   inside its tile on a narrow phone (the old side-by-side row spilled it). */
 html[data-os="android"] .phone-action {
-  min-height: 50px;
-  flex-direction: row;
-  justify-content: flex-start;
-  gap: 8px;
-  padding: 7px 9px;
+  min-width: 0;
+  min-height: 70px;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  gap: 6px;
+  padding: 9px 4px 8px;
   border: 1px solid rgba(255, 255, 255, 0.075);
   border-radius: 15px;
   background: rgba(255, 255, 255, 0.045);

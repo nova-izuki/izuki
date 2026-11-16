@@ -281,8 +281,14 @@ pub struct Settings {
     pub island_enabled: bool,
     /// The Island stays at the top like an iPhone's Dynamic Island — a black
     /// pill that grows with what's happening — not only when the mouse goes up.
-    #[serde(default = "default_true")]
+    /// Off by default (2026-11-15): nothing at all until the mouse reaches the
+    /// top of the screen, then it slides down.
+    #[serde(default)]
     pub island_always: bool,
+    /// The always-on sliver was switched off once for everyone (1.0.217): the
+    /// owner wanted the Island fully hidden until the mouse reaches the top.
+    #[serde(default)]
+    pub island_hidden_v1: bool,
     /// The Island can be dragged anywhere on screen (off: a strip along the top).
     #[serde(default)]
     pub island_free: bool,
@@ -945,6 +951,12 @@ impl Settings {
         // moving characters replace it): it stays off.
         self.mate_enabled = false;
         self.mate_reset_v2 = true;
+        // The Island hides until the mouse reaches the top: once for
+        // everyone; turning "Always show" back on afterwards is kept.
+        if !self.island_hidden_v1 {
+            self.island_always = false;
+            self.island_hidden_v1 = true;
+        }
         // The old drawn 3D faces became real 3D models: the nearest one, by voice.
         let male = crate::tv::voice_is_male(self);
         if self.orb_style == "holo3d" { self.orb_style = if male { "model:holo-male" } else { "model:holo-female" }.into(); }
@@ -1256,7 +1268,8 @@ impl Default for Settings {
             app_theme_color: String::new(),
             flows_keep_days: default_flows_keep_days(),
             island_suggestions: true,
-            island_always: true,
+            island_always: false,
+            island_hidden_v1: true,
             island_free: false,
             island_wave: default_island_wave(),
             island_style: default_island_style(),
@@ -1546,6 +1559,11 @@ mod tests {
         assert_eq!(s.orb_response, 1.0);
         // The always-on desktop mate is retired: it stays off.
         assert!(!s.mate_enabled && s.mate_reset_v2);
+        // The Island hides until the mouse goes up, once; a later "Always show" is kept.
+        assert!(!s.island_always && s.island_hidden_v1);
+        s.island_always = true;
+        s.heal();
+        assert!(s.island_always, "a choice made after the switch stays");
         s.mate_enabled = true;
         s.heal();
         assert!(!s.mate_enabled);

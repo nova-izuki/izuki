@@ -70,6 +70,8 @@ function islandScale(size: string): number {
 
 /** How close to the top edge counts as "reaching for the Island". */
 const PEEK_EDGE = 4;
+/** Once revealed, it stays while the pointer is this close to the top (moving into it). */
+const PEEK_HOLD = 140;
 /** Dragged this far down from the top and it leaves the edge for good. */
 const UNDOCK_AT = 46;
 const ISLAND_DOCKED_KEY = "izk.island.docked";
@@ -146,7 +148,7 @@ export function Island({
   doing,
   thinking,
   peeks = true,
-  always = true,
+  always = false,
   free = false,
   wave = "auto",
   look = "default",
@@ -220,12 +222,28 @@ export function Island({
   }, []);
   // Reaching for a docked Island: the top few pixels of the screen bring it
   // down, iPhone-style. Pulled out of the dock, it's simply always there.
+  // The Screen notch answers only the top middle, like a laptop's notch.
+  const lookRef = useRef(look);
+  lookRef.current = look;
   useEffect(() => {
     if (!docked) {
       setPeeking(false);
       return;
     }
-    const off = watchPointer((_x, y) => setPeeking(y - workArea().top <= PEEK_EDGE));
+    let shown = false;
+    const off = watchPointer((x, y) => {
+      const fromTop = y - workArea().top;
+      const r = pill.current?.getBoundingClientRect();
+      const middle = r && r.width > 0 ? r.left + r.width / 2 : window.innerWidth / 2;
+      const nearMiddle = Math.abs(x - middle) < EDGE_BAND;
+      // The Screen notch answers only the top middle, like a laptop's notch.
+      const reaching = fromTop <= PEEK_EDGE && (lookRef.current !== "notch" || nearMiddle);
+      // Once it's coming down, it stays while the pointer moves on into it
+      // (before the hover opens it): leaving the 4 px edge used to hide it
+      // again, so the pointer missed it.
+      shown = reaching || (shown && fromTop < PEEK_HOLD && nearMiddle);
+      setPeeking(shown);
+    });
     return off;
   }, [docked]);
   const [position, setPosition] = useState<IslandPosition>(loadIslandPosition);
@@ -722,8 +740,10 @@ export function Island({
           (open ? (look === "notch" ? "pointer-events-none" : "pointer-events-auto") : "pointer-events-none") +
           // At rest: the always-on pill, or fully hidden until your mouse
           // reaches the top edge (or something's happening). Pulled out of
-          // the dock it stays where you put it and is always there.
-          (live.kind === "rest" && !open && !always && docked && !peeking ? " izk-island-hidden" : "") +
+          // the dock it stays where you put it and is always there. The
+          // Screen notch always hides at rest: it slides down from the top
+          // middle when the mouse goes there, like a laptop notch.
+          (live.kind === "rest" && !open && docked && !peeking && (!always || look === "notch") ? " izk-island-hidden" : "") +
           (open ? " izk-island-open" : "") +
           // Lit up while Izuki is really listening, thinking or working.
           (busy || orb === "listening" || orb === "speaking" || live.kind === "missions" ? " izk-island-active" : "") +
@@ -967,7 +987,7 @@ function notchMiniCopy(live: Live, doing: string | null, thinking: boolean): {
     case "suggest":
       return { line: `${live.s.label}?`, meta: "Suggestion", active: false, alert: false, done: false, step: null };
     default:
-      return { line: "Ask me anything", meta: thinking ? "Thinking" : "Hover to open", active: thinking, alert: false, done: false, step: null };
+      return { line: "Ask me anything", meta: thinking ? "Thinking" : "", active: thinking, alert: false, done: false, step: null };
   }
 }
 

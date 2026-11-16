@@ -42,7 +42,8 @@ public class MainActivity extends BridgeActivity {
   /**
    * Back in front, often from Android Settings: the page re-checks every
    * permission at once instead of showing what was true before it left. The
-   * wake listener steps aside while the page owns the microphone.
+   * wake listener keeps listening here; it steps aside only while the page's
+   * microphone is open (micBusy).
    */
   @Override
   public void onResume() {
@@ -65,6 +66,10 @@ public class MainActivity extends BridgeActivity {
   @Override
   public void onStop() {
     IzukiWakeService.foreground(this, false);
+    // The page's microphone hold can't outlive the page being on screen (a
+    // reload or a crash must not leave "Hey Nova" paused for ever). A live
+    // call keeps its own pause (wakePause).
+    IzukiWakeService.hold(IzukiWakeService.HOLD_PAGE, false);
     super.onStop();
   }
 

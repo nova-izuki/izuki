@@ -605,7 +605,9 @@ fn battery(app: &AppHandle, may_act: bool) {
 fn disk_and_memory(app: &AppHandle) {
     let (memory, disk_gb) = crate::briefing::health_raw();
     if let Some(gb) = disk_gb {
-        if gb < 5 {
+        // Not straight after a storage report: it would offer to find what
+        // the report has just listed.
+        if gb < 5 && !crate::storage::reported_recently() {
             offer(
                 app,
                 "disk-low",

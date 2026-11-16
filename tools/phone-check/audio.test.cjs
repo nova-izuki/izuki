@@ -28,7 +28,7 @@ function harness(callPage = false) {
     note() {}, bug() {}, liveSaid() {}, setOrb() {}, setMode() {}, watchBarge() {},
     $: () => ({ replaceChildren() {}, getBoundingClientRect: () => ({ top: 0 }), clientHeight: 0, scrollTop: 0 }),
     el: () => ({ textContent: '', getClientRects: () => [] }), performance, setInterval: () => 0, talking: true, readAloud: true, key: '',
-    muted: false, bargeOn: false, recoveries, console,
+    muted: false, bargeOn: false, recoveries, console, turnCtx: null,
   });
   if (callPage) {
     const speech = html.slice(html.indexOf('  let utterance = null;'), html.indexOf('  /** "Talk over Izuki"'));

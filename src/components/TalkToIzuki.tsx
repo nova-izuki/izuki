@@ -189,7 +189,7 @@ export function TalkToIzuki() {
         )}
         {settings.island_enabled && <QuietHoursRow value={settings.quiet_hours ?? ""} onChange={(v) => patch({ quiet_hours: v })} />}
         {settings.island_enabled && (
-          <Row label="Island Shape Studio" hint="Pick the Island's shape live — no restart. Each look now has its own compact silhouette as well as its own glass: Tiny dot and Bubble are small, Wide strip stays along the edge, and Float is a detached pill. The screen notch attaches to the top edge; Classic and Nova keep the full glass body.">
+          <Row label="Island Shape Studio" hint="Pick the Island's shape live — no restart. Each look now has its own compact silhouette as well as its own glass: Tiny dot and Bubble are small, Wide strip stays along the edge, and Float is a detached pill. The screen notch hangs from the top middle like a laptop's notch, its top corners curving out into the screen edge, and stays hidden until your mouse reaches the top middle; Classic and Nova keep the full glass body.">
             <div className="flex flex-wrap justify-end gap-1">
               {([["nova", "✨ Nova"], ["default", "Classic"], ["notch", "Screen notch"], ["float", "Float"], ["windows", "Windows bar"], ["dot", "Tiny dot"], ["strip", "Wide strip"], ["glass", "Glass"], ["bubble", "Bubble"], ["squircle", "Squircle"], ["outline", "Neon outline"], ["aero", "Aero (classic)"]] as const).map(([k, l]) => (
                 <button
@@ -259,8 +259,8 @@ export function TalkToIzuki() {
           </Row>
         )}
         {settings.island_enabled && (
-          <Row label="Always show the Island" hint="On: a small sliver sits at the top, and grows only while something's happening (music, listening, answering, timers). Off: nothing at all until your mouse goes to the top of the screen.">
-            <Toggle checked={settings.island_always ?? true} onChange={(v) => patch({ island_always: v })} />
+          <Row label="Always show the Island" hint="Off (the default): nothing at all until your mouse touches the top of the screen, then it slides down; it also appears while something's happening (music, listening, answering, timers). On: a small sliver always sits at the top. The Screen notch always hides until the top middle.">
+            <Toggle checked={settings.island_always ?? false} onChange={(v) => patch({ island_always: v })} />
           </Row>
         )}
         {settings.island_enabled && (

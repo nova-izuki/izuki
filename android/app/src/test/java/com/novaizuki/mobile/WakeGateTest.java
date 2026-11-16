@@ -139,6 +139,39 @@ public class WakeGateTest {
     assertFalse("an unusable phrase never wakes", WakeGate.isWake("computer", false, "computer"));
   }
 
+  @Test public void spellingsSpeechServicesUse() {
+    assertTrue(WakeGate.isWake("HeyNova", false));
+    assertTrue(WakeGate.isWake("Hey, Nova! What's the weather", false));
+    assertTrue("a quick “Hey Nova” at the start is often written Hanover", WakeGate.isWake("Hanover what's the weather", false));
+    assertFalse("Hanover in a sentence is a place", WakeGate.isWake("I moved to Hanover last year", false));
+    assertFalse(WakeGate.isWake("they nova", false));
+  }
+
+  @Test public void theCommandAfterThePhrase() {
+    assertEquals("what's the time?", WakeGate.command("Hey Nova, what's the time?", false, ""));
+    assertEquals("", WakeGate.command("hey nova", false, ""));
+    assertEquals("turn on the flashlight", WakeGate.command("HeyNova turn on the flashlight", false, ""));
+    assertEquals("play some music", WakeGate.command("Hanover, play some music", false, ""));
+    assertEquals("open YouTube", WakeGate.command("Hey Jarvis open YouTube", false, "hey jarvis"));
+    assertEquals("punctuation between the words", "open YouTube", WakeGate.command("Hey, Jarvis! open YouTube", false, "hey jarvis"));
+    assertEquals("a hyphen, as isWake allows", "what's the time", WakeGate.command("Hey-Nova what's the time", false, ""));
+    assertTrue(WakeGate.isWake("Hey-Nova what's the time", false));
+    assertEquals("the phrase said first wins", "tell me about hey nova", WakeGate.command("hey jarvis tell me about hey nova", false, "hey jarvis"));
+    assertFalse("an apostrophe isn't a space to isWake", WakeGate.isWake("hey'nova", false));
+    assertEquals("…nor to command: their own phrase woke it", "open YouTube", WakeGate.command("hey'nova hey jarvis open YouTube", false, "hey jarvis"));
+    assertEquals("a clipped start of their own phrase", "what's the time", WakeGate.command("jarvis, what's the time", true, "hey jarvis"));
+    assertEquals("not clipped: the whole phrase is needed", "", WakeGate.command("jarvis, what's the time", false, "hey jarvis"));
+    assertEquals("what's the time", WakeGate.command("nova what's the time", true, ""));
+    assertEquals("not clipped: no phrase, no command", "", WakeGate.command("nova what's the time", false, ""));
+    assertEquals("a clipped start said first wins too", "explain hey nova", WakeGate.command("nova, explain hey nova", true, ""));
+    assertTrue(WakeGate.isWake("Hey Nova_turn on the flashlight", false));
+    assertEquals("an underscore is a space, as isWake reads it", "turn on the flashlight", WakeGate.command("Hey Nova_turn on the flashlight", false, ""));
+    assertEquals("and in their own phrase", "open maps", WakeGate.command("hey_jarvis_open maps", false, "hey jarvis"));
+    assertTrue(WakeGate.isWake("a_nova turn on the flashlight", true));
+    assertEquals("a clipped start's prefix, any separator", "turn on the flashlight", WakeGate.command("a_nova turn on the flashlight", true, ""));
+    assertEquals("", WakeGate.command(null, true, ""));
+  }
+
   @Test public void levels() {
     assertEquals(-96, WakeGate.levelDb(new short[320], 320), 0.001);
     double loud = WakeGate.levelDb(tone(0.5, 320), 320);

@@ -499,7 +499,7 @@ export function OverlayCanvas() {
           setIslandOn(s.island_enabled);
           setIslandPeeks(s.island_suggestions);
           setIslandWave(s.island_wave || "auto");
-          setIslandAlways(s.island_always ?? true);
+          setIslandAlways(s.island_always ?? false);
           setIslandFree(!!s.island_free);
           setIslandStyle(s.island_style || "default");
           setIslandSize(s.island_size || "normal");
@@ -578,7 +578,7 @@ export function OverlayCanvas() {
           setIslandOn(s.island_enabled);
           setIslandPeeks(s.island_suggestions);
           setIslandWave(s.island_wave || "auto");
-          setIslandAlways(s.island_always ?? true);
+          setIslandAlways(s.island_always ?? false);
           setIslandFree(!!s.island_free);
           setIslandStyle(s.island_style || "default");
           setIslandSize(s.island_size || "normal");

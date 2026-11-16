@@ -58,6 +58,7 @@
 <script src="apps.js"></script>
 <script src="drive.js"></script>
 <script src="autopilot.js"></script>
+<script src="agent.js"></script>
 <script src="cockpit.js"></script>
 <script src="pilot.js"></script>
 <script src="remote.js"></script>
@@ -550,7 +551,7 @@
         <p class="note">Silent demo — no mic, model calls or credits. Cloud WAV replies animate from their real waveform. System voices use a quiet fallback because their audio isn't available to measure.</p>
       </div>
     </section>
-    <section>
+    <section data-only="ios">
       <h3>Alarms (iPhone — one-time setup)</h3>
       <p>Say "wake me up at 7" and Izuki gives you a button that puts it straight into your Clock. On iPhone that needs one small shortcut, made once:</p>
       <ol style="margin: 8px 0 0 18px; line-height: 1.6">
@@ -640,7 +641,7 @@
       <h3>“Hey Nova” wake word</h3>
       <p id="wake-status" class="note">Checking the wake listener…</p>
       <div class="row" style="margin-top:8px;flex-wrap:wrap"><button class="btn" id="wake-toggle" type="button">Turn on</button><button class="btn ghost" id="wake-fix" type="button" hidden>Fix permissions</button></div>
-      <p class="note" style="margin-top:8px">Optional. Android shows a persistent listening notification while it is on. “Hey Nova” wakes the screen, but <b>never unlocks the phone</b>: if the lock screen is up, Izuki waits for you. Izuki listens quietly for someone speaking and only then asks Android's speech service whether it was “Hey Nova” — no sound, no restart loop. It pauses while Izuki is open (the app uses the microphone then) and rests for a while if lots of other talking is nearby.</p>
+      <p class="note" style="margin-top:8px">Optional. Android shows a persistent listening notification while it is on. Say “Hey Nova” (or “Hey Nova, what's the weather”): the orb pops up over whatever is open, listens and answers there — Izuki doesn't have to open. On the lock screen it <b>never unlocks the phone</b> and only answers general questions; unlock for anything personal or on the phone. It listens quietly for someone speaking and only then asks Android's speech service whether it was “Hey Nova” — no sound, no restart loop. It keeps listening while Izuki is open, steps aside while Izuki itself is listening or talking, and rests for a while if lots of other talking is nearby. The notification's <b>Ask Izuki</b> starts a question from anywhere, the lock screen included.</p>
       <div class="field" style="margin-top:10px">
         <label for="wake-phrase">Your own wake phrase (optional)</label>
         <div class="row" style="flex-wrap:nowrap;gap:8px"><input id="wake-phrase" type="text" maxlength="32" placeholder="hey jarvis" autocomplete="off" autocapitalize="off" spellcheck="false" style="flex:1;min-width:0"><button class="btn ghost" id="wake-phrase-save" type="button">Save</button></div>
@@ -650,10 +651,10 @@
         <label>Voice match (optional)</label>
         <p class="note" id="vm-status" style="margin-top:2px">Off. Teach Izuki your voice, and “Hey Nova” only starts things when it sounds like you — like a phone assistant that knows its owner.</p>
         <div class="row" style="flex-wrap:wrap;gap:8px;margin-top:6px"><button class="btn ghost" id="vm-teach" type="button">Teach my voice</button><button class="btn ghost" id="vm-toggle" type="button" hidden>Turn off</button><button class="btn ghost" id="vm-forget" type="button" hidden>Forget my voice</button></div>
-        <p class="note" style="margin-top:6px">Three short recordings. Only a voice template stays on this phone — never the recordings or the words. The first time downloads the voice model (about 95 MB). It keeps the TV and other people from starting things; it isn't a lock.</p>
+        <p class="note" style="margin-top:6px">A safety switch for “Hey Nova”: once it knows your voice, other voices (the TV, a video, other people) can't start Izuki by voice. A tap on the orb still works, because that needs your hand on the phone. Three short sentences; only a voice template stays on this phone — never the recordings or the words. The first time downloads the voice model (about 95 MB). A very similar voice or a recording of you could still pass, so it isn't a lock.</p>
       </div>
-      <label class="swatch" style="margin-top:10px"><input type="checkbox" id="keep-orb" checked> Keep the glass orb over other apps</label>
-      <p class="note" style="margin-top:4px">When you open Photos, Maps or any other app, a small orb stays on top. Tap it to come back to Izuki and keep talking — it never acts until you ask. Needs Accessibility control.</p>
+      <label class="swatch" style="margin-top:10px"><input type="checkbox" id="keep-orb"> Keep a small orb resting over other apps</label>
+      <p class="note" style="margin-top:4px">Off (the default): the orb only appears when you say “Hey Nova”, use the Ask Izuki tile or notification, or while Izuki is working or talking — then it goes away. On: a small orb also rests over your apps. Tap the orb to talk (tap again to stop), tap its words to open Izuki, drag it anywhere, long-press to hide it. Needs Android control.</p>
     </section>
 
     <section id="native-sound" hidden>
@@ -688,7 +689,7 @@
       <p class="note" style="margin-top:8px">Android Accessibility control must be on. A locked phone is never touched. Autopilot also lives on Home, and its Test phone control button checks real taps and swipes against safe test targets.</p>
     </section>
 
-    <section>
+    <section data-only="ios">
       <h3>“Hey Siri, Izuki” (iPhone — optional)</h3>
       <div style="border:1px solid rgba(63,215,201,.35);background:rgba(63,215,201,.08);border-radius:14px;padding:12px;margin-bottom:12px">
         <b style="color:var(--teal)">✅ Easiest way (no setup):</b> just open the <b>Izuki</b> app from your home screen and tap <b>Call</b> — talk hands-free. You don't need anything below. The steps below are ONLY if you also want to start it by saying “Hey Siri”.
@@ -760,6 +761,28 @@
     <p class="note">You can also just <b>say “clear chat”</b> — or type it — any time. Same as the PC app.</p>
     <p class="note"><a href="../privacy/" target="_blank" rel="noopener">Privacy</a> · <a href="../terms/" target="_blank" rel="noopener">Terms</a> · <a href="../security/" target="_blank" rel="noopener">Security</a> · <a href="../help/" target="_blank" rel="noopener">Help</a></p>
     <p class="note">Free and private: your key, chats, memories and reminders are kept on this phone. Messages go straight to the AI you picked (Google's Gemini unless you chose another) and to your own PC if linked. Error reports carry what went wrong — never keys, chats or recordings.</p>
+  </div>
+</div>
+
+<div class="vm-sheet" id="vm-sheet" hidden role="dialog" aria-modal="true" aria-labelledby="vm-title">
+  <div class="vm-card">
+    <div class="vm-head">
+      <div><span class="vm-kicker">VOICE MATCH · SAFETY</span><h3 id="vm-title">Teach Izuki your voice</h3></div>
+      <button class="vm-x" id="vm-close" type="button" aria-label="Close">✕</button>
+    </div>
+    <p class="vm-why">Then “Hey Nova” only starts things for <b>your</b> voice. Read three short sentences in your normal voice, about a hand's length from the phone.</p>
+    <ol class="vm-steps" id="vm-steps" aria-label="Recordings"></ol>
+    <div class="vm-stage">
+      <p class="vm-label" id="vm-say-label">Recording 1 of 3 — say:</p>
+      <p class="vm-say" id="vm-say"></p>
+      <button class="vm-rec" id="vm-rec" type="button">
+        <span class="vm-ring" aria-hidden="true"><span class="vm-level" id="vm-level"></span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></span>
+        <span class="vm-rec-label" id="vm-rec-label">Tap, then speak</span>
+      </button>
+      <p class="vm-note" id="vm-note" role="status" aria-live="polite"></p>
+    </div>
+    <div class="vm-model" id="vm-model" hidden><span id="vm-model-text">Getting the voice model ready…</span><span class="vm-bar"><i id="vm-model-fill"></i></span></div>
+    <div class="vm-actions"><button class="btn" id="vm-finish" type="button" hidden>Done</button></div>
   </div>
 </div>
 
@@ -887,35 +910,37 @@
     status.textContent = s || "";
     $("live-status").textContent = s || LIVE_LABEL[orbState] || (talking ? "Listening…" : "");
   };
-  // The Android app can keep the same glass orb above other apps. On the page
-  // it is hidden (the page has its own orb); when you leave for Photos or Maps
-  // it stays, resting, and a tap brings Izuki back without starting a voice turn.
-  let keepOrb = store.get("keepOrb", true);
+  // The Android app shows the same glass orb above other apps while Izuki is
+  // working or talking there (the page has its own orb inside the app). With
+  // "keep the orb" on, a small orb also rests over other apps; tapping it is a
+  // voice turn right there (IzukiVoice), its words open Izuki.
+  /** A voice turn from the orb, "Hey Nova", the tile or the notification: {id, locked, source, cancelled}. */
+  let turnCtx = null;
+  /** The phone agent is working, and the step it's on ("Opening Storage…"). */
+  let agentBusy = false, agentStep = "";
+  let keepOrb = store.get("keepOrb", false);
   let orbBeat = 0;
   function syncNativeOrb() {
     const native = window.IzukiNative;
     if (!native?.installed?.()) return;
-    // One gate for every producer: the page, a live call and Autopilot all
-    // keep their orb inside Izuki when this is off.
-    if (!keepOrb) { void native.orb?.("idle"); return; }
-    if (!document.hidden) { void native.orb?.("idle"); return; }
-    const auto = !!window.IzukiAutopilot?.state?.running;
-    // Leaving the app is not listening. Only a real thinking/talking state
-    // survives in the background; otherwise the orb rests. The old fallback
-    // said "listening" for ever over Android Settings and the home screen.
-    const live = orbState === "thinking" || orbState === "speaking" ? orbState : "";
-    const mode = auto ? "thinking" : live;
+    // A voice turn draws its own orb natively; the page stays out of its way.
+    if (turnCtx) return;
     clearInterval(orbBeat);
-    if (!mode) { void native.orb?.("rest", "Tap to talk"); return; }
-    const state = mode === "thinking" ? "think" : mode === "speaking" ? "talk" : "rest";
-    const words = state === "talk" || state === "rest" ? "Tap to talk" : "Working…";
+    if (!document.hidden) { void native.orb?.("idle"); return; }
+    // Leaving the app is not listening. Only real work or talking shows the
+    // orb; otherwise it rests (kept) or goes away. The old fallback said
+    // "listening" for ever over Android Settings and the home screen.
+    const working = agentBusy || !!window.IzukiAutopilot?.state?.running || orbState === "thinking";
+    const mode = working ? "think" : orbState === "speaking" ? "talk" : "";
+    if (!mode) { void native.orb?.(keepOrb ? "rest" : "idle", keepOrb ? "Tap to talk" : ""); return; }
     // Thinking and talking are leases on the native side: renew them while
     // they're true. If this page stops (Android ended it), the orb rests by
     // itself instead of saying "Working…" for ever.
-    void native.orb?.(state, words, 20000);
+    const beat = () => void native.orb?.(mode, mode === "think" ? (agentStep || "Working…") : "Tap to stop", 20000);
+    beat();
     orbBeat = setInterval(() => {
       if (!document.hidden) { clearInterval(orbBeat); return; }
-      void native.orb?.(state, words, 20000);
+      beat();
     }, 8000);
   }
   const setOrb = (mode) => {
@@ -1056,29 +1081,68 @@
       dock.open = true;
       dock.append(el("summary", "", "One-tap phone controls"));
       const grid = el("div", "phone-grid");
-      for (const [action, icon, label] of [
-        ["home", "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'><path d='m3 10 9-7 9 7v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z'/><path d='M9 22v-6h6v6'/></svg>", "Home"],
-        ["back", "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M20 12H4M11 5l-7 7 7 7'/></svg>", "Back"],
-        ["recents", "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'><rect x='3' y='5' width='13' height='15' rx='2.5'/><path d='M8 2h10a3 3 0 0 1 3 3v12'/></svg>", "Recents"],
-        ["notifications", "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'><path d='M18 8a6 6 0 0 0-12 0c0 7-3 8-3 8h18s-3-1-3-8M10.3 21h3.4'/></svg>", "Notifications"],
-        ["screenshot", "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'><path d='M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3'/><circle cx='12' cy='12' r='3.5'/></svg>", "Shot"],
-        ["lock", "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'><rect x='4' y='10' width='16' height='11' rx='3'/><path d='M8 10V7a4 4 0 0 1 8 0v3'/></svg>", "Lock"],
-      ]) {
-        const b = el("button", "phone-action");
+      const svg = (d) => `<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'>${d}</svg>`;
+      // [kind, what, icon, label]: the first six always show, the rest under "More controls".
+      // "act" needs Android control; panels and the flashlight are plain Android intents.
+      const CONTROLS = [
+        ["act", "home", "<path d='m3 10 9-7 9 7v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z'/><path d='M9 22v-6h6v6'/>", "Home"],
+        ["act", "back", "<path d='M20 12H4M11 5l-7 7 7 7'/>", "Back"],
+        ["act", "recents", "<rect x='3' y='5' width='13' height='15' rx='2.5'/><path d='M8 2h10a3 3 0 0 1 3 3v12'/>", "Recents"],
+        ["torch", "", "<path d='M6 2h12v5l-3 4v11H9V11L6 7Z'/><path d='M12 14v2'/>", "Flashlight"],
+        ["panel", "wifi", "<path d='M2 8.8a15 15 0 0 1 20 0M5 12.5a10 10 0 0 1 14 0M8.5 16a5 5 0 0 1 7 0'/><circle cx='12' cy='19.5' r='1'/>", "Wi-Fi"],
+        ["act", "notifications", "<path d='M18 8a6 6 0 0 0-12 0c0 7-3 8-3 8h18s-3-1-3-8M10.3 21h3.4'/>", "Notifications"],
+        ["panel", "bluetooth", "<path d='m7 7 10 10-5 5V2l5 5L7 17'/>", "Bluetooth"],
+        ["panel", "volume", "<path d='M11 5 6 9H2v6h4l5 4z'/><path d='M15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14'/>", "Volume"],
+        ["act", "screenshot", "<path d='M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3'/><circle cx='12' cy='12' r='3.5'/>", "Screenshot"],
+        ["act", "split_screen", "<rect x='3' y='3' width='18' height='18' rx='3'/><path d='M3 12h18'/>", "Split screen"],
+        ["panel", "battery", "<rect x='2' y='7' width='17' height='10' rx='2.5'/><path d='M22 11v2M6 10v4M10 10v4'/>", "Battery"],
+        ["panel", "storage", "<ellipse cx='12' cy='5' rx='8' ry='3'/><path d='M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3'/>", "Storage"],
+        ["panel", "camera", "<path d='M3 8a2 2 0 0 1 2-2h2.5l1.5-2h6l1.5 2H19a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z'/><circle cx='12' cy='13' r='3.5'/>", "Camera"],
+        ["panel", "dnd", "<circle cx='12' cy='12' r='9'/><path d='M8 12h8'/>", "Do not disturb"],
+        ["act", "lock", "<rect x='4' y='10' width='16' height='11' rx='3'/><path d='M8 10V7a4 4 0 0 1 8 0v3'/>", "Lock"],
+      ];
+      CONTROLS.forEach(([kind, what, icon, label], index) => {
+        const b = el("button", "phone-action" + (index >= 6 ? " extra" : ""));
         b.type = "button";
         b.setAttribute("aria-label", label);
         const glyph = el("i");
-        glyph.innerHTML = icon;
+        glyph.innerHTML = svg(icon);
         b.append(glyph, el("span", "", label));
         b.onclick = async () => {
-          const done = await window.IzukiNative.phoneAction(action);
+          if (kind === "torch") {
+            const r = await window.IzukiNative.torch();
+            if (!r) { setStatus("The flashlight is busy (the camera may be in use)."); return; }
+            b.classList.toggle("on", !!r.on);
+            void window.IzukiNative.haptic?.();
+            setStatus(`Flashlight ${r.on ? "on" : "off"}.`);
+            return;
+          }
+          if (kind === "panel") {
+            const r = await window.IzukiNative.openPanel(what);
+            if (!r) { setStatus(`Android didn't open ${label}. Try again?`); return; }
+            void window.IzukiNative.haptic?.();
+            return;
+          }
+          const done = await window.IzukiNative.phoneAction(what);
           if (!done) { setStatus("Turn on Android control in Settings \u2192 Phone first, then try this again."); return; }
           void window.IzukiNative.haptic?.();
-          if (action !== "lock") setStatus(label + " \u2014 done.");
+          if (what !== "lock") setStatus(label + " \u2014 done.");
         };
         grid.appendChild(b);
-      }
-      dock.appendChild(grid);
+      });
+      let all = false;
+      try { all = localStorage.getItem("izuki.dockAll") === "1"; } catch {}
+      grid.classList.toggle("all", all);
+      const more = el("button", "phone-more", all ? "Fewer controls" : "More controls");
+      more.type = "button";
+      more.setAttribute("aria-expanded", String(all));
+      more.onclick = () => {
+        const open = grid.classList.toggle("all");
+        more.textContent = open ? "Fewer controls" : "More controls";
+        more.setAttribute("aria-expanded", String(open));
+        try { localStorage.setItem("izuki.dockAll", open ? "1" : "0"); } catch {}
+      };
+      dock.append(grid, more);
       w.appendChild(dock);
     }
     const pendingReminders = reminders.filter((r) => !r.done).length;
@@ -1279,6 +1343,7 @@
       talking ? "You're on a live voice call right now: answer in one to three short spoken sentences, the most important thing first. No lists, no markdown, no emoji." : "",
       window.IzukiDrive?.system?.() || "",
       "Respect the requested device. Phone means phone, never silently PC. If a screen action has no clear device, ask which device and do not claim it was done. iPhone web pages cannot unlock or freely control other apps.",
+      agentReady() ? "On this Android phone, Izuki's phone agent does phone jobs itself (settings, storage, apps, battery, Wi-Fi…); never tell them to use or connect their PC for something on this phone." : "",
       `It is now ${now.toLocaleString([], { weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "numeric", minute: "2-digit" })} on the user's phone.`,
       `If they ask to be reminded of something, confirm it and add on its own line at the very end: [REMIND YYYY-MM-DD HH:MM | what to remind them] in their local time, 24-hour clock ("in 20 minutes" is ${stamp(in20)}).`,
       "For an ALARM (\"wake me up at 7\", \"set an alarm for 6:30\") add [ALARM YYYY-MM-DD HH:MM | label | repeat] instead (repeat: empty, daily, weekdays, weekends) — the first time is the next time that clock time comes round. If they share their plans or ask you to plan their day, lay it out briefly and add a [REMIND] a few minutes before each thing (an [ALARM] for getting up), one tag per line.",
@@ -1315,7 +1380,7 @@
     outer?.signal.addEventListener("abort", off, { once: true });
     return {
       signal: ctrl.signal,
-      alive() { clearTimeout(timer); timer = setTimeout(() => ctrl.abort(), ms); },
+      alive(next = ms) { clearTimeout(timer); timer = setTimeout(() => ctrl.abort(), next); },
       done() { clearTimeout(timer); outer?.signal.removeEventListener("abort", off); },
     };
   }
@@ -1324,9 +1389,31 @@
   // Google's "always the current one" names: fixed ones get retired ("Gemini
   // 2.5 Flash is no longer available to new users").
   const MODEL = "gemini-flash-latest", LITE = "gemini-flash-lite-latest";
-  // Models that refused the "don't think first" setting (each newer model
-  // takes a different one, some none): asked without it from then on.
-  let noThinkKnob = store.get("noThinkKnob", []);
+  // How each model is told not to think first. Gemini 2.x takes
+  // thinkingBudget 0; Gemini 3.x refuses it (400) and takes thinkingLevel
+  // "minimal". The old code dropped the setting entirely after that 400, so
+  // every later answer thought at full length: the "sometimes it takes too
+  // long" answers. budget → level → none, remembered per model.
+  let thinkKnob = store.get("thinkKnob", {});
+  const thinkingFor = (model) => {
+    const knob = thinkKnob[model] || "budget";
+    return knob === "budget" ? { thinkingConfig: { thinkingBudget: 0 } }
+      : knob === "level" ? { thinkingConfig: { thinkingLevel: "minimal" } } : {};
+  };
+  // Google Search makes every answer slower. Attach it only when the words
+  // ask for something current or factual, not for "hi" or "make it shorter".
+  const WEB_WORDS = /\b(news|today|tonight|tomorrow|yesterday|latest|current(?:ly)?|right now|this week|weather|forecast|temperature|rain(?:ing|y)?|snow(?:ing)?|sunny|storm|humid|degrees|score|scores|match|price|prices|cost|stock|exchange rate|open now|opening hours|hours|near me|nearby|who is|who's|who was|what is|what's|when is|when's|when did|where is|how much|how many|search|look up|google|website|link|recent|update|release|election|president|population|capital)\b|https?:\/\/|www\.|\b20\d\d\b/i;
+  // The same in the other languages people use here most.
+  const WEB_WORDS_OTHER = /\b(hoy|mañana|ayer|tiempo|clima|lluvia|noticias|precio|quién es|aujourd'hui|demain|météo|pluie|actualités|prix|qui est|heute|morgen|wetter|regen|nachrichten|preis|wer ist)\b/i;
+  const needsWeb = (contents) => {
+    // The last two things they asked: "and in Paris?" follows a weather question.
+    const asked = (contents || []).filter((c) => c.role === "user").slice(-2);
+    const words = asked.map((c) => (c.parts || []).map((p) => p.text || "").join(" ")).join(" ");
+    if (!words.trim()) return false;
+    // A language the word lists don't cover: let Gemini decide, as before.
+    if (!["auto", "english", "pidgin"].includes(speechLanguage)) return true;
+    return WEB_WORDS.test(words) || WEB_WORDS_OTHER.test(words);
+  };
   const usesGemini = () => brain === "gemini" || !brainKeys[brain];
   let liteUntil = store.get("liteUntil", 0);
   // Google Search and link reading, free with the same key. If a model or
@@ -1337,10 +1424,13 @@
   /** Stream a reply; onText gets the text so far. Returns the whole reply.
    *  `system` overrides the usual chat instructions (the apps lane brings its
    *  own protocol, and must not also be told it is just a chatty companion). */
-  async function gemini(contents, onText, model, bare, system) {
+  async function gemini(contents, onText, model, bare, system, retried = false) {
     model = model || (Date.now() < liteUntil ? LITE : MODEL);
-    const tools = !bare && Date.now() > noToolsUntil;
-    const guard = stallGuard(30000);
+    const tools = !bare && Date.now() > noToolsUntil && needsWeb(contents);
+    // The first answer bytes within 12 s (a connection left stale while the
+    // app was in the background used to hang for the full 30 s); then up to
+    // 30 s between pieces.
+    const guard = stallGuard(12000);
     try {
       let res;
       try {
@@ -1354,21 +1444,28 @@
             ...(tools ? { tools: WEB_TOOLS } : {}),
             generationConfig: {
               temperature: 0.7, maxOutputTokens: 900,
-              ...(noThinkKnob.includes(model) ? {} : { thinkingConfig: { thinkingBudget: 0 } }),
+              ...thinkingFor(model),
             },
           }),
         });
       } catch (e) {
-        if (e.name === "AbortError") { bug("gemini: no answer in 30 s", { model }); throw new Error(TOO_SLOW); }
+        if (e.name === "AbortError") {
+          // Not Stop and not the deadline: one fresh try on the quick model, without search.
+          if (!retried && !requestEnd) { note("gemini: no first answer in 12 s, trying again"); guard.done(); return gemini(contents, onText, LITE, true, system, true); }
+          bug("gemini: no answer in time", { model });
+          throw new Error(TOO_SLOW);
+        }
         throw new Error("I can't reach my AI brain — are you online?");
       }
-      if (res.status === 400 && !noThinkKnob.includes(model)) {
+      guard.alive(30000);
+      const knob = thinkKnob[model] || "budget";
+      if (res.status === 400 && knob !== "none") {
         let why = "";
         try { why = (await res.clone().json()).error?.message || ""; } catch {}
         if (!/API key|tool|search|url|ground/i.test(why)) {
-          noThinkKnob.push(model);
-          store.set("noThinkKnob", noThinkKnob);
-          return gemini(contents, onText, model, bare, system);
+          thinkKnob[model] = knob === "budget" ? "level" : "none";
+          store.set("thinkKnob", thinkKnob);
+          return gemini(contents, onText, model, bare, system, retried);
         }
       }
       if (tools && res.status === 400) {
@@ -1413,7 +1510,7 @@
         }
         const { value, done } = chunk;
         if (done) break;
-        guard.alive();
+        guard.alive(30000);
         buf += dec.decode(value, { stream: true });
         let nl;
         while ((nl = buf.indexOf("\n")) >= 0) {
@@ -1448,13 +1545,15 @@
     );
     const headers = { "Content-Type": "application/json", Authorization: "Bearer " + k };
     if (b === BRAINS.openrouter) { headers["HTTP-Referer"] = "https://izukinova.ai/"; headers["X-Title"] = "Izuki"; }
-    const guard = stallGuard(30000);
+    // First bytes within 12 s, then 30 s between pieces (think() falls back to Gemini).
+    const guard = stallGuard(12000);
     try {
       let res;
       try {
         res = await fetch(b.url, { method: "POST", signal: guard.signal, headers, body: JSON.stringify({ model: b.model, messages, stream: true, max_tokens: 900, temperature: 0.7 }) });
+        guard.alive(30000);
       } catch (e) {
-        if (e.name === "AbortError") { bug(`${b.name}: no answer in 30 s`); throw new Error(TOO_SLOW); }
+        if (e.name === "AbortError") { bug(`${b.name}: no answer in time`); throw new Error(TOO_SLOW); }
         if (b === BRAINS.meta) throw new Error("I can't reach Meta Llama from this phone — pick Groq or Gemini here (Meta works on the PC).");
         throw new Error("I can't reach my AI brain — are you online?");
       }
@@ -1494,6 +1593,35 @@
     } finally {
       guard.done();
     }
+  }
+
+  /**
+   * Open the connection to the AI before the question is sent: when the app
+   * comes back to the front, or the person starts typing. A connection left
+   * from before the app went to the background is often dead, and the first
+   * question used to wait on it ("slow until I open AI settings again").
+   */
+  let warmAt = 0;
+  function warmBrain() {
+    if (Date.now() - warmAt < 45000 || !ready()) return;
+    warmAt = Date.now();
+    try {
+      if (usesGemini()) {
+        fetch(`https://generativelanguage.googleapis.com/v1beta/models/${LITE}`, { headers: { "x-goog-api-key": key }, cache: "no-store" }).catch(() => {});
+      } else {
+        const url = String(BRAINS[brain]?.url || "").replace(/\/chat\/completions.*$/, "/models");
+        if (url) fetch(url, { headers: { Authorization: "Bearer " + brainKeys[brain] }, cache: "no-store" }).catch(() => {});
+      }
+    } catch {}
+  }
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) warmBrain(); });
+
+  /** The phone agent's brain: the same keys, its own instructions, no web search (faster). */
+  async function agentThink(system, prompt) {
+    const contents = [{ role: "user", parts: [{ text: prompt }] }];
+    if (usesGemini()) return gemini(contents, null, undefined, true, system);
+    try { return await otherBrain(contents, null, undefined, system); }
+    catch (e) { if (key && !requestEnd) return gemini(contents, null, undefined, true, system); throw e; }
   }
 
   /** Whoever answers: the chosen brain, with Gemini standing in if it fails.
@@ -2028,6 +2156,27 @@
     return /\b(?:scrape|crawl|search the web|search online|look up online)\b/i.test(text)
       || (/https?:\/\//i.test(text) && /\b(?:read|extract|summari[sz]e|compare|check|research)\b/i.test(text));
   };
+  // Things to do on the phone itself: settings, storage, battery, apps…
+  const PHONE_JOB = /\b(storage|(?:free|more) (?:up )?space|space (?:left|on)|taking (?:up )?(?:so much |too much |a lot of |lots of )?(?:space|storage|room)|clean ?up|battery|wi-?fi|bluetooth|hotspot|brightness|dark mode|night (?:mode|light)|screen time|notifications?|ringtone|wallpaper|do not disturb|airplane mode|data usage|mobile data|installed apps|my apps|uninstall|settings?)\b/i;
+  // A request that starts by asking for something to be done.
+  const PHONE_DO = /^(?:(?:please|pls|can you|could you|would you|hey nova|nova|izuki)[,\s]+)*(?:open|launch|start|close|turn (?:on|off)|switch (?:on|off)|enable|set (?!an? alarm|a reminder)|play|pause|go to|take a (?:photo|picture|screenshot)|call|text|message|scroll|tap|press|type|clear|free|clean|connect|disconnect)\b/i;
+  const wantsPhoneJob = (said) => PHONE_JOB.test(String(said || "")) || PHONE_DO.test(String(said || "").trim());
+  /** The Android app does phone jobs itself (the phone agent), with Android control on. */
+  const agentReady = () => !!window.IzukiNative?.installed?.() && window.IzukiNative.platform?.() === "android" && !!window.IzukiAgent;
+  /**
+   * Does this request go to the phone agent? The phone in your hand is the
+   * default device for a phone-shaped job: "check what's taking space" used
+   * to get "connect your PC". "On my PC" still goes to the PC.
+   */
+  function phoneAgentLane(said, lane) {
+    if (!agentReady()) return false;
+    if (pcTarget(said) && !phoneTarget(said)) return false;
+    if (lane === "phone") return true;
+    if (lane === "clarify") return !pcTarget(said);
+    if (lane === "apps" || lane === "web-unavailable") return false;
+    if (wantsReminder(said) || wantsWebRead(said) || wantsAccount(said) || wantsPcStyle(said)) return false;
+    return wantsPhoneJob(said);
+  }
   const requestLane = (said, haveApps, havePc) => {
     // A web read uses the backend, with no mouse/device-control ambiguity.
     if (wantsWebRead(said)) return havePc ? "pc" : "web-unavailable";
@@ -2149,6 +2298,13 @@
     requestWatch = setTimeout(() => endRequest("timeout"), limitMs);
     requestTicker = setInterval(showStage, 1000);
   }
+  /** More time for this request (the phone agent takes several looked-at steps). */
+  function extendRequest(limitMs) {
+    if (!busy || requestEnd) return;
+    clearTimeout(requestWatch);
+    requestLimit = Date.now() - requestStart + limitMs;
+    requestWatch = setTimeout(() => endRequest("timeout"), limitMs);
+  }
   /** What Izuki is really doing now ("Asking Gemini…"); "" once words are showing. */
   function stage(text) {
     requestStage = text || "";
@@ -2192,6 +2348,8 @@
     said = (said || "").trim();
     const files = attached;
     if (busy || (!said && !audio && !files.length)) return;
+    // A voice turn on the lock screen: general questions only.
+    if (turnCtx?.locked && said && !audio) return askLocked(said);
     // On a TV: "Hey Nova" mode only answers when called, and TV requests
     // ("open Netflix", "play the second one") are done on the TV itself.
     if (said && !audio && !files.length && window.IzukiTv?.active) {
@@ -2364,6 +2522,42 @@
         answered();
         await speak(reply); return;
       }
+      if (!files.length && phoneAgentLane(said, lane)) {
+        // The phone agent: the AI works the phone's screen, step by checked step.
+        history.push({ role: "user", text: said });
+        out.textContent = "On it…";
+        stage("Working on your phone…");
+        extendRequest(180000);
+        agentBusy = true;
+        agentStep = "";
+        syncNativeOrb();
+        let result;
+        try {
+          result = await window.IzukiAgent.run(said, {
+            think: agentThink,
+            stopped: () => !!requestEnd,
+            onStep: (line) => {
+              agentStep = line;
+              out.textContent = line;
+              stage(line);
+              if (turnCtx) window.IzukiNative.turnState(turnCtx.id, "think", line);
+              else syncNativeOrb();
+            },
+          });
+        } finally {
+          agentBusy = false;
+          agentStep = "";
+        }
+        if (requestEnd) throw new Error("stopped");
+        reply = result.text || "Done.";
+        out.remove();
+        bubble("izuki", reply);
+        history.push({ role: "model", text: reply });
+        saveAll();
+        answered();
+        await speak(reply);
+        return;
+      }
       if (!files.length && (lane === "phone" || lane === "clarify")) {
         reply = lane === "clarify"
           ? "Do you want that on your phone or your PC? Please repeat the action with ‘on my phone’ or ‘on my PC’. I haven't changed either device."
@@ -2459,6 +2653,48 @@
       replyTools();
       // A Stop is a stop: a call doesn't jump straight back to listening.
       if (talking && !stopped) listen();
+    }
+  }
+
+  /**
+   * A voice turn on the lock screen: general questions only. Nothing from
+   * the chat or memories goes into it, nothing is done on the phone, the PC
+   * or an account, and it isn't added to the conversation.
+   */
+  const LOCKED_SYSTEM = "You are Izuki, a friendly assistant answering out loud on a locked phone. Answer general questions (facts, weather, maths, definitions, quick advice) in one to three short spoken sentences. You know nothing about the phone's owner here and can't do anything on the phone, a computer or an account: for that, say to unlock the phone first. No markdown, no lists, no emoji, no bracketed tags.";
+  const LOCKED_ACTION = /\b(call|ring|dial|text|message|whatsapp|e-?mail|mail|send|remind|alarm|timer|calendar|schedule|contacts?|photos?|pictures?|notes?|delete|pay|buy|order|navigate|directions|take me|open|play|turn (?:on|off)|unlock|password|pin|code|my|mine)\b/i;
+  async function askLocked(said) {
+    bubble("me", said);
+    if (LOCKED_ACTION.test(said) || phoneTarget(said) || pcTarget(said) || wantsAccount(said) || wantsPc(said) || wantsReminder(said) || wantsPhoneJob(said)) {
+      const r = "Unlock your phone first, then ask me again. On the lock screen I only answer general questions.";
+      bubble("izuki", r);
+      await speak(r);
+      return;
+    }
+    busy = true;
+    beginRequest(45000);
+    refreshSend();
+    setOrb("thinking");
+    stage("Thinking…");
+    const out = bubble("izuki", "…");
+    try {
+      const reply = shown(await think([{ role: "user", parts: [{ text: said }] }], null, LOCKED_SYSTEM)).replace(/\[[A-Z][A-Z-]*[^\]]*\]/g, "").trim()
+        || "Hmm, I lost my words there. Try again?";
+      if (requestEnd) throw new Error("stopped");
+      out.textContent = reply;
+      answered();
+      await speak(reply);
+    } catch (e) {
+      out.remove();
+      const r = endedSay(e);
+      bubble("izuki", r, { error: true });
+      if (requestEnd !== "cancelled") await speak(r);
+    } finally {
+      finishRequest();
+      busy = false;
+      refreshSend();
+      setOrb("");
+      setStatus("");
     }
   }
 
@@ -2636,6 +2872,23 @@
   function speakWithPhone(t, onBlocked = () => offerHear(null, t)) {
     return new Promise((resolve) => {
       if (!t) return resolve();
+      if (window.IzukiNative?.canSpeak?.()) {
+        // Android: the WebView has no working speech synthesis (replies were
+        // silent). Android's own voice speaks instead, also from the
+        // background and on the lock screen.
+        const native = window.IzukiNative;
+        let began = 0;
+        const stopCaption = followCaption(t, () => (began ? (((performance.now() - began) / 1000) * 14) / Math.max(1, t.length) : 0));
+        const stop = () => { void native.hushSpeech(); };
+        stopSound = stop;
+        native.speak(t, { turn: turnCtx?.id || "", onStart: () => { began = performance.now(); } }).then((how) => {
+          stopCaption();
+          if (stopSound === stop) stopSound = null;
+          if (how === "error") { note("android voice failed"); onBlocked(); }
+          resolve();
+        });
+        return;
+      }
       if (!("speechSynthesis" in window)) { onBlocked(); return resolve(); }
       const synth = speechSynthesis;
       const pieces = (t.match(/[^.!?…]+[.!?…]*\s*/g) || [t]).map((s) => s.trim()).filter(Boolean);
@@ -2737,16 +2990,30 @@
 
   let speakSeq = 0;
   let pendingVoice = null, manualPlayback = false;
+  /** The last thing said out loud (a voice turn listens again when it was a question). */
+  let lastSpoken = "";
+  /**
+   * Android's voice straight away (no cloud voice round trip) during a voice
+   * turn over another app, or while Izuki is hidden: it starts at once and
+   * works with the screen off. In front, the cloud voice is used as before.
+   */
+  const nativeVoiceFirst = () => !!window.IzukiNative?.canSpeak?.() && (!!turnCtx || document.hidden);
+  /** Tell Android when Izuki's own microphone or voice is in use, so "Hey Nova" steps aside meanwhile. */
+  let pageMicOpen = false, pageTalking = false;
+  const pageVoice = (on) => { pageTalking = !!on; window.IzukiNative?.micBusy?.(pageMicOpen || pageTalking); };
+  const pageMic = (on) => { pageMicOpen = !!on; window.IzukiNative?.micBusy?.(pageMicOpen || pageTalking); };
   /**
    * Say a reply. `stream` is a voiceStream already speaking it while it was
    * written (a call); it's finished with the rest of the words.
    */
   async function speak(t, stream = null) {
-    const wanted = talking || readAloud || fromSiri;
+    // A voice turn (the orb, "Hey Nova") is always answered out loud.
+    const wanted = talking || readAloud || fromSiri || !!turnCtx;
     const siri = fromSiri;
     fromSiri = false;
     if (!wanted || !t) return stream?.cancel();
-    if (!voiceOn) {
+    lastSpoken = t;
+    if (!voiceOn && !turnCtx) {
       stream?.cancel();
       liveSaid(t);
       offerHear(null, t.replace(/[*_#`]/g, ""));
@@ -2755,10 +3022,12 @@
     const s = stream || voiceStream({ siri });
     const ducked = localStorage.getItem("izuki.duck") === "1" && window.IzukiNative?.installed?.();
     if (ducked) void window.IzukiNative?.audioFocus?.(true);
+    pageVoice(true);
     try {
       if (!stream) s.feed(t);
       await s.end(t);
     } finally {
+      pageVoice(false);
       if (ducked) void window.IzukiNative?.audioFocus?.(false);
     }
   }
@@ -2779,7 +3048,7 @@
     const wake = () => { const k = kick; kick = null; k?.(); };
     const push = (w) => {
       w = w.replace(/[*_#`]/g, "").trim();
-      if (w && alive() && !ended) pieces.push({ words: w, url: geminiVoice(w) });
+      if (w && alive() && !ended) pieces.push({ words: w, url: nativeVoiceFirst() ? Promise.resolve(null) : geminiVoice(w) });
       if (!playing && pieces.length) playing = run();
       wake();
     };
@@ -2935,6 +3204,7 @@
     stopSound = null;
     try { stop?.(); } catch {}
     try { player.pause(); } catch {}
+    if (window.IzukiNative?.canSpeak?.()) void window.IzukiNative.hushSpeech();
     if ("speechSynthesis" in window) speechSynthesis.cancel();
   }
 
@@ -2950,6 +3220,9 @@
 
   function stopTalking(message) {
     talking = false;
+    earSeq++;
+    waitingForTap = false;
+    if (window.IzukiNative?.canListen?.()) void window.IzukiNative.stopListening();
     try { recog?.abort(); } catch {}
     try { recorder?.stop(); } catch {}
     hush();
@@ -2970,6 +3243,10 @@
       }
       return record();
     }
+    // Android: its own speech recognizer, the one the phone's assistant uses.
+    // The old way recorded with noise suppression and a loudness gate that
+    // dropped quiet speech ("it mishears unless I speak loudly"), then uploaded it.
+    if (useNativeEars && window.IzukiNative?.canListen?.()) return void listenNative();
     if (useRecorder || !Rec || (isIOS && canHear())) return record();
     let final = "", heardAny = false, failed = "";
     try { recog = new Rec(); } catch { useRecorder = true; return record(); }
@@ -3006,6 +3283,41 @@
     try { recog.start(); } catch (e) { note("speech recognition didn't start: " + (e && e.name)); setTimeout(listen, 500); }
   }
 
+  let useNativeEars = true, earSeq = 0, waitingForTap = false;
+  /** One listening session with Android's recognizer; the call goes on after the answer. */
+  async function listenNative() {
+    const my = ++earSeq;
+    waitingForTap = false;
+    setOrb("listening");
+    setStatus("");
+    const r = await window.IzukiNative.listen((words) => {
+      if (my !== earSeq || !talking) return;
+      liveHeard(words);
+      IzukiOrb.kick(0.55);
+    });
+    if (my !== earSeq || !talking || busy || manualPlayback) return;
+    if (r.text) { missed = 0; liveHeard(r.text); return ask(r.text); }
+    if (r.error === "cancelled") return;
+    if (r.error === "permission") return stopTalking("Allow the microphone for Izuki, then tap Call again.");
+    if (r.error === "silence") {
+      // A quiet moment: listen again, but don't keep the recognizer chiming
+      // for ever — after a few, wait for a tap on the orb.
+      if (++missed >= 3) {
+        missed = 0;
+        waitingForTap = true;
+        setOrb("");
+        setStatus("Tap the orb when you want to talk.");
+        return;
+      }
+      return void setTimeout(listen, 250);
+    }
+    // Busy, unavailable or offline: record and let the AI hear it, as before.
+    note("android listening: " + r.error);
+    useNativeEars = false;
+    if (canHear()) return record();
+    return stopTalking("Android's speech recognition isn't working right now — type instead, or try the call again in a moment.");
+  }
+
   // The microphone stays open for the whole call (opened from the tap), so
   // the phone asks only once and each turn starts at once.
   let callMic = null, analyser = null, meterCtx = null;
@@ -3013,6 +3325,7 @@
   async function openMic() {
     if (callMic && callMic.getAudioTracks().some((t) => t.readyState === "live")) return callMic;
     callMic = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+    pageMic(true);
     buildMeter();
     return callMic;
   }
@@ -3039,6 +3352,7 @@
   }
   function closeMic() {
     try { callMic?.getTracks().forEach((t) => t.stop()); } catch {}
+    if (callMic) pageMic(false);
     callMic = null;
     analyser = null;
     try { meterCtx?.close(); } catch {}
@@ -3201,7 +3515,7 @@
       store.set("keepOrb", keepOrb);
       window.IzukiNative?.setOrbOverApps?.(keepOrb);
       syncNativeOrb();
-      setStatus(keepOrb ? "The orb will stay over other apps." : "The orb only shows inside Izuki now.");
+      setStatus(keepOrb ? "A small orb will rest over your other apps." : "The orb only appears while Izuki listens, works or talks.");
       setTimeout(() => setStatus(""), 2200);
     };
   }
@@ -3283,6 +3597,12 @@
   $("live-orb").onclick = () => {
     if (orbState === "speaking") { hush(); return; }
     if (recorder) { try { recorder.stop(); } catch {} return; }
+    if (window.IzukiNative?.canListen?.() && useNativeEars) {
+      // Waiting after a quiet spell: listen now. Listening: "I'm done", the words so far count.
+      if (talking && !busy && (waitingForTap || orbState !== "listening")) { setStatus(""); listen(); return; }
+      void window.IzukiNative.stopListening(true);
+      return;
+    }
     try { recog?.stop(); } catch {}
   };
   $("read-aloud").classList.toggle("on", readAloud);
@@ -3312,7 +3632,9 @@
   });
 
   // ------------------------------------------------------------ typing
+  text.addEventListener("focus", () => warmBrain());
   text.addEventListener("input", () => {
+    warmBrain();
     refreshSend();
     text.style.height = "auto";
     text.style.height = Math.min(text.scrollHeight, 120) + "px";
@@ -3658,40 +3980,175 @@
     teach.onclick = () => void teachVoice();
   }
 
-  /** Three short recordings → a voice template (recordings are dropped right after). */
-  async function teachVoice() {
-    const teach = $("vm-teach");
-    teach.disabled = true;
-    const say = (t) => paintVoiceMatch(t);
-    let stream = null;
+  /**
+   * Teach my voice: a guided screen. Three different sentences (one
+   * sentence three times taught less), a big record button with a live
+   * meter, a check for each take with "redo", and the model's download
+   * progress. Only the voice template is kept; the recordings are dropped.
+   */
+  const VM_LINES = [
+    "Hey Nova, what's the weather like today?",
+    "Hey Nova, remind me to call my mum at six.",
+    "Hey Nova, open YouTube and play some music.",
+  ];
+  let vm = null;
+  const vmNote = (t, bad = false) => { const n = $("vm-note"); n.textContent = t || ""; n.classList.toggle("bad", !!bad); };
+  function vmPaint() {
+    if (!vm) return;
+    const steps = $("vm-steps");
+    steps.replaceChildren();
+    VM_LINES.forEach((line, i) => {
+      const li = el("li", "vm-step" + (vm.clips[i] ? " done" : "") + (i === vm.step && !vm.learned ? " now" : ""));
+      const b = el("button", "", vm.clips[i] ? "✓" : String(i + 1));
+      b.type = "button";
+      b.disabled = vm.busy || vm.learned;
+      b.setAttribute("aria-label", vm.clips[i] ? `Recording ${i + 1} done: tap to record it again` : `Recording ${i + 1}`);
+      b.onclick = () => { if (vm.busy) return; vm.step = i; vm.clips[i] = null; vmNote(""); vmPaint(); };
+      li.append(b);
+      steps.append(li);
+    });
+    const left = vm.clips.filter((c) => !c).length;
+    $("vm-say-label").textContent = vm.learned ? "All set." : left ? `Recording ${vm.step + 1} of 3 — say this in your normal voice:` : "All three recorded.";
+    $("vm-say").textContent = vm.learned || !left ? "" : `“${VM_LINES[vm.step]}”`;
+    $("vm-rec").hidden = vm.learned || !left;
+    $("vm-rec").disabled = vm.busy;
+  }
+  function vmPrepare() {
+    const box = $("vm-model"), fill = $("vm-model-fill"), words = $("vm-model-text");
+    box.hidden = false;
+    words.textContent = "Getting the voice model ready (about 95 MB, only the first time)…";
+    fill.style.width = "4%";
+    vm.prep = window.IzukiVoiceMatch.prepare((pct) => {
+      fill.style.width = `${Math.max(4, Math.min(100, pct))}%`;
+      words.textContent = `Downloading the voice model… ${Math.round(pct)}%`;
+    }).then(() => {
+      fill.style.width = "100%";
+      words.textContent = "Voice model ready.";
+      setTimeout(() => { if (vm && !vm.learned) box.hidden = true; }, 1200);
+    });
+    vm.prep.catch((e) => {
+      words.textContent = `The voice model didn't download: ${e?.message || e}. Check the internet; it tries again when you finish.`;
+      fill.style.width = "0%";
+    });
+  }
+  /** One take: Android records it (with a live level) in the app; the browser elsewhere. */
+  async function vmCapture(ms, onLevel) {
+    if (window.IzukiNative?.canListen?.()) {
+      const clip = await window.IzukiNative.recordClip(ms, onLevel);
+      if (!clip) throw new Error("The microphone is busy (another app may be using it). Try again in a moment.");
+      return clip;
+    }
+    if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) throw new Error("This browser can't record. Use the Izuki app on your phone.");
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const AC = window.AudioContext || window.webkitAudioContext;
+    const ctx = AC ? new AC() : null;
+    let peak = 0, timer = 0;
     try {
-      say("Getting the voice model ready (about 95 MB the first time)…");
-      await window.IzukiVoiceMatch.prepare();
-      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const clips = [];
-      for (let i = 1; i <= 3; i++) {
-        say(`Recording ${i} of 3: say “Hey Nova, what's the weather today?” now…`);
-        clips.push(await new Promise((resolve, reject) => {
-          const rec = new MediaRecorder(stream);
-          const parts = [];
-          rec.ondataavailable = (e) => { if (e.data.size) parts.push(e.data); };
-          rec.onstop = () => resolve(new Blob(parts, { type: rec.mimeType || "audio/webm" }));
-          rec.onerror = () => reject(new Error("The recording stopped."));
-          rec.start();
-          setTimeout(() => { try { rec.stop(); } catch {} }, 3500);
-        }));
-        if (i < 3) { say("Got it. Next one in a moment…"); await new Promise((r) => setTimeout(r, 900)); }
+      const analyser = ctx?.createAnalyser();
+      if (analyser) {
+        ctx.createMediaStreamSource(stream).connect(analyser);
+        const buf = new Float32Array(1024);
+        timer = setInterval(() => {
+          analyser.getFloatTimeDomainData(buf);
+          let top = 0;
+          for (const v of buf) top = Math.max(top, Math.abs(v));
+          peak = Math.max(peak, top);
+          onLevel(top);
+        }, 90);
       }
-      say("Learning your voice…");
-      await window.IzukiVoiceMatch.enroll(userName() || "Me", clips);
-      paintVoiceMatch("Done. Voice match is on: “Hey Nova” only starts things for your voice.");
-    } catch (error) {
-      paintVoiceMatch(`Voice match wasn't set up: ${error?.message || error}`);
+      const blob = await new Promise((resolve, reject) => {
+        const rec = new MediaRecorder(stream);
+        const parts = [];
+        rec.ondataavailable = (e) => { if (e.data.size) parts.push(e.data); };
+        rec.onstop = () => resolve(new Blob(parts, { type: rec.mimeType || "audio/webm" }));
+        rec.onerror = () => reject(new Error("The recording stopped."));
+        rec.start();
+        setTimeout(() => { try { rec.stop(); } catch {} }, ms);
+      });
+      return { blob, peak: analyser ? peak : 1 };
     } finally {
-      stream?.getTracks?.().forEach((t) => t.stop());
-      teach.disabled = false;
+      clearInterval(timer);
+      stream.getTracks().forEach((t) => t.stop());
+      try { await ctx?.close(); } catch {}
     }
   }
+  async function vmRecord() {
+    if (!vm || vm.busy) return;
+    vm.busy = true;
+    vmPaint();
+    const btn = $("vm-rec"), label = $("vm-rec-label"), level = $("vm-level");
+    const meter = (v) => {
+      const k = Math.min(1, Math.max(0, v) * 5);
+      level.style.transform = `scale(${1 + k * 0.55})`;
+      level.style.opacity = String(0.25 + k * 0.75);
+    };
+    btn.classList.add("live");
+    label.textContent = "Listening… speak now";
+    vmNote("");
+    try {
+      const clip = await vmCapture(4000, meter);
+      if ((clip.peak ?? 1) < 0.03) throw new Error("I barely heard you. Hold the phone a little closer and say it in your normal voice.");
+      vm.clips[vm.step] = clip;
+      const next = vm.clips.findIndex((c) => !c);
+      if (next >= 0) { vm.step = next; vmNote("Got it ✓  Next sentence:"); }
+      else await vmLearn();
+    } catch (e) {
+      vmNote(String(e?.message || e), true);
+    } finally {
+      vm.busy = false;
+      btn.classList.remove("live");
+      meter(0);
+      label.textContent = "Tap, then speak";
+      vmPaint();
+    }
+  }
+  async function vmLearn() {
+    vmNote("Learning your voice…");
+    try { await vm.prep; }
+    catch { vmPrepare(); await vm.prep; }
+    try {
+      await window.IzukiVoiceMatch.enroll(userName() || "Me", vm.clips.map((c) => c.blob || { type: c.type, b64: c.b64 }));
+    } catch (e) {
+      throw new Error(`${e?.message || e} Tap a number above to record that sentence again.`);
+    }
+    vm.learned = true;
+    $("vm-model").hidden = true;
+    $("vm-finish").hidden = false;
+    vmNote("Done ✓ Voice match is on. Say “Hey Nova”: other voices won't start Izuki now. A tap on the orb still works.");
+    paintVoiceMatch();
+  }
+  let vmOpener = null;
+  function teachVoice() {
+    vm = { clips: [null, null, null], step: 0, busy: false, learned: false, prep: null };
+    $("vm-finish").hidden = true;
+    vmNote("");
+    vmOpener = document.activeElement;
+    $("vm-sheet").hidden = false;
+    vmPaint();
+    vmPrepare();
+    // A dialog: focus goes in, stays in (Tab wraps), Escape closes, and
+    // focus returns to "Teach my voice" afterwards.
+    setTimeout(() => $("vm-rec").focus(), 0);
+  }
+  const vmClose = () => {
+    if (vm?.busy) return;
+    $("vm-sheet").hidden = true;
+    paintVoiceMatch();
+    try { vmOpener?.focus?.(); } catch {}
+  };
+  $("vm-sheet").addEventListener("keydown", (e) => {
+    if (e.key === "Escape") { e.preventDefault(); vmClose(); return; }
+    if (e.key !== "Tab") return;
+    const stops = [...$("vm-sheet").querySelectorAll("button:not([disabled])")].filter((b) => !b.hidden && b.offsetParent !== null);
+    if (!stops.length) return;
+    const first = stops[0], last = stops[stops.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  });
+  $("vm-rec").onclick = () => void vmRecord();
+  $("vm-close").onclick = vmClose;
+  $("vm-finish").onclick = vmClose;
+  $("vm-sheet").addEventListener("click", (e) => { if (e.target === $("vm-sheet")) vmClose(); });
 
   /** The diagnostics report as plain lines (also what "Copy report" copies). */
   async function showDiagnostics() {
@@ -4091,7 +4548,9 @@
   $("speech-language").onchange = () => {
     speechLanguage = HEARING[$("speech-language").value] ? $("speech-language").value : "auto";
     store.set("speechLanguage", speechLanguage);
+    window.IzukiNative?.setHearing?.(hearing().code);
   };
+  window.IzukiNative?.setHearing?.(hearing().code);
   window.IzukiOrb.add($("orb-preview"));
   function updateOrbPreview() {
     window.IzukiOrb.preview($("orb-preview"),$("orb-style").value,$("orb-preview-state").value);
@@ -4607,6 +5066,84 @@
     pendingWake = "";
     void startWake(phrase, window.IzukiNative?.takeWakeAudio?.());
   }
+  // ---- voice turns (Android): the orb, "Hey Nova", the tile, the notification
+  // Android listened over whatever app was open; the answer is spoken there
+  // by Android's voice, and the chat keeps it for when Izuki is opened.
+  // Turns stopped by a tap, remembered by id even before (or without) owning
+  // the page: a Stop during the wait below or during voice match still counts.
+  const cancelledTurns = new Set();
+  window.IzukiNative?.onTurn?.(async (d) => {
+    const id = String(d?.id || "");
+    const said = String(d?.text || "").trim();
+    if (!id) return;
+    const finish = (follow) => { cancelledTurns.delete(id); window.IzukiNative.turnDone(id, follow); };
+    if (!said) return finish(false);
+    // A new turn replaces the one before it (Android already sent its cancel):
+    // give that request a moment to stop before calling Izuki busy.
+    const until = Date.now() + 2500;
+    while ((busy || turnCtx) && Date.now() < until && !cancelledTurns.has(id)) await window.IzukiNative.pause(100);
+    if (cancelledTurns.has(id)) return finish(false);
+    if (busy || turnCtx) {
+      // Spoken to this turn only: the running turn keeps its own context.
+      await window.IzukiNative.speak("I'm still on the last thing. Tap the orb to stop it.", { turn: id });
+      return finish(false);
+    }
+    // This turn owns the page from here, verification included, so a cancel
+    // (a tap on the orb) or a second turn is seen while it is still checking.
+    const mine = { id, locked: !!d.locked, source: String(d.source || ""), cancelled: false };
+    turnCtx = mine;
+    lastSpoken = "";
+    const say = async (words) => { lastSpoken = words; await speakWithPhone(words, () => {}); };
+    const stopped = () => mine.cancelled || cancelledTurns.has(id);
+    try {
+      // Voice match is a safety switch: "Hey Nova" goes ahead only for the taught voice.
+      if (d.wake) {
+        const vm = window.IzukiVoiceMatch?.read?.();
+        if (vm?.enabled && vm.profiles?.length) {
+          await window.IzukiNative.takeWake?.();
+          const extra = window.IzukiNative.takeWakeAudio?.() || {};
+          if (stopped()) return;
+          window.IzukiNative.turnState(id, "think", "Checking it's you…");
+          const heard = extra.audio ? await window.IzukiVoiceMatch.check({ type: "audio/wav", b64: extra.audio }) : { ok: false, why: "no-audio" };
+          if (stopped()) return;
+          if (!heard.ok) {
+            await say(heard.why === "not-you"
+              ? "That didn't sound like you, so I won't do it. If it's you, tap the orb and ask."
+              : "I couldn't hear “Hey Nova” clearly enough to check it's you. Tap the orb and ask instead.");
+            lastSpoken = "";
+            return;
+          }
+        }
+      }
+      if (!ready()) {
+        await say("I need an AI key first. Open Izuki and add a free Gemini key in Settings.");
+        lastSpoken = "";
+        return;
+      }
+      if (stopped()) return;
+      await ask(said);
+    } catch (e) {
+      note("voice turn failed: " + (e?.message || e));
+    } finally {
+      // Siri-style: an answer that asks something listens for the reply.
+      const follow = !stopped() && /\?["”'’)]*$/.test(lastSpoken.trim());
+      if (turnCtx === mine) turnCtx = null;
+      finish(follow);
+    }
+  });
+  // A tap on the orb while it says "Tap to stop" over Izuki's own reply or phone agent run.
+  window.IzukiNative?.onStop?.(() => {
+    if (busy) endRequest("cancelled");
+    else hush();
+    setStatus("Stopped.");
+  });
+  window.IzukiNative?.onTurnCancel?.((d) => {
+    if (d?.id) cancelledTurns.add(String(d.id));
+    if (!turnCtx || turnCtx.id !== d?.id) return;
+    turnCtx.cancelled = true;
+    if (busy) endRequest("cancelled"); else hush();
+  });
+
   window.IzukiNative?.onWake?.((data) => {
     pendingWake = String(data?.phrase || "Hey Nova");
     if (!document.hidden) void receiveWake();

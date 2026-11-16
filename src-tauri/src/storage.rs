@@ -263,109 +263,206 @@ fn gb(v: f64) -> String {
     if v >= 100.0 { format!("{v:.0} GB") } else if v >= 1.0 { format!("{v:.1} GB") } else { format!("{:.0} MB", v * 1000.0) }
 }
 
+/// When the last report was given: the "your drive is nearly full" nudge
+/// doesn't follow straight after one (it used to, offering to find what the
+/// report had just listed).
+static LAST_REPORT: parking_lot::Mutex<Option<Instant>> = parking_lot::Mutex::new(None);
+
+/// A storage report was given in the last half hour.
+pub fn reported_recently() -> bool {
+    LAST_REPORT.lock().is_some_and(|t| t.elapsed() < Duration::from_secs(30 * 60))
+}
+
+/// One profile folder in the report: its size (or a lower bound when the
+/// count ran out of time) and its biggest folders inside, (name, GB).
+struct FolderLine {
+    name: String,
+    gb: f64,
+    done: bool,
+    inside: Vec<(String, f64)>,
+}
+
 /// The answer, in plain words.
 pub fn report() -> String {
     let started = Instant::now();
-    let mut lines = Vec::new();
-    // The biggest folders, by name, for a look inside the top two.
-    let mut top_folders: Vec<String> = Vec::new();
-
     let ds = drives();
-    if !ds.is_empty() {
-        let parts: Vec<String> = ds.iter().map(|(d, free, total)| format!("{d} has {} free of {}", gb(*free), gb(*total))).collect();
-        lines.push(format!("{}.", parts.join("; ")));
-    }
-
     let apps = biggest_apps(8);
-    if !apps.is_empty() {
-        let list: Vec<String> = apps.iter().map(|(n, g)| format!("{n} ({})", gb(*g))).collect();
-        lines.push(format!("Biggest installed apps: {}.", list.join(", ")));
-    }
 
     // The usual big folders, each given a fair share of a few seconds.
+    let mut folders: Vec<FolderLine> = Vec::new();
     if let Some(home) = dirs::home_dir() {
-        let folders = ["Downloads", "Videos", "Pictures", "Documents", "Desktop", "Music", "AppData\\Local", "AppData\\Roaming"];
+        let names = ["Downloads", "Videos", "Pictures", "Documents", "Desktop", "Music", "AppData\\Local", "AppData\\Roaming"];
         let budget = Duration::from_secs(10).saturating_sub(started.elapsed()).max(Duration::from_secs(3));
-        let each = budget / folders.len() as u32;
-        let mut sized: Vec<(String, f64, bool)> = folders
+        let each = budget / names.len() as u32;
+        folders = names
             .iter()
             .map(|f| {
                 let (g, done) = folder_size(&home.join(f), Instant::now() + each);
-                (f.replace("AppData\\", "AppData › "), g, done)
+                FolderLine { name: f.replace("AppData\\", "AppData › "), gb: g, done, inside: Vec::new() }
             })
-            .filter(|(_, g, _)| *g >= 0.5)
+            .filter(|f| f.gb >= 0.5)
             .collect();
-        sized.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-        top_folders = sized.iter().map(|(n, _, _)| n.clone()).collect();
-        if !sized.is_empty() {
-            let list: Vec<String> = sized
-                .iter()
-                .take(5)
-                .map(|(n, g, done)| format!("{n} {}{}", if *done { "" } else { "at least " }, gb(*g)))
-                .collect();
-            lines.push(format!("Biggest folders: {}.", list.join(", ")));
-        }
+        folders.sort_by(|a, b| b.gb.partial_cmp(&a.gb).unwrap_or(std::cmp::Ordering::Equal));
     }
-
-    if lines.is_empty() {
+    if ds.is_empty() && apps.is_empty() && folders.is_empty() {
         return "I couldn't read your drives just now — try again in a moment.".into();
     }
-    let low = ds.iter().any(|(_, free, total)| *free < 10.0 || *free / total.max(1.0) < 0.05);
     // Inside the two biggest folders, the biggest single files, and what can
     // go — in the time that's left (about 12 s more at most).
     let deadline = Instant::now() + Duration::from_secs(12);
     let found = std::sync::Arc::new(parking_lot::Mutex::new(Found::default()));
     if let Some(home) = dirs::home_dir() {
-        let tops = top_folders.iter().take(2).cloned().collect::<Vec<_>>();
-        let jobs: Vec<_> = tops
-            .into_iter()
-            .map(|name| {
-                let (found, path) = (found.clone(), home.join(name.replace("AppData › ", "AppData\\")));
-                std::thread::spawn(move || (name, look_inside(&path, deadline, &found)))
+        let jobs: Vec<_> = folders
+            .iter()
+            .take(2)
+            .enumerate()
+            .map(|(i, f)| {
+                let (found, path) = (found.clone(), home.join(f.name.replace("AppData › ", "AppData\\")));
+                std::thread::spawn(move || (i, look_inside(&path, deadline, &found)))
             })
             .collect();
         for j in jobs {
-            if let Ok((name, inside)) = j.join() {
-                let inside: Vec<String> = inside.iter().filter(|(_, b)| *b >= 500_000_000).take(3).map(|(n, b)| format!("{n} {}", gb(*b as f64 / 1e9))).collect();
-                if !inside.is_empty() {
-                    lines.push(format!("Biggest inside {name}: {}.", inside.join(", ")));
-                }
+            if let Ok((i, inside)) = j.join() {
+                let line = &mut folders[i];
+                // The look inside counted longer than the first pass: a
+                // folder is never shown smaller than what's inside it.
+                let counted: u64 = inside.iter().map(|(_, b)| *b).sum();
+                line.gb = line.gb.max(counted as f64 / 1e9);
+                line.inside = inside.iter().filter(|(_, b)| *b >= 500_000_000).take(3).map(|(n, b)| (n.clone(), *b as f64 / 1e9)).collect();
             }
         }
     }
     let mut found = std::mem::take(&mut *found.lock());
     found.big_files.sort_by(|a, b| b.1.cmp(&a.1));
     found.big_files.dedup_by(|a, b| a.0 == b.0);
-    if !found.big_files.is_empty() {
-        let list: Vec<String> = found
-            .big_files
-            .iter()
-            .take(4)
-            .map(|(p, b)| format!("{} ({})", p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(), gb(*b as f64 / 1e9)))
-            .collect();
-        lines.push(format!("Biggest single files: {}.", list.join(", ")));
-    }
+    let files = group_parts(&found.big_files);
     let mut safe = Vec::new();
-    let temp = old_temp_bytes(Instant::now() + Duration::from_secs(3));
-    if temp >= 50_000_000 {
-        safe.push(format!("old temporary files, about {} — say “clear the safe stuff” and I'll do it", gb(temp as f64 / 1e9)));
-    }
-    if let Some((items, mb)) = crate::recyclebin::size().filter(|(items, _)| *items > 0) {
-        safe.push(format!("the Recycle Bin, {} ({items} item{}) — say “empty the Recycle Bin” if you're sure", gb(mb as f64 / 1000.0), if items == 1 { "" } else { "s" }));
-    }
     found.rebuild.sort_by(|a, b| b.2.cmp(&a.2));
     if let Some((what, path, b)) = found.rebuild.first() {
-        safe.push(format!("{what} in {} ({}) rebuilds itself if deleted — remove it yourself when you're done with that project", where_in_home(path), gb(*b as f64 / 1e9)));
+        safe.push(format!("{what}, {}, in {}: it rebuilds itself, so delete it when you're done with that project", gb(*b as f64 / 1e9), where_in_home(path)));
+    }
+    let temp = old_temp_bytes(Instant::now() + Duration::from_secs(3));
+    if temp >= 50_000_000 {
+        safe.push(format!("Old temporary files, about {}: say “clear the safe stuff” and I'll do it", gb(temp as f64 / 1e9)));
+    }
+    if let Some((items, mb)) = crate::recyclebin::size().filter(|(items, _)| *items > 0) {
+        safe.push(format!("The Recycle Bin, {} ({items} item{}): say “empty the Recycle Bin” if you're sure", gb(mb as f64 / 1000.0), if items == 1 { "" } else { "s" }));
+    }
+    let text = compose(&ds, &apps, &folders, &files, &safe);
+    // Only a report actually given holds the low-disk nudge back.
+    *LAST_REPORT.lock() = Some(Instant::now());
+    text
+}
+
+/// The report's words: a headline, then a few short lines, not a paragraph.
+fn compose(ds: &[(String, f64, f64)], apps: &[(String, f64)], folders: &[FolderLine], files: &[(String, u64)], safe: &[String]) -> String {
+    let low = |free: f64, total: f64| free < 10.0 || free / total.max(1.0) < 0.05;
+    let mut out: Vec<String> = Vec::new();
+    if !ds.is_empty() {
+        let head: Vec<String> = ds
+            .iter()
+            .map(|(d, free, total)| if low(*free, *total) { format!("{d} is nearly full: {} free of {}.", gb(*free), gb(*total)) } else { format!("{d} has {} free of {}.", gb(*free), gb(*total)) })
+            .collect();
+        out.push(head.join(" "));
+    }
+    if !folders.is_empty() {
+        let mut block = vec!["Taking the most space:".to_string()];
+        for f in folders.iter().take(3) {
+            let size = format!("{}{}", if f.done { "" } else { "at least " }, gb(f.gb));
+            let inside: Vec<String> = f.inside.iter().map(|(n, g)| format!("{n} {}", gb(*g))).collect();
+            block.push(if inside.is_empty() { format!("- {}: {size}", f.name) } else { format!("- {}: {size} ({})", f.name, inside.join(", ")) });
+        }
+        out.push(block.join("\n"));
+    }
+    let mut also = Vec::new();
+    if !apps.is_empty() {
+        let list: Vec<String> = apps.iter().take(4).map(|(n, g)| format!("{} {}", tidy_app(n), gb(*g))).collect();
+        also.push(format!("Biggest apps: {}.", list.join(", ")));
+    }
+    if !files.is_empty() {
+        let list: Vec<String> = files.iter().take(3).map(|(n, b)| format!("{n} {}", gb(*b as f64 / 1e9))).collect();
+        also.push(format!("Biggest files: {}.", list.join(", ")));
+    }
+    if !also.is_empty() {
+        out.push(also.join("\n"));
     }
     if !safe.is_empty() {
-        lines.push(format!("Safe to clear: {}.", safe.join("; ")));
+        let mut block = vec!["You can clear:".to_string()];
+        block.extend(safe.iter().map(|s| format!("- {s}.")));
+        out.push(block.join("\n"));
     }
-    lines.push(if low {
-        "Your own files I only show, never delete — say “open Downloads” (or any folder) to go through it, or “open apps and features” to uninstall something big.".into()
-    } else {
-        "Say “open apps and features” to remove an app, or “open Downloads” (or any folder) to go through it yourself.".into()
-    });
-    lines.join(" ")
+    out.push("I never delete your own files. Say “open Downloads” (or any folder) to go through it, or “open apps and features” to remove an app.".into());
+    out.join("\n\n")
+}
+
+/// An app's name without its version or edition clutter:
+/// "Ollama version 0.40.0" → "Ollama", "Freebuff 0.0.201" → "Freebuff",
+/// "Windows Software Development Kit - Windows 10.0.26100.7705" → "Windows Software Development Kit".
+fn tidy_app(name: &str) -> String {
+    let mut n = name.trim().to_string();
+    for cut in [" version ", " Version ", " - Windows ", " (User)", " (x64)", " (64-bit)", " (x86)"] {
+        if let Some(i) = n.find(cut) {
+            n.truncate(i);
+        }
+    }
+    // A trailing version number: "App 1.2.3" or "App v1.2".
+    let words: Vec<&str> = n.split_whitespace().collect();
+    if words.len() > 1 {
+        let last = words[words.len() - 1].trim_start_matches(|c: char| c == 'v' || c == 'V');
+        if last.contains('.') && last.chars().all(|c| c.is_ascii_digit() || c == '.') {
+            n = words[..words.len() - 1].join(" ");
+        }
+    }
+    n.trim_end_matches(&[' ', '-', ','][..]).to_string()
+}
+
+/// Where a split archive's name stops: "faces.part03.rar", "faces.7z.001", "faces.z01" → "faces".
+fn part_stem(name: &str) -> Option<usize> {
+    // ASCII-only lowercasing keeps every byte where it was, so the offset
+    // slices the real name (full lowercasing can change a name's length:
+    // "\u{212A}" — the Kelvin sign — becomes a one-byte "k").
+    let lower = name.to_ascii_lowercase();
+    if let Some(i) = lower.rfind(".part") {
+        let rest = &lower[i + 5..];
+        if let Some(num) = rest.strip_suffix(".rar") {
+            if !num.is_empty() && num.chars().all(|c| c.is_ascii_digit()) {
+                return Some(i);
+            }
+        }
+    }
+    let dot = lower.rfind('.')?;
+    let ext = &lower[dot + 1..];
+    if ext.len() == 3 && ext.chars().all(|c| c.is_ascii_digit()) {
+        let before = &lower[..dot];
+        return Some(before.rfind('.').filter(|j| matches!(&before[j + 1..], "7z" | "zip" | "rar")).unwrap_or(dot));
+    }
+    if ext.len() == 3 && (ext.starts_with('z') || ext.starts_with('r')) && ext[1..].chars().all(|c| c.is_ascii_digit()) {
+        return Some(dot);
+    }
+    None
+}
+
+/// Big files with the parts of one split archive counted together:
+/// (name, bytes), biggest first; "facepack (4 parts)" instead of four lines.
+/// Parts belong together only in the same folder.
+fn group_parts(files: &[(std::path::PathBuf, u64)]) -> Vec<(String, u64)> {
+    // (folder, stem, first name, bytes, parts)
+    let mut groups: Vec<(std::path::PathBuf, String, String, u64, usize)> = Vec::new();
+    for (path, bytes) in files {
+        let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        let folder = path.parent().map(|p| p.to_path_buf()).unwrap_or_default();
+        let stem = part_stem(&name).map(|i| name[..i].to_string());
+        match stem.as_ref().and_then(|s| groups.iter_mut().find(|g| g.4 > 0 && g.1 == *s && g.0 == folder)) {
+            Some(g) => { g.3 += bytes; g.4 += 1; }
+            None => groups.push((folder, stem.clone().unwrap_or_else(|| name.clone()), name, *bytes, usize::from(stem.is_some()))),
+        }
+    }
+    let mut out: Vec<(String, u64)> = groups
+        .into_iter()
+        .map(|(_, stem, first, bytes, parts)| (if parts > 1 { format!("{stem} ({parts} parts)") } else { first }, bytes))
+        .collect();
+    out.sort_by(|a, b| b.1.cmp(&a.1));
+    out
 }
 
 /// A place the way you'd find it: "Downloads › project › target" under
@@ -544,6 +641,50 @@ mod tests {
     fn prints_the_real_report() {
         let t = std::time::Instant::now();
         println!("{}\n(took {} ms)", super::report(), t.elapsed().as_millis());
+    }
+
+    #[test]
+    fn the_report_reads_in_short_lines() {
+        use super::{compose, group_parts, tidy_app, FolderLine};
+        // The owner's real numbers (2026-11-15), which came out as one long paragraph.
+        let ds = vec![("C:".to_string(), 4.8, 568.0)];
+        let apps = vec![
+            ("Microsoft Edge".to_string(), 4.2),
+            ("Ollama version 0.40.0".to_string(), 2.8),
+            ("Windows Software Development Kit - Windows 10.0.26100.7705".to_string(), 2.3),
+            ("Arcade".to_string(), 1.8),
+            ("Freebuff 0.0.201".to_string(), 0.8),
+        ];
+        let folders = vec![
+            FolderLine { name: "Downloads".into(), gb: 94.7, done: false, inside: vec![("Faces".into(), 37.1), ("Nova_Izuki".into(), 17.4)] },
+            FolderLine { name: "AppData › Local".into(), gb: 9.8, done: false, inside: vec![("Arduino15".into(), 9.8)] },
+            FolderLine { name: "Music".into(), gb: 6.9, done: true, inside: vec![] },
+            FolderLine { name: "Videos".into(), gb: 1.3, done: true, inside: vec![] },
+        ];
+        let dl = std::path::PathBuf::from("Downloads");
+        let big: Vec<(std::path::PathBuf, u64)> = (1..=4).map(|i| (dl.join(format!("facepack2627.part0{i}.rar")), 4_700_000_000)).chain([(dl.join("movie.mkv"), 2_000_000_000)]).collect();
+        let files = group_parts(&big);
+        let safe = vec!["A Rust build folder (target), 4.0 GB, in Downloads › Nova_Izuki › izuki › src-tauri › target: it rebuilds itself, so delete it when you're done with that project".to_string()];
+        let text = compose(&ds, &apps, &folders, &files, &safe);
+        println!("{text}");
+        assert!(text.starts_with("C: is nearly full: 4.8 GB free of 568 GB."));
+        assert!(text.contains("\n- Downloads: at least 94.7 GB (Faces 37.1 GB, Nova_Izuki 17.4 GB)"));
+        assert!(!text.contains("Videos"), "three folders, not every folder");
+        assert!(text.contains("Biggest apps: Microsoft Edge 4.2 GB, Ollama 2.8 GB, Windows Software Development Kit 2.3 GB, Arcade 1.8 GB."));
+        assert!(text.contains("Biggest files: facepack2627 (4 parts) 18.8 GB, movie.mkv 2.0 GB."));
+        assert!(text.contains("You can clear:\n- A Rust build folder"));
+        assert!(text.lines().all(|l| l.chars().count() < 200), "no wall of text");
+        assert_eq!(tidy_app("Freebuff 0.0.201"), "Freebuff");
+        assert_eq!(tidy_app("Microsoft Visual Studio Code (User)"), "Microsoft Visual Studio Code");
+        assert_eq!(tidy_app("7-Zip 24.08 (x64)"), "7-Zip");
+        assert_eq!(tidy_app("Python 3"), "Python 3", "a lone number is part of the name");
+        let at = |p: &str| std::path::PathBuf::from(p);
+        let g = group_parts(&[(at("x/a.7z.001"), 5), (at("x/a.7z.002"), 5), (at("x/b.zip"), 7), (at("x/c.part1.rar"), 3)]);
+        assert_eq!(g, vec![("a (2 parts)".to_string(), 10), ("b.zip".to_string(), 7), ("c.part1.rar".to_string(), 3)]);
+        let apart = group_parts(&[(at("x/a.part1.rar"), 5), (at("y/a.part2.rar"), 4)]);
+        assert_eq!(apart.len(), 2, "same name, different folders: not one archive");
+        // A name whose full lowercase is shorter (the Kelvin sign) never breaks the report.
+        assert_eq!(group_parts(&[(at("x/\u{212A}.part1.rar"), 2), (at("x/\u{212A}.part2.rar"), 2)]), vec![("\u{212A} (2 parts)".to_string(), 4)]);
     }
 
     #[test]

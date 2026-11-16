@@ -67,7 +67,9 @@ final class ControlState {
 
   private static String norm(String s) {
     if (s == null) return "";
-    return s.toLowerCase(Locale.ROOT).replace(' ', ' ').replaceAll("[“”\"'‘’]", "").replaceAll("\\s+", " ").trim();
+    // NFC first: "Réinitialiser" written with a separate accent mark must
+    // still match the composed word in the risky list.
+    return java.text.Normalizer.normalize(s, java.text.Normalizer.Form.NFC).toLowerCase(Locale.ROOT).replace(' ', ' ').replaceAll("[“”\"'‘’]", "").replaceAll("\\s+", " ").trim();
   }
 
   static boolean wholeWord(String text, String word) {
@@ -100,8 +102,19 @@ final class ControlState {
     return best;
   }
 
+  // English, and the same actions in Spanish, Portuguese, French and German
+  // (a phone set to another language shows its buttons in that language),
+  // plus installing apps and granting permissions.
   private static final Pattern RISKY = Pattern.compile(
-      "\\b(send|pay|buy|order|purchase|delete|erase|remove|uninstall|check ?out|subscribe|transfer|place order)\\b");
+      "\\b(send|call|dial|pay|buy|order|purchase|delete|erase|remove|uninstall|check ?out|subscribe|transfer|place order"
+      + "|reset|format|wipe|factory|sign out|log ?out|force stop|disable|install|allow|grant|accept"
+      + "|enviar|llamar|eliminar|borrar|pagar|comprar|instalar|desinstalar|permitir|aceptar|excluir|aceitar"
+      // Reset, sign out, disable, format: Spanish/Portuguese, French, German.
+      + "|restablecer|redefinir|formatear|formatar|desactivar|desativar|cerrar sesión|sair da conta"
+      + "|réinitialiser|formater|désactiver|déconnexion|se déconnecter"
+      + "|zurücksetzen|formatieren|deaktivieren|abmelden"
+      + "|envoyer|appeler|supprimer|effacer|payer|acheter|installer|désinstaller|autoriser|accepter"
+      + "|senden|anrufen|löschen|entfernen|bezahlen|kaufen|installieren|deinstallieren|zulassen|erlauben|akzeptieren)\\b");
 
   /** A control that sends, pays, buys or deletes: pressed only when the request named it. */
   static boolean risky(String label) {
