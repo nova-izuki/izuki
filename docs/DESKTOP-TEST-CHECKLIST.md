@@ -69,3 +69,23 @@ Install the 1.0.216 APK (Settings → Phone → App updates, or the download pag
 2. **Do it / Type it**: on a reply, Do it acts on the screen; the composer's keyboard button types the draft into the app behind without sending.
 3. Extension: ask a question in Gemini, close the side panel mid-answer, reopen it: it shows "Gemini is still answering …" with Stop and Show. Ask again: "Stop that one and ask this" works; "Show Gemini" brings the tab forward.
 4. Windows: "help me set my battery charge limit to 80%": Izuki goes to Lenovo Commercial Vantage (not Windows Settings), asks before changing, and only says it's set when Vantage shows the saved value. If it stops, the message says what happened.
+
+## 1.0.217: Android phone (the owner's Samsung)
+
+Install the 1.0.217 APK (Settings → Phone → App updates). Android control and "Hey Nova" on (Settings → Phone).
+
+1. **"Hey Nova" from another app**: open Chrome, say "Hey Nova". The orb pops up, says "Yes?" and listens. Ask "what's the weather today": it answers out loud over Chrome without opening Izuki. Then "Hey Nova, what time is it" in one breath: no "Yes?", just the answer.
+2. **"Hey Nova" inside Izuki**: with Izuki open, say it. The orb answers the same way (it no longer ignores you there).
+3. **Tap the orb** (turn "Keep a small orb resting" on first): it listens; tap again while it talks: it stops. Tap its words: Izuki opens.
+4. **Lock screen**: lock the phone, say "Hey Nova, how far is the moon?": it answers. "Hey Nova, open WhatsApp": "Unlock your phone first…". The notification's **Ask Izuki** works there too.
+5. **Speaking**: type a question in the app with Read aloud on: the reply is spoken. In a Call, speak quietly: it still hears you.
+6. **Phone agent**: "what's taking space on my phone" → Storage opens and Izuki reads the sizes. "turn on dark mode" → done or explained. "delete my trash" → it tells you which button to press and doesn't press it.
+7. **Settings → Phone**: no "Hey Siri" or iPhone alarm sections. One-tap controls: every label inside its tile; More controls shows flashlight, Wi-Fi, Bluetooth, volume…; the flashlight turns on and off.
+8. **Teach my voice**: the guided screen shows each sentence big, the meter moves while you speak, all three get a ✓, then "Done". Say "Hey Nova": it starts. A video saying "Hey Nova": "That didn't sound like you".
+9. If anything fails: Settings → Phone → Diagnostics → **Copy report**, paste it to Claude.
+
+## 1.0.217: Windows
+
+1. **Island**: at rest nothing shows at the top. Move the mouse to the top edge: it slides down and opens. Move away: it slides back up.
+2. **Screen notch** (Shape Studio → Screen notch): its top corners curve out into the screen edge; it only comes down from the top middle (the top-left corner does nothing).
+3. "what's taking up space on my PC": short lines, a split archive counted once, no "want me to find what's taking space?" right after it.
