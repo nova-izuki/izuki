@@ -51,8 +51,11 @@ let browser, ws, profile, server, cacheDir;
   const closed=()=>wait('document.querySelector(".izk-notch-mini") && !document.querySelector(".izk-island-open") && document.querySelector(".izk-notch-mini").getBoundingClientRect().width < 200');
   await closed();
   // At rest the notch hides above the top edge; only the top middle brings it down.
-  const peek=(where='middle')=>evaluate(`(()=>{const r=document.querySelector('.izk-island').getBoundingClientRect();window.izukiPoint(${where==='middle'?'r.left+r.width/2':'5'},0)})()`);
   const away=()=>evaluate(`window.izukiPoint(window.innerWidth/2,400)`);
+  // A real reach arrives from below: the hover only opens on a new arrival at
+  // the edge, so the pointer leaves first (Escape or the menu may have closed
+  // it while the pointer was still up there).
+  const peek=async(where='middle')=>{await away();await evaluate(`(()=>{const r=document.querySelector('.izk-island').getBoundingClientRect();window.izukiPoint(${where==='middle'?'r.left+r.width/2':'5'},0)})()`);};
   assert.equal(await evaluate(`document.querySelector('.izk-island').classList.contains('izk-island-hidden')`),true,'the notch hides at rest');
   await peek('left');await pause(50);
   assert.equal(await evaluate(`document.querySelector('.izk-island').classList.contains('izk-island-hidden')`),true,'the top-left corner does not bring the notch down');
