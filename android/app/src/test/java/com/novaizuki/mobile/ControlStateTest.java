@@ -91,6 +91,7 @@ public class ControlStateTest {
     assertTrue("named in the request, it's allowed", ControlState.riskyAllowed("Reset", "tap reset"));
     assertTrue("reset and sign out in other languages", ControlState.risky("Restablecer") && ControlState.risky("Réinitialiser")
         && ControlState.risky("Zurücksetzen") && ControlState.risky("Cerrar sesión") && ControlState.risky("Abmelden"));
+    assertTrue("an accent written as a separate mark", ControlState.risky("Réinitialiser"));
     assertFalse(ControlState.risky("Calendar"));
     assertTrue(ControlState.wholeWord("Voice search", "search"));
     assertFalse(ControlState.wholeWord("Researchers", "search"));

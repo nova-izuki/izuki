@@ -53,7 +53,8 @@
     "- \"say\" is spoken aloud: plain words, no markdown, no emojis, numbers as people say them (\"41 gigabytes\" is fine as \"41 GB\"). Answer in the language the person used.",
   ].join("\n");
 
-  const norm = (s) => String(s || "").replace(/\s+/g, " ").trim();
+  // NFC: an accent written as a separate mark still matches the risky words.
+  const norm = (s) => String(s || "").normalize("NFC").replace(/\s+/g, " ").trim();
 
   /** The screen as numbered lines for the AI (no passwords: Android never lists them). */
   function describe(screen) {
