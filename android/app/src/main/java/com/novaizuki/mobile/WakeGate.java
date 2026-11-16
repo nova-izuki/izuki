@@ -246,7 +246,9 @@ final class WakeGate {
   private static final Pattern CLIPPED = Pattern.compile("^\\W*(?:a\\s+|ey\\s+)?(?:nova|izuki)\\b");
   /** The same phrases on the raw words, case-insensitive, to find where the command starts. */
   private static final Pattern WAKE_AT = Pattern.compile(
-      "(?i)(?:\\b(?:hey|hi|ok|okay|hay|hei)[\\W_]*(?:nova|novah|izuki)\\b|^\\W*(?:hannover|hanover)\\b)[\\s,.!?:;-]*");
+      "(?iu)(?:\\b(?:hey|hi|ok|okay|hay|hei)[^\\p{L}\\p{N}']*(?:nova|novah|izuki)\\b|^\\W*(?:hannover|hanover)\\b)[\\s,.!?:;-]*");
+  // The separator above is isWake's: anything but letters, digits and the
+  // apostrophe it keeps, so both accept and refuse the same phrases.
   private static final Pattern CLIPPED_AT = Pattern.compile("(?i)^\\W*(?:a\\s+|ey\\s+)?(?:nova|izuki)\\b[\\s,.!?:;-]*");
 
   /**

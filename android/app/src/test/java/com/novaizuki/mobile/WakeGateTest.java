@@ -157,6 +157,8 @@ public class WakeGateTest {
     assertEquals("a hyphen, as isWake allows", "what's the time", WakeGate.command("Hey-Nova what's the time", false, ""));
     assertTrue(WakeGate.isWake("Hey-Nova what's the time", false));
     assertEquals("the phrase said first wins", "tell me about hey nova", WakeGate.command("hey jarvis tell me about hey nova", false, "hey jarvis"));
+    assertFalse("an apostrophe isn't a space to isWake", WakeGate.isWake("hey'nova", false));
+    assertEquals("…nor to command: their own phrase woke it", "open YouTube", WakeGate.command("hey'nova hey jarvis open YouTube", false, "hey jarvis"));
     assertEquals("a clipped start of their own phrase", "what's the time", WakeGate.command("jarvis, what's the time", true, "hey jarvis"));
     assertEquals("not clipped: the whole phrase is needed", "", WakeGate.command("jarvis, what's the time", false, "hey jarvis"));
     assertEquals("what's the time", WakeGate.command("nova what's the time", true, ""));

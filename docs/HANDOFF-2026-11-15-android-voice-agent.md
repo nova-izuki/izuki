@@ -1,6 +1,7 @@
 # Handoff: Android voice turn, native voice and the phone AI agent (Claude, 2026-11-15)
 
 Paste this whole file to Freebuff or Codex to take over. Branch: `claude/android-agent` (from main `8f3f6ed`, Release 1.0.216).
+PR: https://github.com/nova-izuki/izuki/pull/114 (CI green on the first push: Android APK + JVM tests, Windows build + Rust tests, web). CodeRabbit CLI: two passes, 13 findings, 12 fixed, 1 kept by design (see the PR body).
 Worktree on the owner's PC: `C:\Users\nwach\Downloads\Nova_Izuki\izuki\.work\escape`.
 Rules that still apply: AGENTS.md "Two developers, one app", docs/COLLAB.md (only Claude bumps versions and releases),
 CodeRabbit CLI on uncommitted and committed work before a PR, resolve every GitHub review thread before merging
@@ -86,6 +87,7 @@ native `pause` so a hidden WebView's throttled timers don't stall it.
 - [x] PC: shorter storage reply (src-tauri/src/storage.rs; `compose` tested standalone with rustc), no disk nudge right after a report (buddy.rs).
 - [x] PC: the Island hides by default until the mouse reaches the top and slides down (`island_always` default off + one-time `island_hidden_v1` switch in settings.rs heal); the Screen notch has laptop-notch ears (styles.css `.izk-notch-shell::before/::after`) and only comes down from the top middle (Island.tsx peek). tools/notch-browser-check.cjs updated but NOT run yet (needs vite + headless Edge; run when the owner is away); Rust tests run in CI.
       files: `src/components/Island.tsx`, `OverlayCanvas.tsx`, `src/styles.css`; coordinate in COLLAB.md).
+- [ ] NEXT: merge #114 once CI is green and every GitHub review thread is resolved (recount right before merging), then release 1.0.217 (Claude releases).
 - [ ] Drive companion follow-up (honest: the phone can't see the road; can read Maps' next-turn card through
       accessibility, check in, keep "Hey Nova" ready while driving).
 
