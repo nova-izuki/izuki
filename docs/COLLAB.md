@@ -236,3 +236,7 @@ and focused conversation/browser regressions. Existing menu pointer-events,
 Shadow-off shell filter and ordinary qualified-refusal fixes are already present;
 verify those rather than duplicate them. Review evidence is recorded in
 `docs/REVIEW-NOTCH-2026-11-15.md`. No merge or release is performed by this lane.
+
+## Freebuff — phone voice, orb tap and live answers (owner report, 2026-11-17, claimed)
+
+From the owner's v1.0.220 phone test: the orb cut listening off too early, the voice sounded robotic, current-events questions were answered without a search, and nothing showed that Izuki was thinking. Branch `freebuff/mobile-release` (PR #123). Files: `android/app/src/main/java/com/novaizuki/mobile/{IzukiVoice,IzukiAccessibilityService}.java`, `docs/app/index.html`, `tools/phone-check/routing.test.cjs`, `docs/NEXT-RELEASE.md`. What changed: a tap that starts a turn (or lands before a word was heard) no longer cancels it, and a tap over a live call no longer opens a second listener; one slow line no longer downgrades the whole answer to the phone's voice, and a non-PCM voice file is played as what it is instead of as noise; "top event / happening / headlines / this weekend" now attach Google Search, a refused tool is retried an hour later instead of a day, and when search is off the prompt says not to guess; replies show animated thinking dots with the current step and a pulsing status dot. No Android SDK/JDK on this host, so the APK compile is CI's job and nothing was checked on the owner's phone.

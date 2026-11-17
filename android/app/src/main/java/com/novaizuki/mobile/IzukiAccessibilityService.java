@@ -1093,6 +1093,11 @@ public class IzukiAccessibilityService extends AccessibilityService {
     return orbView != null && "page".equals(orbOwner) && ("think".equals(orbState) || "talk".equals(orbState));
   }
 
+  /** The page's own ears are open (a call listening): the orb must not start a second listener. */
+  static boolean pageListening() {
+    return orbView != null && "page".equals(orbOwner) && "listen".equals(orbState);
+  }
+
   /** The live voice level for the orb and the glowing edges, 0..1 (any thread). */
   static void voiceLevel(float level) {
     ui.post(() -> {

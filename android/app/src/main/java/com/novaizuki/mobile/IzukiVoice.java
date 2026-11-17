@@ -595,6 +595,12 @@ final class IzukiVoice {
   static void finishListening() {
     ui.post(() -> {
       if (!earsOn) return;
+      // Nothing said yet: that tap asked to talk, not to finish. Keep the ear
+      // open — the session still ends by itself at its time limit.
+      if (earsLast.isEmpty() && !earsSpoke) {
+        IzukiControlPlugin.hearingEvent("…");
+        return;
+      }
       earsFinishing = true;
       // Between two tries: nothing more is coming, use what was heard.
       if (ears == null) { earsGiveUp.run(); return; }
@@ -607,6 +613,8 @@ final class IzukiVoice {
   // ---- the voice turn -----------------------------------------------------------
 
   private static String turn = "";
+  /** When the turn began: a tap that lands at once can't cancel it. */
+  private static long turnStartedAt = 0;
   private static String phase = "";
   private static String source = "";
   private static boolean locked = false;
@@ -649,6 +657,16 @@ final class IzukiVoice {
   static void tap(Context c) {
     ui.post(() -> {
       bind(c);
+      // The tap that starts a turn can arrive twice (the overlay's touch and
+      // its click, or a quick double tap): it must never stop the turn it just
+      // started. The person tapped to talk, not to finish.
+      if (active() && System.currentTimeMillis() - turnStartedAt < 900) return;
+      // Listening with nothing heard yet: a tap means "I'm ready", not "done".
+      // (This was the turn that ended a second after it began.)
+      if (active() && "listen".equals(phase) && earsLast.isEmpty() && !earsSpoke) {
+        IzukiAccessibilityService.orbFor("voice", "listen", followUp ? "Go on…" : "Listening…", 15_000);
+        return;
+      }
       if (active()) stop();
       else if (IzukiAccessibilityService.pageWorking()) {
         // The orb says "Tap to stop" over the page's reply, phone agent or
@@ -660,6 +678,10 @@ final class IzukiVoice {
         IzukiAccessibilityService.orbFor("page", "rest", "Stopped.", 0);
         ui.removeCallbacks(pageRestLater);
         ui.postDelayed(pageRestLater, 2500);
+      } else if (IzukiAccessibilityService.pageListening()) {
+        // The page is already listening (a call): a second listener fought it
+        // for the microphone and cut the call off mid-sentence.
+        IzukiAccessibilityService.orbFor("page", "listen", "Listening…", 15_000);
       } else start("orb", "");
     });
   }
@@ -673,6 +695,7 @@ final class IzukiVoice {
     }
     ui.removeCallbacks(hideLater);
     turn = UUID.randomUUID().toString();
+    turnStartedAt = System.currentTimeMillis();
     source = src;
     followUp = false;
     pendingDone = 0;

@@ -239,6 +239,20 @@
   /* typing */
   footer { padding-block: 6px calc(12px + var(--safe-bottom)); display: flex; flex-direction: column; gap: 8px; align-items: center; }
   #status { color: var(--muted); font-size: 13.5px; min-height: 1.3em; text-align: center; }
+  /* Thinking: a pulsing dot by the status line and three dots in the reply
+     bubble, so it's plain the answer is on its way and not frozen. */
+  #status.working::before, #live-status.working::before {
+    content: ""; display: inline-block; width: 8px; height: 8px; margin-right: 7px; border-radius: 50%;
+    background: var(--teal); animation: thinkPulse 1s ease-in-out infinite;
+  }
+  @keyframes thinkPulse { 0%, 100% { opacity: .25; transform: scale(.75); } 50% { opacity: 1; transform: scale(1.1); } }
+  .msg.thinking { display: flex; align-items: center; gap: 9px; color: var(--muted); }
+  .think-dots { display: inline-flex; gap: 4px; }
+  .think-dots i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; animation: thinkDot 1.1s ease-in-out infinite; }
+  .think-dots i:nth-child(2) { animation-delay: .16s; }
+  .think-dots i:nth-child(3) { animation-delay: .32s; }
+  @keyframes thinkDot { 0%, 100% { opacity: .22; transform: translateY(0); } 40% { opacity: 1; transform: translateY(-2px); } }
+  @media (prefers-reduced-motion: reduce) { #status.working::before, #live-status.working::before, .think-dots i { animation: none; } }
   .composer { display: flex; gap: 6px; width: 100%; align-items: flex-end; padding: 6px; border-radius: 28px; border: 1px solid var(--line);
     background: rgba(20, 18, 32, 0.8); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
   #clip { flex: none; width: 44px; height: 44px; border: 0; border-radius: 50%; background: var(--soft); display: grid; place-items: center; }
@@ -1022,6 +1036,8 @@
   const liveSaid = (t) => { $("live-said").textContent = t || ""; try { window.IzukiTv?.said?.(t || ""); } catch {} };
   const el = (tag, cls, txt) => { const e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; };
 
+  /** The stage words inside a waiting reply bubble ("Asking Gemini…"), if one is showing. */
+  let thinkingLabel = null;
   function bubble(who, content, opts = {}) {
     try { window.IzukiTv?.line?.(who, String(content || "")); } catch {}
     homeView = false;
@@ -1029,6 +1045,14 @@
     const div = document.createElement("div");
     div.className = "msg " + who + (opts.error ? " error" : "");
     div.textContent = content;
+    if (opts.thinking) {
+      // A sign it heard them and is working: animated dots plus the step it's on.
+      div.classList.add("thinking");
+      const dots = el("span", "think-dots");
+      for (let i = 0; i < 3; i++) dots.appendChild(el("i"));
+      thinkingLabel = el("span", "think-label", "Thinking…");
+      div.append(dots, thinkingLabel);
+    }
     if (opts.chips?.length) {
       const row = document.createElement("div");
       row.className = "chip-row";
@@ -1636,7 +1660,9 @@
       "If they want something kept for later with no time (\"remind me later I'm buying Sensodyne and milk\", \"add bread to my list\", \"don't let me forget the charger\"), confirm it warmly and add one line per thing: [LATER the thing]. If they've done one (\"I got the toothpaste\"), add [LATER-DONE the thing]. " +
         (later.some((l) => !l.done) ? "Their Later list right now: " + later.filter((l) => !l.done).map((l) => l.text).join(", ") + "." : "Their Later list is empty."),
       usesGemini()
-        ? "You can search the web and read links — do it whenever it helps: news, scores, prices, opening hours, facts, anything recent, or a link they send. Say where it came from."
+        ? (Date.now() < noToolsUntil
+          ? "Web search isn't working right now, so you can't check anything current. If they ask about news, events, scores, prices or anything recent, say plainly that you couldn't search rather than guessing."
+          : "You can search the web and read links — do it whenever it helps: news, events, scores, prices, opening hours, facts, anything recent, or a link they send. For something current (what's on today, an event, a result, a price) actually search before answering, and say where it came from.")
         : "You can't search the web from here; for something recent, say so kindly and suggest they add a free Gemini key in Settings.",
       pc
         ? "If they want something done on their computer, anything in their email, calendar, cloud files or other accounts, or a site behind their sign-in (Blackboard, Canvas, NotebookLM, Classroom…), reply with exactly [PC] and nothing else — their PC will do it (it has the Izuki browser, signed in)."
@@ -1681,7 +1707,7 @@
   };
   // Google Search makes every answer slower. Attach it only when the words
   // ask for something current or factual, not for "hi" or "make it shorter".
-  const WEB_WORDS = /\b(news|today|tonight|tomorrow|yesterday|latest|current(?:ly)?|right now|this week|weather|forecast|temperature|rain(?:ing|y)?|snow(?:ing)?|sunny|storm|humid|degrees|score|scores|match|price|prices|cost|stock|exchange rate|open now|opening hours|hours|near me|nearby|who is|who's|who was|what is|what's|when is|when's|when did|where is|how much|how many|search|look up|google|website|link|recent|update|release|election|president|population|capital)\b|https?:\/\/|www\.|\b20\d\d\b/i;
+  const WEB_WORDS = /\b(news|today|tonight|tomorrow|yesterday|latest|current(?:ly)?|right now|this week|this weekend|weather|forecast|temperature|rain(?:ing|y)?|snow(?:ing)?|sunny|storm|humid|degrees|score|scores|match|who won|price|prices|cost|stock|exchange rate|open now|opening hours|hours|near me|nearby|who is|who's|who was|what is|what's|what's happening|whats happening|happening|going on|top events?|events?|festivals?|concerts?|parades?|headlines?|breaking|traffic|flight|when is|when's|when did|where is|how much|how many|search|look up|google|website|link|recent|update|release|election|president|population|capital)\b|https?:\/\/|www\.|\b20\d\d\b/i;
   // The same in the other languages people use here most.
   const WEB_WORDS_OTHER = /\b(hoy|mañana|ayer|tiempo|clima|lluvia|noticias|precio|quién es|aujourd'hui|demain|météo|pluie|actualités|prix|qui est|heute|morgen|wetter|regen|nachrichten|preis|wer ist)\b/i;
   const needsWeb = (contents) => {
@@ -1751,7 +1777,9 @@
         let why = "";
         try { why = (await res.clone().json()).error?.message || ""; } catch {}
         if (/tool|search|url|ground/i.test(why)) {
-          noToolsUntil = Date.now() + 86400000;
+          // An hour, not a day: a model that refused tools once may take them
+          // again soon, and a full day of silent, unsearched answers is worse.
+          noToolsUntil = Date.now() + 3600000;
           store.set("noToolsUntil", noToolsUntil);
           return gemini(contents, onText, model, true, system);
         }
@@ -2641,6 +2669,11 @@
   function stage(text) {
     requestStage = text || "";
     if (!requestStage) setStatus("");
+    // The pulsing dot and the words in the waiting bubble: visible work, not a freeze.
+    const working = !!requestStage && busy;
+    status.classList.toggle("working", working);
+    $("live-status").classList.toggle("working", working);
+    if (thinkingLabel && requestStage) thinkingLabel.textContent = requestStage;
     showStage();
   }
   function showStage() {
@@ -2653,6 +2686,9 @@
     clearTimeout(requestWatch);
     clearInterval(requestTicker);
     requestStage = "";
+    thinkingLabel = null;
+    status.classList.remove("working");
+    $("live-status").classList.remove("working");
   }
   function endRequest(why) {
     if (!busy) return;
@@ -2828,7 +2864,7 @@
       attached = [];
       showAttached();
     }
-    const out = bubble("izuki", "…");
+    const out = bubble("izuki", "", { thinking: true });
 
     // (A voice note only gets here with a Gemini key, which hears it.)
     const parts = audio
@@ -3034,7 +3070,7 @@
     refreshSend();
     setOrb("thinking");
     stage("Thinking…");
-    const out = bubble("izuki", "…");
+    const out = bubble("izuki", "", { thinking: true });
     try {
       const reply = shown(await think([{ role: "user", parts: [{ text: said }] }], null, LOCKED_SYSTEM)).replace(/\[[A-Z][A-Z-]*[^\]]*\]/g, "").trim()
         || "Hmm, I lost my words there. Try again?";
@@ -3174,7 +3210,7 @@
   async function geminiVoiceWith(model, t) {
     // Never wait long for a voice: the phone's own one is right there.
     const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 20000);
+    const timer = setTimeout(() => ctrl.abort(), 12000);
     try {
       const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
         method: "POST",
@@ -3201,15 +3237,17 @@
       const v = await r.json();
       const part = (v.candidates?.[0]?.content?.parts || []).find((p) => p.inlineData?.data);
       if (!part) return null;
-      const rate = Number((part.inlineData.mimeType || "").match(/rate=(\d+)/)?.[1]) || 24000;
-      // Newer speech models send a finished WAV; older ones bare PCM.
-      if (/wav/i.test(part.inlineData.mimeType || "")) {
+      const mime = String(part.inlineData.mimeType || "");
+      const rate = Number(mime.match(/rate=(\d+)/)?.[1]) || 24000;
+      // Newer speech models send a finished file (WAV, or MP3/Ogg); older ones
+      // bare PCM. Wrapping an MP3 as PCM used to play noise instead of a voice.
+      if (/wav|mpeg|mp3|ogg|opus|aac|m4a/i.test(mime)) {
         const bytes = Uint8Array.from(atob(part.inlineData.data), (c) => c.charCodeAt(0));
-        return URL.createObjectURL(new Blob([bytes], { type: "audio/wav" }));
+        return URL.createObjectURL(new Blob([bytes], { type: mime.split(";")[0] || "audio/wav" }));
       }
       return pcmToWavUrl(part.inlineData.data, rate);
     } catch (e) {
-      if (e.name === "AbortError") note("gemini voice took over 20 s");
+      if (e.name === "AbortError") note("gemini voice took over 12 s");
       return null;
     } finally {
       clearTimeout(timer);
@@ -3462,9 +3500,10 @@
     // Over another app (a voice turn, or Izuki in the background) the natural
     // voice is played by Android; it's asked for only when that can happen.
     const natural = () => !nativeVoiceFirst() || (naturalOverApps() && !!window.IzukiNative?.canPlayClip?.());
-    let plain = false;
+    let plain = false, late = 0;
     const push = (w) => {
-      w = w.replace(/[*_#`]/g, "").trim();
+      // Markdown and emoji would be read out as noise by the phone's voice.
+      w = w.replace(/[*_#`]/g, "").replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/gu, "").replace(/\s+/g, " ").trim();
       if (w && alive() && !ended) pieces.push({ words: w, url: natural() ? geminiVoice(w) : Promise.resolve(null) });
       if (!playing && pieces.length) playing = run();
       wake();
@@ -3487,10 +3526,18 @@
         else if (overApps) {
           // Never keep a voice turn waiting for the natural voice: the phone's
           // voice answers if it isn't ready in a few seconds (a native timer:
-          // a page in the background has slow ones).
-          const late = (window.IzukiNative?.pause ? window.IzukiNative.pause(i === 1 ? 3500 : 6000) : new Promise((r) => setTimeout(r, 3500))).then(() => "late");
-          url = await Promise.race([p.url, late]);
-          if (url === "late") { url = null; plain = true; p.url.then((u) => u && URL.revokeObjectURL(u)); note("natural voice was slow: the phone's voice"); }
+          // a page in the background has slow ones). One slow line only makes
+          // that line the phone's voice — the next still tries the natural one,
+          // so a single hiccup doesn't leave the whole reply sounding robotic.
+          const wait = (window.IzukiNative?.pause ? window.IzukiNative.pause(i === 1 ? 4000 : 6000) : new Promise((r) => setTimeout(r, i === 1 ? 4000 : 6000))).then(() => "late");
+          url = await Promise.race([p.url, wait]);
+          if (url === "late") {
+            url = null;
+            p.url.then((u) => u && URL.revokeObjectURL(u));
+            // Consistently slow (two lines running): stop paying the wait.
+            if (++late >= 2) plain = true;
+            note("natural voice was slow: the phone's voice");
+          }
         } else url = await p.url;
         if (!alive()) { if (url) URL.revokeObjectURL(url); break; }
         note(url ? "speaking (Gemini voice)" : "speaking (phone voice)");
@@ -3650,6 +3697,8 @@
   const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
   let talking = false, recog = null, recorder = null;
   let useRecorder = false, missed = 0;
+  /** Anything heard in this listening session? A tap before words is "talk", not "done". */
+  let heardInListen = false, listenStartedAt = 0;
 
   function stopTalking(message) {
     talking = false;
@@ -3667,6 +3716,8 @@
 
   function listen() {
     if (!talking || busy || manualPlayback) return;
+    heardInListen = false;
+    listenStartedAt = Date.now();
     // A wake whose own audio was unavailable leaves a voice check pending.
     // Recognized text alone cannot prove the speaker, so force a recording
     // through the same path that passes audio to ask().
@@ -3689,6 +3740,7 @@
     recog.interimResults = true;
     recog.onresult = (e) => {
       heardAny = true;
+      heardInListen = true;
       let interim = "";
       final = "";
       for (const r of e.results) (r.isFinal ? (final += r[0].transcript) : (interim += r[0].transcript));
@@ -3721,10 +3773,13 @@
   async function listenNative() {
     const my = ++earSeq;
     waitingForTap = false;
+    heardInListen = false;
+    listenStartedAt = Date.now();
     setOrb("listening");
     setStatus("");
     const r = await window.IzukiNative.listen((words) => {
       if (my !== earSeq || !talking) return;
+      if (words.trim()) heardInListen = true;
       liveHeard(words);
       IzukiOrb.kick(0.55);
     });
@@ -4032,6 +4087,14 @@
   $("live-orb").onclick = () => {
     if (orbState === "speaking") { hush(); return; }
     if (recorder) { try { recorder.stop(); } catch {} return; }
+    // A tap that lands just as listening starts, or before a single word was
+    // heard, is the person tapping to talk — not to finish. Ending the session
+    // there was why the orb felt like it stopped listening by itself.
+    if (talking && !busy && orbState === "listening" && (!heardInListen || Date.now() - listenStartedAt < 700)) {
+      setStatus("Listening…");
+      setOrb("listening");
+      return;
+    }
     if (window.IzukiNative?.canListen?.() && useNativeEars) {
       // Waiting after a quiet spell: listen now. Listening: "I'm done", the words so far count.
       if (talking && !busy && (waitingForTap || orbState !== "listening")) { setStatus(""); listen(); return; }
