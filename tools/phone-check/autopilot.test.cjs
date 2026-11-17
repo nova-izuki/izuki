@@ -41,6 +41,17 @@ const A = window.IzukiAutopilot;
   }));
   assert.equal(JSON.stringify(A.plan("tap Search")), JSON.stringify({ title: "Tap Search", steps: ["Tap “Search”"] }));
   assert.equal(A.plan("write a poem"), null, "an unknown plan must not pretend it can run");
+  // The installed-app list: an exact name is that app; while the list is
+  // unknown (not read, failed, empty or slow) "open X and play Y" isn't guessed.
+  const names = new Set(["youtube", "learn and play music"]);
+  window.IzukiNative.isAppName = (n) => names.has(String(n).trim().toLowerCase());
+  assert.equal(JSON.stringify(A.plan("open Learn and Play Music")), JSON.stringify({ title: "Open Learn and Play Music", steps: ["Open Learn and Play Music"] }));
+  assert.equal(A.plan("open YouTube and search lofi").steps.length, 2, "a known list still splits a real open-and-search");
+  window.IzukiNative.isAppName = () => null;
+  assert.equal(A.plan("open Learn and Play Music"), null, "unknown list: the AI agent decides");
+  assert.equal(A.plan("open YouTube and search lofi"), null, "unknown list: no split on a guess");
+  assert.equal(A.plan("open YouTube").title, "Open YouTube", "a plain short open still works");
+  delete window.IzukiNative.isAppName;
 
   calls.length = 0;
   const openedSearch = await A.run("open YouTube and search lofi");

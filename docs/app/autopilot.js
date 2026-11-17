@@ -284,7 +284,11 @@
       const app = m[1].trim();
       return { title: `Open ${app}`, steps: [{ label: `Open ${app}`, run: () => openApp(app) }] };
     }
-    if ((m = goal.match(/^(?:open|launch|start)\s+(.+?)\s+(?:and|then)\s+(?:search|find|look up|play)\s+(?:for\s+)?(.+)$/i))) {
+    // The installed apps couldn't be read (not yet, failed or empty): "open
+    // X and play Y" might be one app's name, so the AI agent, which sees the
+    // phone, decides instead of a guess.
+    const appsUnknown = window.IzukiNative?.isAppName?.("") === null;
+    if (!appsUnknown && (m = goal.match(/^(?:open|launch|start)\s+(.+?)\s+(?:and|then)\s+(?:search|find|look up|play)\s+(?:for\s+)?(.+)$/i))) {
       const app = m[1].trim();
       const query = m[2].trim();
       return {
