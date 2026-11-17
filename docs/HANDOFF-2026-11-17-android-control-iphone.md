@@ -32,10 +32,15 @@ The owner's complaints, and the root cause of each:
 | "Full control of my Android" | The agent only read the accessibility list (14 steps, 10 actions) | Set-of-marks screenshots for Gemini (numbers drawn on the controls), `tap_at` (0–1000 on the screenshot), `long_press`, `double_tap`, `swipe`, keys (recents/notifications/quick settings), media/volume/torch, Maps `navigate`, a carried `plan`, a repeat guard (screenshot fingerprint counts as progress), 30 steps. The risky-control check covers **every** control under a touch point |
 | "Make it easy, attractive, interactive" | Phone powers hidden behind a grid button; long Settings paragraphs | Home → "On your phone" list (Do it for me, Explain my screen, Hey Nova, The orb, Autopilot, Drive) with live state and an explainer sheet (what, 3 steps, examples, one real action); the one-tap dock folds until opened; Settings notes > 150 chars fold to two lines with "How it works" |
 
-Reference the owner gave for "full control": [mirroir-mcp](https://github.com/jfarcand/mirroir-mcp)
-(controls an iPhone through macOS iPhone Mirroring: screenshots, OCR to find
-targets, tap/double-tap/long-press/swipe/type). Izuki's agent does the same
-on the phone itself (accessibility list + screenshot + gestures).
+Reference the owner gave for "full control": [mirroir-mcp](https://github.com/jfarcand/mirroir-mcp).
+**A reference for how much an agent should be able to do, not a Mac
+feature**: Izuki does all of it on the phone itself (accessibility list +
+screenshot + gestures). Still missing next to it, for the next Android round:
+a `drag` action (from one point/number to another: reorder, sliders, maps;
+native `act` already does `swipe` with x/y/x2/y2/ms, a slow swipe is a drag)
+and `scroll_to` ("scroll until a control with these words is on screen", a
+loop over `scroll` + `screen()` with a step limit). Both need the same
+risky-control scan at the end point and agent tests.
 
 Checks: `npm run test:phone` (all suites; new `orb.test.cjs`; natural voice
 in turns in `audio.test.cjs`; agent abilities, risky parents, photo swipes in
