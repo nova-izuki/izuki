@@ -173,6 +173,35 @@ public class IzukiControlPlugin extends Plugin {
     call.resolve();
   }
 
+  /**
+   * A recorded line (Gemini's natural voice, a base64 WAV) played by Android:
+   * {audio, text, id, turn}; the same "speech" events as say().
+   */
+  @PluginMethod
+  public void playClip(PluginCall call) {
+    IzukiVoice.playClip(getContext(), call.getString("audio", ""), call.getString("text", ""),
+        call.getString("id", ""), call.getString("turn", ""));
+    call.resolve();
+  }
+
+  /** The phone's voices for the picker, best first: {voices: [{name, label, online}]}. */
+  @PluginMethod
+  public void voices(PluginCall call) {
+    IzukiVoice.voices(getContext(), (list) -> {
+      JSArray out = new JSArray();
+      for (String[] v : list) {
+        JSObject o = new JSObject();
+        o.put("name", v[0]);
+        o.put("label", v[1]);
+        o.put("online", "1".equals(v[2]));
+        out.put(o);
+      }
+      JSObject r = new JSObject();
+      r.put("voices", out);
+      call.resolve(r);
+    });
+  }
+
   /** One listening session with Android's recognizer: {text, error}; partial words as "hearing" events. */
   @PluginMethod
   public void listen(PluginCall call) {
@@ -223,7 +252,25 @@ public class IzukiControlPlugin extends Plugin {
     if (lang != null) IzukiVoice.lang = lang.trim();
     Boolean glow = call.getBoolean("edgeGlow");
     if (glow != null) IzukiVoice.setEdgeGlow(glow);
+    String voice = call.getString("voice");
+    if (voice != null) IzukiVoice.voiceName = voice.trim();
     call.resolve();
+  }
+
+  /**
+   * The glowing edges for the page's own work (a reply, the phone agent,
+   * Autopilot): listen, think or talk for `lease` ms unless sent again; any
+   * other state switches them off. {shown: false} when Android control is
+   * off, so the page draws its own edges instead.
+   */
+  @PluginMethod
+  public void glow(PluginCall call) {
+    String state = call.getString("state", "");
+    boolean on = IzukiVoice.edgeGlow && ("listen".equals(state) || "think".equals(state) || "talk".equals(state));
+    long lease = Math.max(2_000, Math.min(120_000, call.getInt("lease", 30_000)));
+    JSObject result = new JSObject();
+    result.put("shown", IzukiAccessibilityService.glowFor("page", on, state, lease));
+    call.resolve(result);
   }
 
   private final android.os.Handler later = new android.os.Handler(android.os.Looper.getMainLooper());
@@ -489,6 +536,8 @@ public class IzukiControlPlugin extends Plugin {
       JSObject result = new JSObject();
       result.put("image", image);
       result.put("type", "image/jpeg");
+      result.put("w", IzukiAccessibilityService.shotW);
+      result.put("h", IzukiAccessibilityService.shotH);
       call.resolve(result);
     }, call::reject);
   }

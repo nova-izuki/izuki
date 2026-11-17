@@ -104,6 +104,28 @@ function harness(callPage = false) {
       h.test.stop(); await done;
       const gone=h.test.stream(); gone.cancel(); await gone.end('Never said.');
       assert.deepEqual(asked,['Hi there.'],'a cancelled stream asks for nothing');
+      // A voice turn over another app: Gemini's natural voice, played by
+      // Android, when it's ready in time; the phone's voice when it's late.
+      for (const late of [false, true]) {
+        h=harness(false);
+        const clips=[], phone=[];
+        h.ctx.window.IzukiNative={
+          canSpeak:()=>true, canPlayClip:()=>true, hushSpeech:async()=>{},
+          pause:()=>late?Promise.resolve():new Promise(()=>{}),
+          playClip:async(url,words,opts)=>{clips.push([url,words,opts.turn]);return 'done';},
+          speak:async(t)=>{phone.push(t);return 'done';},
+        };
+        h.ctx.turnCtx={id:'t1'};
+        h.test.voice(()=>late?new Promise(()=>{}):Promise.resolve('blob:n'));
+        await h.test.stream().end('Here is your answer.');
+        if (late) {
+          assert.deepEqual(clips,[],'a late natural voice is not waited for');
+          assert.deepEqual(phone,['Here is your answer.'],'the phone voice answers instead');
+        } else {
+          assert.deepEqual(clips,[['blob:n','Here is your answer.','t1']],'the natural voice plays through Android in the turn');
+          assert.deepEqual(phone,[]);
+        }
+      }
     }
     console.log((callPage?'PC call':'Phone app')+': synchronous tap playback, autoplay refusal, stalled TTS, mute, stop and cleanup pass.');
   }

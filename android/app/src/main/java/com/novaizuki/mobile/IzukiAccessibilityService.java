@@ -698,6 +698,9 @@ public class IzukiAccessibilityService extends AccessibilityService {
 
   /** A JPEG of the screen (≤1024 px), base64 — Android 11+. Apps with copy
    *  protection (Netflix's video…) refuse: "protected". */
+  /** The full size of the last screenshot, before it was made smaller: a point on it maps to the screen. */
+  static volatile int shotW = 0, shotH = 0;
+
   static void snapshot(Consumer<String> done, Consumer<String> fail) {
     IzukiAccessibilityService service = active;
     if (service == null) { fail.accept("off"); return; }
@@ -715,6 +718,8 @@ public class IzukiAccessibilityService extends AccessibilityService {
           Bitmap bmp = hw.copy(Bitmap.Config.ARGB_8888, false);
           r.getHardwareBuffer().close();
           int w = bmp.getWidth(), h = bmp.getHeight();
+          shotW = w;
+          shotH = h;
           float k = Math.min(1f, 1024f / Math.max(w, h));
           Bitmap small = k < 1f ? Bitmap.createScaledBitmap(bmp, Math.round(w * k), Math.round(h * k), true) : bmp;
           ByteArrayOutputStream out = new ByteArrayOutputStream();
@@ -1099,17 +1104,37 @@ public class IzukiAccessibilityService extends AccessibilityService {
   // ---- the glowing screen edges (during a voice turn) -------------------------
 
   private static EdgeGlow glowView;
+  /** Who lit it: "voice" (a voice turn) or "page" (Izuki's own work: a reply, the phone agent, Autopilot). */
+  private static String glowOwner = "";
+  /** Nobody renewed the light in time (a page that stopped, a turn that never ended): it goes out. */
+  private static final Runnable glowLeaseOver = () -> { glowOwner = ""; removeGlow(); };
 
   /**
    * The light around the screen's edges while Izuki listens, thinks and
-   * talks over other apps, following the voice. Off: removed (it never
-   * stays up between turns, so it costs nothing at rest). It can't be
-   * touched: every tap goes to the app underneath.
+   * talks, over every app (Izuki's own included), following the voice.
+   * Off: removed (it never stays up between turns, so it costs nothing at
+   * rest). It can't be touched: every tap goes to the app underneath.
+   * A voice turn's light lasts its turn (130 s at most without news).
    */
-  static void edgeGlow(boolean on, String state) {
+  static void edgeGlow(boolean on, String state) { glowFor("voice", on, state, 130_000); }
+
+  /**
+   * The page's light: listen/think/talk for `leaseMs` unless sent again,
+   * "" switches it off. A running voice turn keeps its own.
+   */
+  static boolean glowFor(String owner, boolean on, String state, long leaseMs) {
+    if (active == null) return false;
     ui.post(() -> {
       IzukiAccessibilityService service = active;
-      if (!on || service == null) { removeGlow(); return; }
+      if (!on || service == null) {
+        if (glowOwner.isEmpty() || glowOwner.equals(owner) || service == null) {
+          glowOwner = "";
+          ui.removeCallbacks(glowLeaseOver);
+          removeGlow();
+        }
+        return;
+      }
+      if ("voice".equals(glowOwner) && !"voice".equals(owner) && IzukiVoice.active()) return;
       if (glowView == null) {
         EdgeGlow v = new EdgeGlow(service);
         WindowManager.LayoutParams lp = new WindowManager.LayoutParams(
@@ -1122,8 +1147,12 @@ public class IzukiAccessibilityService extends AccessibilityService {
         try { ((WindowManager) service.getSystemService(WINDOW_SERVICE)).addView(v, lp); glowView = v; }
         catch (Exception e) { v.stop(); return; }
       }
+      glowOwner = owner;
       glowView.setState(state);
+      ui.removeCallbacks(glowLeaseOver);
+      ui.postDelayed(glowLeaseOver, Math.max(2_000, leaseMs));
     });
+    return true;
   }
 
   private static void removeGlow() {

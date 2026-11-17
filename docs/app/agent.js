@@ -13,7 +13,8 @@
 // between every step.
 (() => {
   "use strict";
-  const MAX_STEPS = 14;
+  // Long enough for real multi-app tasks; Stop works between every step.
+  const MAX_STEPS = 30;
   const OWN = "com.novaizuki.mobile";
   // Calling someone is an outward action too: the person presses Call. So
   // are installing apps and granting permissions. The same actions in
@@ -38,13 +39,24 @@
     '{"do":"open","app":"<installed app name>"}',
     `{"do":"settings","page":"<${PAGES.join("|")}>"}  (straight to that Settings page; faster than menus)`,
     '{"do":"tap","n":<number from the screen>}',
+    '{"do":"long_press","n":<number from the screen>}  (menus that open on a long press)',
+    '{"do":"tap_at","x":<0-1000>,"y":<0-1000>}  (a point on the screenshot, 0-1000 across and down; only for something with no number)',
     '{"do":"type","n":<number of a box>,"text":"<words>","enter":true|false}  (enter only for a search box)',
-    '{"do":"scroll","dir":"down|up"}',
+    '{"do":"scroll","dir":"down|up"}  (lists and pages)',
+    '{"do":"swipe","dir":"left|right"}  (the next or previous photo, page, tab or story)',
+    '{"do":"key","key":"recents|notifications|quick_settings"}  (recent apps, the notification shade, quick settings)',
+    '{"do":"media","key":"play|pause|next|previous"}  {"do":"volume","dir":"up|down"}  {"do":"torch","on":true|false}',
+    '{"do":"navigate","to":"<place>"}  (Google Maps directions)',
     '{"do":"back"}  {"do":"home"}  {"do":"wait"}',
     '{"do":"done","say":"<the answer or what you did, 1-3 short spoken sentences>"}',
     '{"do":"ask","say":"<a short question for the person>"}',
+    'Any reply may also carry "plan": a few short numbered steps for the whole goal. It is shown back to you each turn; update it when things change.',
     "Rules:",
+    "- Work like an expert phone user: the fastest route first (an app's own search box, a Settings page directly, the share or ⋮ menu), then check the screen after every step.",
+    "- When a screenshot is attached, the pink numbers on it are the numbers in the list. Use it to understand icons, images and layout; prefer numbered items and use tap_at only for something that has no number.",
+    "- Close pop-ups that are in the way (Not now, Skip, Later, X, Got it) unless the goal needs them.",
     "- Only use numbers that are on the current screen. If what you need isn't visible, scroll or go another way.",
+    "- If the same step didn't change anything, don't repeat it: try another way.",
     "- Read answers off the screen and the facts; never invent numbers or names. When the screen shows the answer, finish with done.",
     "- Storage questions: open settings page storage and read the sizes it lists (apps, images, videos, audio, documents, system, other); open a category only if it helps.",
     "- Never press anything that calls someone, sends, pays, buys, orders, deletes, uninstalls, clears, resets, signs out or force-stops. If the goal needs that, finish with ask and tell the person which button to press themselves.",
@@ -107,11 +119,19 @@
       settings: "settings", open_settings: "settings", panel: "settings", settings_page: "settings",
       tap: "tap", click: "tap", press: "tap", select: "tap",
       type: "type", input: "type", write: "type", enter_text: "type",
-      scroll: "scroll", swipe: "scroll", back: "back", go_back: "back", home: "home", go_home: "home", wait: "wait",
+      long_press: "long_press", longpress: "long_press", hold: "long_press", press_and_hold: "long_press",
+      tap_at: "tap_at", tap_xy: "tap_at", click_at: "tap_at", tap_point: "tap_at",
+      key: "key", recents: "key", notifications: "key", quick_settings: "key",
+      media: "media", volume: "volume", torch: "torch", flashlight: "torch", navigate: "navigate", directions: "navigate",
+      scroll: "scroll", swipe: "swipe", back: "back", go_back: "back", home: "home", go_home: "home", wait: "wait",
       done: "done", finish: "done", answer: "done", reply: "done", say: "done", ask: "ask", question: "ask", confirm: "ask",
     };
-    const kind = kinds[act];
+    let kind = kinds[act];
     if (!kind) return null;
+    const dirWord = String(obj.dir ?? obj.direction ?? "").toLowerCase();
+    // An up/down swipe is a scroll (a finger moving up scrolls the list down).
+    if (kind === "swipe" && !/left|right/.test(dirWord)) kind = "scroll";
+    const keyWord = String(obj.key ?? (["recents", "notifications", "quick_settings"].includes(act) ? act : "")).toLowerCase().replace(/[\s-]+/g, "_");
     const n = Number(obj.n ?? obj.target ?? obj.number ?? obj.item ?? obj.id);
     const page = norm(obj.page ?? (kind === "settings" ? obj.name : "")).toLowerCase();
     return {
@@ -121,7 +141,14 @@
       page: PAGES.includes(page) ? page : PAGE_ALIASES[page] || page.replace(/\s+/g, "_"),
       text: String(obj.text ?? obj.value ?? ""),
       enter: obj.enter === true || obj.submit === true,
-      dir: /up/i.test(String(obj.dir ?? obj.direction ?? "")) ? "up" : "down",
+      dir: /left/.test(dirWord) ? "left" : /right/.test(dirWord) ? "right"
+        : act === "swipe" ? (/down/.test(dirWord) ? "up" : "down")
+        : /up/.test(dirWord) ? "up" : "down",
+      x: Number(obj.x), y: Number(obj.y),
+      key: keyWord,
+      on: obj.on === true || /^(on|true)$/i.test(String(obj.on ?? obj.state ?? "")),
+      to: norm(obj.to ?? obj.place ?? obj.destination ?? ""),
+      plan: norm(obj.plan ?? "").slice(0, 500),
       say: norm(obj.say ?? obj.answer ?? obj.message ?? obj.reply ?? obj.text ?? ""),
     };
   }
@@ -142,6 +169,47 @@
   const forSearch = (item) => !!item && (SEARCHY.test(String(item.hint || "")) || SEARCHY.test(String(item.id || "")) || SEARCHY.test(String(item.desc || "")));
   const look = (screen) => `${screen?.app || ""}|${(screen?.items || []).slice(0, 40).map((i) => `${i.kind}:${i.text}${i.focused ? "*" : ""}${i.on ? "+" : ""}`).join("|")}`;
   const gb = (b) => `${b / 1e9 >= 10 ? Math.round(b / 1e9) : Math.round(b / 1e8) / 10} GB`;
+
+  /**
+   * The screenshot with each control from the list boxed and numbered
+   * (set-of-marks): a brain that sees pictures answers with the same numbers
+   * and understands icons the list can't name. The plain screenshot when the
+   * page can't draw (tests, old WebViews).
+   */
+  async function mark(shot, screen, size) {
+    const plain = { mime: "image/jpeg", data: shot.image };
+    try {
+      if (typeof document === "undefined" || typeof createImageBitmap !== "function") return plain;
+      const blob = await (await fetch(`data:image/jpeg;base64,${shot.image}`)).blob();
+      const img = await createImageBitmap(blob);
+      const c = document.createElement("canvas");
+      c.width = img.width;
+      c.height = img.height;
+      const g = c.getContext("2d");
+      g.drawImage(img, 0, 0);
+      const k = img.width / (size?.w || img.width);
+      const fontPx = Math.max(12, Math.round(img.width / 42));
+      g.lineWidth = Math.max(2, Math.round(img.width / 360));
+      g.font = `bold ${fontPx}px sans-serif`;
+      g.textBaseline = "top";
+      for (const it of (screen?.items || []).filter((i) => i.kind === "button" || i.kind === "box" || i.kind === "switch").slice(0, 70)) {
+        const x = it.x * k, y = it.y * k, w = it.w * k, h = it.h * k;
+        if (!(w > 3 && h > 3)) continue;
+        g.strokeStyle = "rgba(255,45,149,.9)";
+        g.strokeRect(x, y, w, h);
+        const tag = String(it.n);
+        const tw = g.measureText(tag).width + 6, th = fontPx + 4;
+        const ty = y >= th ? y - th : y;
+        g.fillStyle = "#ff2d95";
+        g.fillRect(x, ty, tw, th);
+        g.fillStyle = "#fff";
+        g.fillText(tag, x + 3, ty + 2);
+      }
+      const url = c.toDataURL("image/jpeg", 0.72);
+      img.close?.();
+      return { mime: "image/jpeg", data: url.slice(url.indexOf(",") + 1) };
+    } catch { return plain; }
+  }
 
   /** What the AI should know without reading a screen: battery, network, storage. */
   async function facts(n) {
@@ -165,6 +233,14 @@
       case "tap": return item ? `Tapping “${norm(item.text).slice(0, 40)}”…` : "Tapping…";
       case "type": return `Typing “${a.text.slice(0, 40)}”…`;
       case "scroll": return `Scrolling ${a.dir}…`;
+      case "swipe": return `Swiping ${a.dir}…`;
+      case "long_press": return item ? `Holding “${norm(item.text).slice(0, 40)}”…` : "Holding…";
+      case "tap_at": return "Tapping the screen…";
+      case "key": return { recents: "Opening recent apps…", notifications: "Opening notifications…", quick_settings: "Opening quick settings…" }[a.key] || "Pressing a key…";
+      case "media": return `Media: ${a.key || "play"}…`;
+      case "volume": return `Volume ${a.dir === "up" ? "up" : "down"}…`;
+      case "torch": return a.on ? "Turning the torch on…" : "Turning the torch off…";
+      case "navigate": return `Directions to ${a.to.slice(0, 40)}…`;
       case "back": return "Going back…";
       case "home": return "Going home…";
       default: return "Waiting for the screen…";
@@ -184,6 +260,7 @@
     if (!n?.screen || !n?.act || typeof ctx.think !== "function") {
       return { text: "Phone control needs the Android app with Android control on: Settings → Phone → Phone readiness.", ok: false };
     }
+    let shotSize = null;
     async function changedFrom(before, ms) {
       const until = Date.now() + ms;
       while (Date.now() < until) {
@@ -198,7 +275,7 @@
       const items = screen?.items || [];
       const own = screen?.app === OWN;
       // A quiz, test or exam on screen: Izuki explains, but never picks or types answers.
-      if ((a.do === "tap" || a.do === "type") && testPage(screen)) {
+      if (["tap", "type", "tap_at", "long_press"].includes(a.do) && testPage(screen)) {
         return { ok: false, stop: true, note: "This looks like a quiz or test, so I won't pick or type answers for you. Say “explain this” and I'll walk you through the question." };
       }
       switch (a.do) {
@@ -265,6 +342,69 @@
           }
           return { ok: true, note };
         }
+        case "long_press":
+        case "tap_at": {
+          if (own) return { ok: false, note: "that's Izuki's own chat; open the app you need first" };
+          let x, y, item = null;
+          if (a.do === "long_press") {
+            item = items.find((i) => i.n === a.n);
+            if (!item) return { ok: false, note: `there's no [${a.n}] on this screen` };
+            x = item.x + item.w / 2; y = item.y + item.h / 2;
+          } else {
+            if (!shotSize || !(a.x >= 0 && a.x <= 1000 && a.y >= 0 && a.y <= 1000)) return { ok: false, note: "there was no screenshot to point at: use a number from the list" };
+            x = (a.x / 1000) * shotSize.w; y = (a.y / 1000) * shotSize.h;
+            // What's under that point, if Android lists it: the same safety rules
+            // as a numbered tap, for every control there (a harmless label
+            // inside a "Delete" button doesn't hide the button). A point over
+            // nothing listed (a map, a game, a drawing) is allowed.
+            const under = items.filter((i) => i.w > 0 && i.h > 0 && x >= i.x && x <= i.x + i.w && y >= i.y && y <= i.y + i.h)
+              .sort((p, q) => p.w * p.h - q.w * q.h);
+            item = under.find((i) => RISKY.test(norm(i.text))) || under[0] || null;
+          }
+          if (item && RISKY.test(norm(item.text))) {
+            return { ok: false, stop: true, note: `That last step needs your finger: tap “${norm(item.text)}” yourself if you want it. I don't press buttons that call, send, pay, buy, delete or reset.` };
+          }
+          const before = look(screen);
+          const r = await n.act({ op: a.do === "long_press" ? "longpress" : "tap", x: Math.round(x), y: Math.round(y), ms: 650 });
+          if (!r?.done) return { ok: false, note: n.why?.(r, "") || "Android didn't take the touch" };
+          const after = await changedFrom(before, 2500);
+          const what = item ? `“${norm(item.text).slice(0, 40)}”` : "that spot";
+          return { ok: true, note: `${a.do === "long_press" ? "held" : "tapped"} ${what}${after ? ", the screen changed" : " but nothing changed"}` };
+        }
+        case "swipe": {
+          const w = Number(screen?.w) || 1080, h = Number(screen?.h) || 2340;
+          const from = a.dir === "left" ? 0.82 : 0.18, to = a.dir === "left" ? 0.18 : 0.82;
+          const before = look(screen);
+          const r = await n.act({ op: "swipe", x: Math.round(w * from), y: Math.round(h * 0.5), x2: Math.round(w * to), y2: Math.round(h * 0.5), ms: 280 });
+          if (!r?.done) return { ok: false, note: n.why?.(r, "") || "Android didn't take the swipe" };
+          const after = await changedFrom(before, 2000);
+          return { ok: true, note: after ? `swiped ${a.dir}` : `swiped ${a.dir} but nothing changed` };
+        }
+        case "key": {
+          if (!["recents", "notifications", "quick_settings"].includes(a.key)) return { ok: false, note: `there's no key called ${a.key || "that"}` };
+          const ok = await n.phoneAction?.(a.key);
+          await nap(700);
+          return ok ? { ok: true, note: `opened ${a.key.replace("_", " ")}` } : { ok: false, note: "Android didn't accept it" };
+        }
+        case "media": {
+          const key = ["play", "pause", "next", "previous"].includes(a.key) ? a.key : "play";
+          const ok = await n.media?.(key);
+          return ok ? { ok: true, note: `pressed ${key}` } : { ok: false, note: "Android didn't take the media key" };
+        }
+        case "volume": {
+          const ok = await n.volume?.(a.dir === "up" ? "up" : "down");
+          return ok ? { ok: true, note: `turned the volume ${a.dir === "up" ? "up" : "down"}` } : { ok: false, note: "Android didn't change the volume" };
+        }
+        case "torch": {
+          const r = await n.torch?.(a.on);
+          return r ? { ok: true, note: `torch ${a.on ? "on" : "off"}` } : { ok: false, note: "this phone's torch couldn't be switched" };
+        }
+        case "navigate": {
+          if (!a.to) return { ok: false, note: "no place was named" };
+          const r = await n.navigate?.(a.to);
+          await nap(1500);
+          return r ? { ok: true, note: `started directions to ${a.to}` } : { ok: false, note: "Google Maps didn't start directions" };
+        }
         case "scroll": {
           const r = await n.act({ op: "scroll", dir: a.dir });
           await nap(450);
@@ -294,7 +434,8 @@
     async function steps() {
     const known = await facts(n);
     const done = [];
-    let misses = 0, fails = 0;
+    const tried = new Map();
+    let misses = 0, fails = 0, plan = "";
     for (let i = 0; i < MAX_STEPS; i++) {
       if (stopped()) return STOP;
       const screen = await n.screen().catch(() => null);
@@ -305,16 +446,30 @@
       }
       if (screen.locked) return { text: "Your phone is locked. Unlock it and ask me again: I never act on a locked phone.", ok: false };
       const own = screen.app === OWN;
+      // Eyes as well as the list (a brain that sees pictures): the screen
+      // with each control's number drawn on it. Protected screens have none.
+      let image = null;
+      shotSize = null;
+      if (ctx.see && !own && n.snapshot) {
+        const shot = await n.snapshot().catch(() => null);
+        if (shot?.image) {
+          shotSize = { w: Number(shot.w) || Number(screen.w) || 0, h: Number(shot.h) || Number(screen.h) || 0 };
+          if (!(shotSize.w > 0 && shotSize.h > 0)) shotSize = null;
+          image = await mark(shot, screen, shotSize);
+        }
+      }
       const prompt = [
         `Goal: ${goal}`,
+        plan ? `Your plan: ${plan}` : "",
         known ? `Facts: ${known}` : "",
-        done.length ? `Done so far:\n${done.map((d, k) => `${k + 1}. ${d}`).join("\n")}` : "Done so far: nothing yet.",
+        done.length ? `Done so far:\n${done.slice(-14).map((d, k) => `${done.length > 14 ? done.length - 14 + k + 1 : k + 1}. ${d}`).join("\n")}` : "Done so far: nothing yet.",
         own ? "On screen now: Izuki's own chat. Don't tap it: open the app or Settings page you need."
           : `On screen now (app ${screen.app || "unknown"}):\n${describe(screen) || "(nothing readable on this screen)"}`,
+        image ? "A screenshot of this screen is attached; the pink numbers are the list's numbers." : "",
         "Your next single action, as one JSON object:",
       ].filter(Boolean).join("\n\n");
       let reply;
-      try { reply = await ctx.think(SYSTEM, prompt); }
+      try { reply = await ctx.think(SYSTEM, prompt, image); }
       catch (e) { if (stopped()) return STOP; throw e; }
       if (stopped()) return STOP;
       const a = parse(reply);
@@ -328,9 +483,19 @@
         continue;
       }
       misses = 0;
+      if (a.plan) plan = a.plan;
       if (a.do === "done") return { text: a.say || "Done.", ok: true, steps: done.length };
       if (a.do === "ask") return { text: a.say || "What should I do next?", ok: true, asked: true };
       const what = label(a, screen);
+      // The same action on the same screen a third time: it isn't working.
+      const sameKey = `${look(screen)}#${a.do}|${a.n}|${a.app}|${a.page}|${a.text}|${a.dir}|${a.x}|${a.y}|${a.key}`;
+      const times = (tried.get(sameKey) || 0) + 1;
+      tried.set(sameKey, times);
+      if (times >= 3) {
+        done.push(`${what.replace(/…$/, "")}: skipped, that's the third time on this same screen and it hasn't helped; do something different`);
+        if (++fails >= 4) return { text: "I keep ending up on the same screen without getting further, so I stopped here. Tell me what to do next, or take over.", ok: false };
+        continue;
+      }
       onStep(what);
       const r = await act(a, screen);
       if (stopped()) return STOP;

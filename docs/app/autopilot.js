@@ -390,6 +390,7 @@
       try {
         const result = await agent.run(state.goal, {
           think,
+          see: !!window.IzukiBrain?.sees?.(),
           viaAutopilot: true,
           stopped: () => state.cancelled,
           onStep: (line) => { state.step += 1; add(line.replace(/…$/, ""), "step"); },

@@ -659,6 +659,17 @@
       <p class="note" style="margin-top:4px">Off (the default): the orb only appears when you say “Hey Nova”, use the Ask Izuki tile or notification, or while Izuki is working or talking — then it goes away. On: a small orb also rests over your apps. Tap the orb to talk (tap again to stop), tap its words to open Izuki, drag it anywhere, long-press to hide it. Needs Android control.</p>
     </section>
 
+    <section id="native-voice" hidden>
+      <h3>Izuki's voice</h3>
+      <label class="swatch"><input type="checkbox" id="natural-voice" checked> Natural voice over other apps</label>
+      <p class="note" style="margin-top:4px">Gemini's voice when you talk to the orb or say “Hey Nova”. If it isn't ready within a few seconds (or your free voice allowance is used up), the phone's voice answers instead, so you never wait long.</p>
+      <div class="field" style="margin-top:10px">
+        <label for="phone-voice">Phone voice</label>
+        <div class="row" style="flex-wrap:nowrap;gap:8px"><select id="phone-voice" style="flex:1;min-width:0"><option value="">Most natural one installed</option></select><button class="btn ghost" id="phone-voice-hear" type="button">Hear it</button></div>
+        <p class="note" id="phone-voice-note" style="margin-top:4px">Used when there's no natural voice. Izuki picks Google's most natural voice on your phone; pick another and tap Hear it.</p>
+      </div>
+    </section>
+
     <section id="native-sound" hidden>
       <h3>Phone sound</h3>
       <div class="sound-presets" aria-label="Sound presets">
@@ -922,7 +933,15 @@
   let agentBusy = false, agentStep = "";
   let keepOrb = store.get("keepOrb", false);
   let orbBeat = 0;
+  /** What Izuki is doing right now, for the orb and the glow: think, talk, listen or "". */
+  function workMode() {
+    if (agentBusy || window.IzukiAutopilot?.state?.running || orbState === "thinking") return "think";
+    if (orbState === "speaking") return "talk";
+    if (orbState === "listening") return "listen";
+    return "";
+  }
   function syncNativeOrb() {
+    syncGlow();
     const native = window.IzukiNative;
     if (!native?.installed?.()) return;
     // A voice turn draws its own orb natively; the page stays out of its way.
@@ -932,18 +951,51 @@
     // Leaving the app is not listening. Only real work or talking shows the
     // orb; otherwise it rests (kept) or goes away. The old fallback said
     // "listening" for ever over Android Settings and the home screen.
-    const working = agentBusy || !!window.IzukiAutopilot?.state?.running || orbState === "thinking";
-    const mode = working ? "think" : orbState === "speaking" ? "talk" : "";
-    if (!mode) { void native.orb?.(keepOrb ? "rest" : "idle", keepOrb ? "Tap to talk" : ""); return; }
-    // Thinking and talking are leases on the native side: renew them while
-    // they're true. If this page stops (Android ended it), the orb rests by
-    // itself instead of saying "Working…" for ever.
-    const beat = () => void native.orb?.(mode, mode === "think" ? (agentStep || "Working…") : "Tap to stop", 20000);
-    beat();
-    orbBeat = setInterval(() => {
-      if (!document.hidden) { clearInterval(orbBeat); return; }
-      beat();
-    }, 8000);
+    // Each beat looks again: a beat that kept the mode it started with said
+    // "Working… tap to stop" for ever after the task had finished.
+    const beat = () => {
+      const mode = turnCtx || !document.hidden ? "" : workMode() === "listen" ? "" : workMode();
+      if (!mode) {
+        clearInterval(orbBeat);
+        if (!turnCtx && document.hidden) void native.orb?.(keepOrb ? "rest" : "idle", keepOrb ? "Tap to talk" : "");
+        return false;
+      }
+      // Thinking and talking are leases on the native side: if this page
+      // stops (Android ended it), the orb rests by itself.
+      void native.orb?.(mode, mode === "think" ? (agentStep || "Working…") : "Tap to stop", 20000);
+      return true;
+    };
+    if (beat()) orbBeat = setInterval(beat, 8000);
+  }
+
+  /**
+   * The rainbow edges, one light everywhere: on Android with control on, the
+   * phone draws them over every app (Izuki's own page too) while Izuki
+   * listens, works or talks, and they go out the moment it's done (or by
+   * themselves after 30 s without news). Without Android control the page
+   * draws its own.
+   */
+  let glowBeat = 0, glowNative = false;
+  function syncGlow() {
+    const native = window.IzukiNative;
+    if (!glowNative || !native?.glow) return;
+    clearInterval(glowBeat);
+    // A voice turn draws its own light natively.
+    if (turnCtx) return;
+    const send = () => {
+      const mode = turnCtx ? "" : window.IzukiEdge?.enabled?.() === false ? "" : workMode();
+      void native.glow(mode, 30000);
+      if (!mode) clearInterval(glowBeat);
+      return !!mode;
+    };
+    if (send()) glowBeat = setInterval(send, 8000);
+  }
+  async function checkNativeGlow() {
+    const native = window.IzukiNative;
+    const was = glowNative;
+    glowNative = !!native?.glow && native.installed?.() && await native.controlStatus?.() === true;
+    window.IzukiEdge?.useNative?.(glowNative);
+    if (glowNative || was) syncGlow();
   }
   const setOrb = (mode) => {
     orbState = mode || "";
@@ -1662,15 +1714,22 @@
   }
 
   /** The phone agent's brain: the same keys, its own instructions, no web search (faster). */
-  async function agentThink(system, prompt) {
+  // `image` (the phone agent's marked screenshot) goes to Gemini, which sees pictures.
+  async function agentThink(system, prompt, image) {
     const contents = [{ role: "user", parts: [{ text: prompt }] }];
-    if (usesGemini()) return gemini(contents, null, undefined, true, system);
+    const seen = image?.data ? [{ role: "user", parts: [{ inline_data: { mime_type: image.mime || "image/jpeg", data: image.data } }, { text: prompt }] }] : contents;
+    if (usesGemini()) return gemini(seen, null, undefined, true, system);
     try { return await otherBrain(contents, null, undefined, system); }
-    catch (e) { if (key && !requestEnd) return gemini(contents, null, undefined, true, system); throw e; }
+    catch (e) { if (key && !requestEnd) return gemini(seen, null, undefined, true, system); throw e; }
   }
+  /** The phone agent gets screenshots when its brain sees pictures (Gemini). */
+  const agentSees = () => usesGemini();
   // Autopilot's Run hands anything that isn't a quick routine to the phone
   // agent, with this same brain (only once a key is set).
-  window.IzukiBrain = { agentThink: (system, prompt) => (ready() ? agentThink(system, prompt) : Promise.reject(new Error("Add an AI key in Settings first."))) };
+  window.IzukiBrain = {
+    agentThink: (system, prompt, image) => (ready() ? agentThink(system, prompt, image) : Promise.reject(new Error("Add an AI key in Settings first."))),
+    sees: () => ready() && agentSees(),
+  };
 
   /** Whoever answers: the chosen brain, with Gemini standing in if it fails.
    *  `system` swaps in different instructions (the apps lane's protocol). */
@@ -2605,6 +2664,7 @@
         try {
           result = await window.IzukiAgent.run(said, {
             think: agentThink,
+            see: agentSees(),
             stopped: () => !!requestEnd,
             onStep: (line) => {
               agentStep = line;
@@ -2617,6 +2677,7 @@
         } finally {
           agentBusy = false;
           agentStep = "";
+          syncNativeOrb();
         }
         if (requestEnd) throw new Error("stopped");
         reply = result.text || "Done.";
@@ -3070,6 +3131,8 @@
    * works with the screen off. In front, the cloud voice is used as before.
    */
   const nativeVoiceFirst = () => !!window.IzukiNative?.canSpeak?.() && (!!turnCtx || document.hidden);
+  /** Gemini's natural voice over other apps too (Settings → Izuki's voice; on unless switched off). */
+  const naturalOverApps = () => store.get("naturalVoice", true) !== false;
   /** Tell Android when Izuki's own microphone or voice is in use, so "Hey Nova" steps aside meanwhile. */
   let pageMicOpen = false, pageTalking = false;
   const pageVoice = (on) => { pageTalking = !!on; window.IzukiNative?.micBusy?.(pageMicOpen || pageTalking); };
@@ -3118,9 +3181,13 @@
     let first = "", closed = false, cancelled = false, ended = false, kick = null, playing = null;
     const alive = () => my === speakSeq && !cancelled;
     const wake = () => { const k = kick; kick = null; k?.(); };
+    // Over another app (a voice turn, or Izuki in the background) the natural
+    // voice is played by Android; it's asked for only when that can happen.
+    const natural = () => !nativeVoiceFirst() || (naturalOverApps() && !!window.IzukiNative?.canPlayClip?.());
+    let plain = false;
     const push = (w) => {
       w = w.replace(/[*_#`]/g, "").trim();
-      if (w && alive() && !ended) pieces.push({ words: w, url: nativeVoiceFirst() ? Promise.resolve(null) : geminiVoice(w) });
+      if (w && alive() && !ended) pieces.push({ words: w, url: natural() ? geminiVoice(w) : Promise.resolve(null) });
       if (!playing && pieces.length) playing = run();
       wake();
     };
@@ -3136,7 +3203,17 @@
         }
         const p = pieces[i++];
         setOrb("speaking");
-        const url = await p.url;
+        const overApps = nativeVoiceFirst();
+        let url;
+        if (plain) { url = null; p.url.then((u) => u && URL.revokeObjectURL(u)); }
+        else if (overApps) {
+          // Never keep a voice turn waiting for the natural voice: the phone's
+          // voice answers if it isn't ready in a few seconds (a native timer:
+          // a page in the background has slow ones).
+          const late = (window.IzukiNative?.pause ? window.IzukiNative.pause(i === 1 ? 3500 : 6000) : new Promise((r) => setTimeout(r, 3500))).then(() => "late");
+          url = await Promise.race([p.url, late]);
+          if (url === "late") { url = null; plain = true; p.url.then((u) => u && URL.revokeObjectURL(u)); note("natural voice was slow: the phone's voice"); }
+        } else url = await p.url;
         if (!alive()) { if (url) URL.revokeObjectURL(url); break; }
         note(url ? "speaking (Gemini voice)" : "speaking (phone voice)");
         const rest = () => pieces.slice(i - 1).map((x) => x.words).join(" ");
@@ -3146,7 +3223,11 @@
         // The character's mouth and hands follow these words.
         window.IzukiOrb?.say?.(p.words);
         let blocked = false;
-        if (url) {
+        if (url && overApps && window.IzukiNative?.canPlayClip?.()) {
+          const how = await window.IzukiNative.playClip(url, p.words, { turn: turnCtx?.id || "" });
+          URL.revokeObjectURL(url);
+          if (how === "error") await speakWithPhone(p.words, () => {});
+        } else if (url) {
           await playAudio(url, p.words, () => {
             blocked = true;
             const last = closed && i === pieces.length;
@@ -3594,6 +3675,8 @@
     };
   }
   try { window.IzukiAutopilot?.subscribe?.(() => syncNativeOrb()); } catch {}
+  void checkNativeGlow();
+  window.IzukiNative?.onControl?.(() => void checkNativeGlow());
 
   /** Hear a recorded clip: its words (Groq's Whisper, else Gemini). */
   async function hearClip(audio) {
@@ -4357,6 +4440,30 @@
     };
   }
 
+  /** Settings → Izuki's voice: the natural voice switch and the phone voice picker with a sample. */
+  async function loadVoicePanel() {
+    const natural = $("natural-voice"), pick = $("phone-voice"), hear = $("phone-voice-hear"), info = $("phone-voice-note");
+    if (!natural || !pick) return;
+    natural.checked = naturalOverApps();
+    natural.onchange = () => store.set("naturalVoice", !!natural.checked);
+    const chosen = store.get("phoneVoice", "");
+    const list = await window.IzukiNative?.voices?.() || [];
+    pick.replaceChildren(new Option(list.length ? `Most natural one installed (${list[0].label})` : "Most natural one installed", ""));
+    for (const v of list) pick.append(new Option(v.label, v.name));
+    pick.value = list.some((v) => v.name === chosen) ? chosen : "";
+    if (!list.length) info.textContent = "Android didn't list its voices. Izuki uses the phone's default voice.";
+    pick.onchange = () => { store.set("phoneVoice", pick.value); window.IzukiNative?.setVoice?.(pick.value); };
+    hear.onclick = async () => {
+      window.IzukiNative?.setVoice?.(pick.value);
+      hear.disabled = true;
+      const name = person().name;
+      await window.IzukiNative?.speak?.(`Hi, I'm ${name}. This is how I'll sound when I answer you over other apps.`);
+      hear.disabled = false;
+    };
+  }
+  // The picked phone voice from the start, not only after Settings was opened.
+  if (store.get("phoneVoice", "")) window.IzukiNative?.setVoice?.(store.get("phoneVoice", ""));
+
   async function loadSoundPanel() {
     const a = await window.IzukiNative?.audio?.();
     const bind = (name) => {
@@ -4468,8 +4575,10 @@
         };
       }
       $("native-wake").hidden = false;
+      $("native-voice").hidden = false;
       $("native-sound").hidden = false;
       $("native-update").hidden = false;
+      void loadVoicePanel();
       renderUpdatePanel();
       if (!updateInfo) void checkForUpdates(false);
       void verifyPendingUpdate();
@@ -4480,6 +4589,7 @@
       if (healthPanel) healthPanel.hidden = true;
       controlPanel.hidden = true;
       $("native-wake").hidden = true;
+      $("native-voice").hidden = true;
       $("native-sound").hidden = true;
       $("native-update").hidden = true;
       removeUpdateBanner();
@@ -4815,6 +4925,7 @@
     window.IzukiEdge?.enabled(on);
     for (const s of glowSwitches) s.checked = on;
     window.IzukiNative?.setEdgeGlow?.(on);
+    syncGlow();
   };
   const glowOn = (() => { try { return window.IzukiEdge?.enabled() ?? true; } catch { return true; } })();
   for (const s of glowSwitches) { s.checked = glowOn; s.onchange = () => setGlow(s.checked); }
@@ -5215,9 +5326,12 @@
     }
   });
   // A tap on the orb while it says "Tap to stop" over Izuki's own reply or phone agent run.
+  // It stops everything the page is doing: a reply, the phone agent, an Autopilot run.
   window.IzukiNative?.onStop?.(() => {
     if (busy) endRequest("cancelled");
     else hush();
+    try { window.IzukiAutopilot?.stop?.(); } catch {}
+    setOrb("");
     setStatus("Stopped.");
   });
   window.IzukiNative?.onTurnCancel?.((d) => {
