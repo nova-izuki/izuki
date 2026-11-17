@@ -243,6 +243,8 @@
           if (a.n && !item) return { ok: false, note: `there's no [${a.n}] on this screen` };
           if (item && item.kind !== "box") return { ok: false, note: `[${a.n}] isn't a text box` };
           if (item) await n.act({ op: "click", n: a.n });
+          // Stop pressed during that tap: nothing gets typed.
+          if (stopped()) return { ok: false, stop: true, note: "Stopped before typing." };
           const r = await n.act({ op: "type", n: item ? a.n : 0, text: a.text });
           if (!r?.done) return { ok: false, note: n.why?.(r, "") || "Android didn't accept the typing" };
           let note = r.verified === false ? `typed “${a.text}” (the box didn't show it back)` : `typed “${a.text}”`;
@@ -255,6 +257,7 @@
             else if (/:\/\/|\bwww\.|\blocalhost\b|\b[a-z0-9-]+(?:\.[a-z0-9-]+)+(?:[/?#]|:\d)|\b[a-z0-9-]+\.(?:com|net|org|io|ai|co|me|ly|app|dev|xyz|info|ru|cn|uk|ng|de|fr|tk|top|site|online|link)\b/i.test(a.text)) {
               return { ok: false, stop: true, note: `I typed the address “${a.text.slice(0, 80)}” but didn't open it: press Enter yourself if you want to go there.` };
             } else {
+              if (stopped()) return { ok: false, stop: true, note: "Stopped before pressing Search." };
               const s = await n.act({ op: "submit" });
               note += s?.done ? " and pressed Search" : "; couldn't find a Search key";
               await nap(900);
@@ -330,6 +333,7 @@
       const what = label(a, screen);
       onStep(what);
       const r = await act(a, screen);
+      if (stopped()) return STOP;
       done.push(`${what.replace(/…$/, "")}: ${r.note}`);
       if (r.stop) return { text: r.note, ok: false, asked: true };
       if (r.ok) fails = 0;

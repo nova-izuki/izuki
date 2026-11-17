@@ -978,6 +978,9 @@ public class IzukiAccessibilityService extends AccessibilityService {
    */
   private static void arrange(Context c, LinearLayout box, WindowManager.LayoutParams lp, boolean left) {
     orbLeft = left;
+    // Physical sides, also on a right-to-left phone: the drag and the settle
+    // measure from the real left or right edge.
+    box.setLayoutDirection(View.LAYOUT_DIRECTION_LTR);
     box.removeAllViews();
     LinearLayout.LayoutParams dotLp = new LinearLayout.LayoutParams(dp(c, 56), dp(c, 56));
     LinearLayout.LayoutParams capLp = new LinearLayout.LayoutParams(
@@ -991,7 +994,7 @@ public class IzukiAccessibilityService extends AccessibilityService {
       box.addView(caption, capLp);
       box.addView(dot, dotLp);
     }
-    lp.gravity = Gravity.BOTTOM | (left ? Gravity.START : Gravity.END);
+    lp.gravity = Gravity.BOTTOM | (left ? Gravity.LEFT : Gravity.RIGHT);
   }
 
   /**

@@ -166,6 +166,14 @@ vm.runInNewContext(fs.readFileSync(path.resolve(__dirname, "../../docs/app/nativ
   assert.ok(!calls.some((c) => String(c).startsWith("launch:")), "nothing was launched");
   assert.equal(await window.IzukiNative.quickDeviceCommand("split screen"), "Split screen is on: pick the second app.");
   assert.equal(calls.at(-1), "split_screen");
+  // Right after startup a plan waits for the app list (a moment at most) instead of guessing.
+  window.IzukiNative._resetAppNames?.();
+  let releaseApps;
+  window.Capacitor.Plugins.IzukiControl.apps = () => new Promise((r) => { releaseApps = () => r({ apps: [{ name: "Learn and Play Music", id: "learn" }] }); });
+  const ready = window.IzukiNative.appNamesReady(2000);
+  setTimeout(() => releaseApps(), 20);
+  await ready;
+  assert.equal(window.IzukiNative.isAppName("learn and play music"), true, "the list read during the wait is used");
   // Android's own voice: one promise per line, settled by its "done" event.
   assert.equal(window.IzukiNative.canSpeak(), true);
   assert.equal(await window.IzukiNative.speak("Your phone has 41 GB free."), "done");

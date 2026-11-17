@@ -3129,6 +3129,8 @@
       while (alive()) {
         if (i >= pieces.length) {
           if (closed) break;
+          // A voice turn: the rest is still being written, so Android keeps the turn open.
+          if (turnCtx && nativeVoiceFirst()) window.IzukiNative.turnState(turnCtx.id, "think", first);
           await new Promise((r) => (kick = r));
           continue;
         }

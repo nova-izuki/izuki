@@ -798,6 +798,9 @@ public class IzukiWakeService extends Service implements RecognitionListener {
     long now = SystemClock.elapsedRealtime();
     endSession();
     closeMic();
+    // Even the session that spent the budget: listening resumes normally after the turn.
+    synchronized (gate) { gate.woke(); }
+    budgetSpent = false;
     if (now - lastWake < 6000) { arm(); return; }
     lastWake = now;
     lastWakeWall = System.currentTimeMillis();

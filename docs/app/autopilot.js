@@ -352,6 +352,10 @@
 
   async function run(raw) {
     if (state.running) return false;
+    // The installed apps' names first (read once, a moment at most), so an
+    // app called "Find My Mobile" or "Learn and Play Music" is opened as an app.
+    await window.IzukiNative?.appNamesReady?.();
+    if (state.running) return false;
     // The phone agent uses Android's numbered screen list too; one at a time.
     if (window.IzukiAgent?.busy) {
       state.log = [];

@@ -54,6 +54,15 @@ final class IzukiVoice {
   /** The glowing screen edges during a turn (Settings → Phone; on unless switched off). */
   static volatile boolean edgeGlow = true;
 
+  /** The glow switch, applied to a turn that's running now too. */
+  static void setEdgeGlow(boolean on) {
+    edgeGlow = on;
+    ui.post(() -> {
+      if (turn.isEmpty()) return;
+      IzukiAccessibilityService.edgeGlow(on, "greet".equals(phase) ? "listen" : phase);
+    });
+  }
+
   private static void bind(Context c) {
     if (app == null && c != null) app = c.getApplicationContext();
   }
@@ -447,7 +456,14 @@ final class IzukiVoice {
   /** The page's progress during a turn ("Opening Settings…"): the orb shows it. */
   static void state(String id, String state, String text) {
     ui.post(() -> {
-      if (turn.isEmpty() || !turn.equals(id) || "talk".equals(phase)) return;
+      if (turn.isEmpty() || !turn.equals(id)) return;
+      if ("talk".equals(phase)) {
+        // Between two sentences of a reply that's still being written: wait
+        // for the rest (the page timeout), not the 12-second "done" fallback.
+        if (!speakingId.isEmpty()) return;
+        ui.removeCallbacks(afterTalk);
+        IzukiAccessibilityService.edgeGlow(edgeGlow, "think");
+      }
       phase = "think";
       String s = "listen".equals(state) || "talk".equals(state) ? state : "think";
       IzukiAccessibilityService.orbFor("voice", s, VoiceText.caption(text == null ? "" : text, 120), 30_000);

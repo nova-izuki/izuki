@@ -56,6 +56,17 @@ public class WakeGateTest {
     assertFalse(WakeGate.nearMiss("what's for dinner"));
   }
 
+  @Test public void aWakeInTheLastBudgetedSessionDoesNotLeaveItDeaf() {
+    WakeGate gate = new WakeGate();
+    long t = 100_000;
+    boolean spent = false;
+    for (int i = 0; i < WakeGate.BUDGET; i++) { spent = gate.began(t); gate.ended(t + 500); t += WakeGate.MIN_GAP_MS + 600; }
+    assertTrue(spent);
+    assertEquals("used up its checks for now", gate.whyNot(t));
+    gate.woke();
+    assertEquals("", gate.whyNot(t));
+  }
+
   @Test public void quickSpellingsOfNova() {
     assertTrue(WakeGate.isWake("hey nover what's the time", false));
     assertTrue(WakeGate.isWake("hey noba", false));

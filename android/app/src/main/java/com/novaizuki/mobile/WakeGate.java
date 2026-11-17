@@ -153,6 +153,9 @@ final class WakeGate {
     return sessions.size() >= BUDGET;
   }
 
+  /** "Hey Nova" was heard: those checks were wanted, so the budget starts over (no rest). */
+  void woke() { sessions.clear(); }
+
   /** A session ended (heard nothing, heard something else, or failed). */
   void ended(long now) { lastSessionEnd = now; }
 

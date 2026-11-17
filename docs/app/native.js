@@ -71,15 +71,19 @@
   let orbOverApps = false;
   // A read that failed (control not ready yet) is tried again after 30 s,
   // a good one after 10 minutes.
-  let appNames = null, appNamesAt = 0, appNamesTried = 0, appNamesBusy = false;
-  const loadAppNames = async () => {
-    if (appNamesBusy || Date.now() - appNamesTried < 30000) return;
-    appNamesBusy = true;
+  // The read in flight is shared, so a caller can wait for it.
+  let appNames = null, appNamesAt = 0, appNamesTried = 0, appNamesLoad = null;
+  const loadAppNames = () => {
+    if (appNamesLoad) return appNamesLoad;
+    if (Date.now() - appNamesTried < 30000) return Promise.resolve();
     appNamesTried = Date.now();
-    try {
-      const list = (await control()?.apps?.())?.apps || [];
-      if (list.length) { appNames = new Set(list.map((a) => String(a.name || "").trim().toLowerCase())); appNamesAt = Date.now(); }
-    } catch {} finally { appNamesBusy = false; }
+    appNamesLoad = (async () => {
+      try {
+        const list = (await control()?.apps?.())?.apps || [];
+        if (list.length) { appNames = new Set(list.map((a) => String(a.name || "").trim().toLowerCase())); appNamesAt = Date.now(); }
+      } catch {} finally { appNamesLoad = null; }
+    })();
+    return appNamesLoad;
   };
   let wakeExtra = { audio: "", voice: false };
   // Native speech: one promise per line, settled by the "speech" events.
@@ -510,6 +514,16 @@
       const wanted = String(name || "").trim().toLowerCase();
       if (!appNamesAt || Date.now() - appNamesAt > 600000) void loadAppNames();
       return appNames ? appNames.has(wanted) : null;
+    },
+    /**
+     * Wait (at most `ms`) for the app list when it hasn't been read yet, so
+     * a plan made right after startup still knows "Learn and Play Music" is an app.
+     */
+    async appNamesReady(ms = 2500) {
+      if (appNames && Date.now() - appNamesAt <= 600000) return;
+      let timer = 0;
+      await Promise.race([loadAppNames(), new Promise((r) => { timer = setTimeout(r, ms); })]);
+      clearTimeout(timer);
     },
     /** For the tests: read the app list again on the next ask. */
     _resetAppNames() { appNamesTried = 0; appNamesAt = 0; },
