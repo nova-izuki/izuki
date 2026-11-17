@@ -96,3 +96,12 @@ Install the 1.0.217 APK (Settings → Phone → App updates). Android control an
 2. "Hey Nova, open the second link" on that page: the phone agent does it (a doing request), not an explanation.
 3. In Izuki, send "summarize https://izukinova.ai" with no PC linked: it reads the page and summarizes it.
 4. On a practice quiz page, "Hey Nova, answer this" with the phone agent: it explains (and says the answer if asked) but doesn't tap an option.
+
+## 1.0.219: Android Run, orb sides, glowing edges, Hey Nova
+
+1. Autopilot → type "open my files and check what's taking space" → Run: the log shows AI steps (opening Files, reading the storage screen) and ends with an answer, never "I don't know that routine". "open YouTube" still opens straight away.
+2. Drag the orb to the left edge, tap it and speak: the words grow to the right and stay on screen. Drag it to the right: they grow to the left.
+3. While speaking to the orb it swells with your voice; while Izuki answers it pulses with the words.
+4. "Hey Nova" or an orb tap: a rainbow light runs around the screen edges over any app and grows with the voice. Settings → Phone → glowing edges off: no light on the next turn (and none in the app).
+5. "Hey Nova" ten times from across a room, with a TV on for some: count how many open. Settings → Phone → Diagnostics shows "heard someone but didn't check: …" or a "near miss" for the ones that didn't.
+6. Ask a long question by voice: Izuki starts speaking before the whole answer is written.
