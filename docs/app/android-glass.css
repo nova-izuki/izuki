@@ -1296,3 +1296,180 @@ html[data-os] .app > header .tools > .call-btn {
 /* Readiness steps stay small next to their row (the panel's list size is bigger). */
 html[data-os="android"] .panel .health-steps li,
 html[data-os="android"] .panel .health-more p { font-size: 11.5px; line-height: 1.45; }
+
+/* ------------------------------------------------------- on your phone */
+/* One grouped list, like Android's own settings: what Izuki can do here,
+   its live state on the right, and a short explainer on tap. */
+.feature-list {
+  width: 100%;
+  max-width: 420px;
+  display: grid;
+  border: 1px solid var(--ag-rim);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.035);
+  overflow: hidden;
+}
+.feature-row {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 64px;
+  padding: 10px 12px 10px 12px;
+  border: 0;
+  background: transparent;
+  color: var(--ag-ink);
+  text-align: left;
+  font: inherit;
+}
+.feature-row + .feature-row { border-top: 1px solid rgba(255, 255, 255, 0.07); }
+.feature-row:active { background: rgba(143, 180, 255, 0.08); }
+.feature-row:focus-visible { outline: 2px solid var(--ag-teal); outline-offset: -2px; border-radius: 16px; }
+.feature-row > i {
+  width: 40px;
+  height: 40px;
+  border-radius: 13px;
+  display: grid;
+  place-items: center;
+  color: #dceaff;
+  background: linear-gradient(145deg, rgba(143, 180, 255, 0.24), rgba(76, 215, 206, 0.1));
+}
+.feature-row > i svg { width: 20px; height: 20px; }
+.feature-words { display: grid; gap: 2px; min-width: 0; }
+.feature-words b { font-size: 15px; font-weight: 650; letter-spacing: -0.01em; }
+.feature-words small { color: var(--ag-muted); font-size: 12.5px; line-height: 1.35; }
+.feature-side { display: flex; align-items: center; gap: 6px; color: var(--ag-muted); }
+.feature-side svg { width: 16px; height: 16px; }
+.feature-pill {
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: rgba(255, 209, 140, 0.14);
+  color: var(--ag-warn);
+  font-size: 11.5px;
+  font-weight: 650;
+}
+.feature-pill.on { background: rgba(116, 230, 177, 0.14); color: var(--ag-good); }
+
+/* The explainer: a sheet from the bottom, the same glass as the command centre. */
+.guide-sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 35;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 12px;
+  background: rgba(3, 5, 11, 0.62);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+}
+.guide-sheet[hidden] { display: none; }
+.guide-panel {
+  width: 100%;
+  max-width: 520px;
+  max-height: calc(100dvh - 24px);
+  overflow-y: auto;
+  padding: 18px 18px calc(18px + var(--safe-bottom, 0px));
+  border: 1px solid var(--ag-rim-bright);
+  border-radius: 28px;
+  background:
+    radial-gradient(80% 40% at 50% 0%, rgba(112, 147, 255, 0.14), transparent 70%),
+    rgba(13, 17, 29, 0.96);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.5);
+  color: var(--ag-ink);
+  animation: ag-rise 240ms var(--ag-ease);
+}
+.guide-head {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) 42px;
+  align-items: center;
+  gap: 12px;
+}
+.guide-head h2 { margin: 0; font-size: 21px; font-weight: 650; letter-spacing: -0.02em; text-wrap: balance; }
+.guide-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  color: #dceaff;
+  background: linear-gradient(145deg, rgba(143, 180, 255, 0.28), rgba(76, 215, 206, 0.12));
+}
+.guide-icon svg { width: 22px; height: 22px; }
+.guide-what { margin: 14px 0 6px; color: #d5dcf0; font-size: 15px; line-height: 1.5; }
+.guide-steps { margin: 6px 0 0; padding: 0; list-style: none; counter-reset: step; display: grid; gap: 10px; }
+.guide-steps li {
+  counter-increment: step;
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  font-size: 14px;
+  line-height: 1.45;
+}
+.guide-steps li::before {
+  content: counter(step);
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: rgba(110, 231, 223, 0.14);
+  color: var(--ag-teal);
+  font-size: 12.5px;
+  font-weight: 700;
+}
+.guide-try-label { margin: 18px 0 8px; color: var(--ag-muted); font-size: 12.5px; }
+.guide-tries { display: flex; flex-wrap: wrap; gap: 8px; }
+.guide-try {
+  min-height: 40px;
+  padding: 8px 14px;
+  border: 1px solid rgba(172, 207, 255, 0.22);
+  border-radius: 999px;
+  background: rgba(143, 180, 255, 0.08);
+  color: var(--ag-ink);
+  font: inherit;
+  font-size: 13.5px;
+}
+.guide-try:active { background: rgba(143, 180, 255, 0.16); }
+.guide-need { margin: 16px 0 0; color: var(--ag-warn); font-size: 13px; line-height: 1.45; }
+.guide-actions { margin-top: 18px; display: grid; }
+.guide-main {
+  min-height: 50px;
+  border: 0;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #8fb4ff, #6ee7df);
+  color: #071021;
+  font: inherit;
+  font-size: 15.5px;
+  font-weight: 700;
+}
+.guide-main:active { transform: scale(0.985); }
+.guide-main:focus-visible, .guide-try:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) {
+  .guide-panel { animation: none; }
+  .guide-main:active { transform: none; }
+}
+
+/* Settings explanations: two lines, then "How it works". */
+.panel p.note.clamp:not(.open) {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+.panel .note-more {
+  display: block;
+  align-self: flex-start;
+  margin: 2px auto 0 0;
+  padding: 6px 0;
+  min-height: 32px;
+  border: 0;
+  background: none;
+  color: var(--ag-teal, #6ee7df);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 650;
+}
+.panel .note-more:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; border-radius: 6px; }
+.guide-panel:focus { outline: none; }

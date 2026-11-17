@@ -63,6 +63,9 @@ function brain(replies) {
   };
 }
 
+/** Run the agent on a fake phone. */
+async function A_run(p, goal, ctx) { return load(p.native).run(goal, ctx); }
+
 (async () => {
   // 1. "What's taking space on my phone?" — Settings → Storage, then the answer from the screen.
   {
@@ -251,7 +254,110 @@ function brain(replies) {
     assert.equal(parse('{"do":"done","say":"a } inside \\"quotes\\""}').say, 'a } inside "quotes"');
     assert.ok(A._test.RISKY.test("Call"), "calling someone needs the person's finger");
     assert.ok(!A._test.RISKY.test("Storage"));
+    // The new moves, as models write them.
+    assert.equal(parse('{"do":"swipe","dir":"up"}').do, "scroll", "a finger moving up scrolls the list");
+    assert.equal(parse('{"do":"swipe","dir":"up"}').dir, "down");
+    assert.equal(parse('{"do":"swipe","dir":"left"}').do, "swipe");
+    assert.equal(parse('{"action":"tap_xy","x":"512","y":300}').x, 512);
+    assert.equal(parse('{"do":"long-press","n":4}').do, "long_press");
+    assert.equal(parse('{"do":"double_tap","x":400,"y":300}').do, "double_tap");
+    assert.equal(parse('{"do":"notifications"}').key, "notifications");
+    assert.equal(parse('{"do":"torch","on":"on"}').on, true);
+    assert.equal(parse('{"do":"tap","n":2,"plan":"1. open Files 2. read sizes"}').plan, "1. open Files 2. read sizes");
   }
 
-  console.log("Phone agent: storage answer, risky refusal, own page, lock, Stop and parsing pass.");
+  // 11. Eyes: a brain that sees pictures gets the screenshot, a point on it lands on the screen, and the risky check still holds.
+  {
+    const p = phone();
+    p.state.app = "com.android.settings";
+    const touches = [];
+    const act = p.native.act;
+    p.native.act = async (args) => { if (args.op === "tap" || args.op === "longpress" || args.op === "swipe") touches.push(args); return act(args); };
+    p.native.snapshot = async () => ({ image: "AAAA", type: "image/jpeg", w: 1000, h: 2000 });
+    const shots = [];
+    const ai = brain([
+      '{"do":"tap_at","x":500,"y":250,"plan":"1. tap the middle 2. finish"}',
+      (prompt) => { assert.match(prompt, /Your plan: 1\. tap the middle/, "the plan comes back each turn"); assert.match(prompt, /screenshot of this screen is attached/); return '{"do":"done","say":"ok"}'; },
+    ]);
+    const think = (system, prompt, image) => { shots.push(image); return ai.think(system, prompt); };
+    const r = await A_run(p, "tap the middle", { think, see: true });
+    assert.equal(r.ok, true);
+    assert.equal(shots[0]?.data, "AAAA", "the screenshot goes with the prompt");
+    assert.deepEqual([touches[0].x, touches[0].y], [500, 500], "0-1000 on the screenshot → real screen pixels");
+    // A point that lands on a risky control is refused like a numbered tap.
+    const q = phone();
+    q.state.app = "com.android.settings";
+    q.native.snapshot = async () => ({ image: "AAAA", w: 1000, h: 2000 });
+    q.native.screen = async () => ({ app: "com.android.settings", w: 1000, h: 2000, items: [{ n: 1, text: "Delete all trash", kind: "button", x: 400, y: 900, w: 200, h: 100 }] });
+    const r2 = await A_run(q, "clean up", { think: brain(['{"do":"tap_at","x":500,"y":475}']).think, see: true });
+    assert.equal(r2.asked, true);
+    assert.match(r2.text, /tap “Delete all trash” yourself/);
+    assert.ok(!q.calls.some((c) => c.startsWith("act:tap")), "the risky spot is never touched");
+    // A harmless label inside a risky button doesn't hide the button.
+    const inner = phone();
+    inner.native.snapshot = async () => ({ image: "AAAA", w: 1000, h: 2000 });
+    inner.native.screen = async () => ({ app: "com.android.settings", w: 1000, h: 2000, items: [
+      { n: 1, text: "Delete account", kind: "button", x: 100, y: 800, w: 800, h: 300 },
+      { n: 2, text: "Your photos and data", kind: "text", x: 150, y: 900, w: 300, h: 60 },
+    ] });
+    const r3 = await A_run(inner, "clean up", { think: brain(['{"do":"tap_at","x":300,"y":465}']).think, see: true });
+    assert.match(r3.text, /tap “Delete account” yourself/);
+    assert.ok(!inner.calls.some((c) => c.startsWith("act:tap")));
+    // No screenshot (a brain without eyes): tap_at is refused with a reason, not guessed.
+    const s = phone();
+    s.state.app = "com.android.settings";
+    const ai3 = brain(['{"do":"tap_at","x":500,"y":500}', (prompt) => { assert.match(prompt, /no screenshot to point at/); return '{"do":"done","say":"ok"}'; }]);
+    await A_run(s, "tap", { think: ai3.think });
+  }
+
+  // 12. Swipes, keys, and the same step on the same screen three times.
+  {
+    const p = phone();
+    p.state.app = "com.android.settings";
+    const touches = [], keys = [];
+    const act = p.native.act;
+    p.native.act = async (args) => { if (args.op === "swipe") touches.push(args); return act(args); };
+    p.native.phoneAction = async (k) => { keys.push(k); return true; };
+    await A_run(p, "next photo, then notifications", { think: brain(['{"do":"swipe","dir":"left"}', '{"do":"key","key":"notifications"}', '{"do":"done","say":"ok"}']).think });
+    assert.ok(touches[0] && touches[0].x > touches[0].x2, "a left swipe moves the finger right to left");
+    // A double tap is two touches on the same spot.
+    const d = phone();
+    d.state.app = "com.android.settings";
+    const taps = [];
+    const dact = d.native.act;
+    d.native.act = async (args) => { if (args.op === "tap") taps.push([args.x, args.y]); return dact(args); };
+    d.native.screen = async () => ({ app: "com.android.settings", w: 1000, h: 2000, items: [{ n: 1, text: "Photo", kind: "button", x: 0, y: 0, w: 1000, h: 1000 }] });
+    await A_run(d, "zoom in", { think: brain(['{"do":"double_tap","n":1}', '{"do":"done","say":"ok"}']).think });
+    assert.deepEqual(taps, [[500, 500], [500, 500]]);
+    // A long press on a harmless label inside a risky button is refused too.
+    const lp = phone();
+    lp.native.screen = async () => ({ app: "com.android.settings", w: 1000, h: 2000, items: [
+      { n: 1, text: "Delete account", kind: "button", x: 0, y: 800, w: 1000, h: 300 },
+      { n: 2, text: "Signed in as you", kind: "text", x: 300, y: 900, w: 400, h: 100 },
+    ] });
+    const lr = await A_run(lp, "hold it", { think: brain(['{"do":"long_press","n":2}']).think });
+    assert.match(lr.text, /tap “Delete account” yourself/);
+    assert.ok(!lp.calls.some((c) => c.startsWith("act:longpress")), "the risky parent is never pressed");
+    // Swiping through photos: the list stays the same but the picture changes, so it isn't a repeat.
+    const g = phone();
+    g.state.app = "com.android.settings";
+    let shotNo = 0;
+    g.native.snapshot = async () => ({ image: ("P" + (++shotNo)).repeat(90), w: 1000, h: 2000 });
+    const gp = brain([
+      '{"do":"swipe","dir":"left"}', '{"do":"swipe","dir":"left"}', '{"do":"swipe","dir":"left"}',
+      (prompt) => { assert.doesNotMatch(prompt, /third time on this same screen/, "a new photo each time is progress"); return '{"do":"done","say":"ok"}'; },
+    ]);
+    await A_run(g, "show me three photos", { think: gp.think, see: true });
+    assert.deepEqual(keys, ["notifications"]);
+    const q = phone();
+    q.state.app = "com.android.settings";
+    const ai = brain([
+      '{"do":"scroll","dir":"down"}', '{"do":"scroll","dir":"down"}', '{"do":"scroll","dir":"down"}',
+      (prompt) => { assert.match(prompt, /third time on this same screen/); return '{"do":"done","say":"ok"}'; },
+    ]);
+    q.native.act = async (args) => ({ done: args.op === "scroll" });
+    await A_run(q, "find it", { think: ai.think });
+  }
+
+  console.log("Phone agent: storage answer, risky refusal, own page, lock, Stop, parsing, screenshots, points, swipes, keys, plan and repeat guard pass.");
 })().catch((e) => { console.error(e); process.exitCode = 1; });

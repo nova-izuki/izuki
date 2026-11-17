@@ -89,6 +89,8 @@
   // Native speech: one promise per line, settled by the "speech" events.
   const speeches = new Map();
   let speechSeq = 0, speechListening = false;
+  /** Bumped by every hush: a clip still being prepared then is never played. */
+  let hushes = 0;
   const listenSpeech = () => {
     const p = control();
     if (speechListening || !p?.addListener) return;
@@ -117,6 +119,15 @@
     },
     /** The glowing screen edges over other apps during a voice turn (Android). */
     setEdgeGlow(on) { try { void control()?.voicePrefs?.({ edgeGlow: !!on }); } catch {} },
+    /**
+     * The rainbow edges over every app for the page's own work: listen,
+     * think or talk for `lease` ms unless sent again; "" switches them off.
+     * false when Android control is off (the page draws its own then).
+     */
+    async glow(state = "", lease = 30000) {
+      if (!control()?.glow) return false;
+      try { return !!(await control().glow({ state: String(state || ""), lease: Math.round(Number(lease) || 30000) }))?.shown; } catch { return false; }
+    },
     /** The hearing language for native listening and the voice turn ("" = the phone's). */
     setHearing(lang) { try { void control()?.voicePrefs?.({ lang: String(lang || "") }); } catch {} },
     /** Android's own voice (TextToSpeech) is here: replies are never silent in the app. */
@@ -140,8 +151,47 @@
           .catch(() => { if (speeches.delete(id)) { clearTimeout(entry.guard); resolve("error"); } });
       });
     },
+    /** Android can play a recorded line (Gemini's natural voice) over other apps. */
+    canPlayClip: () => platform() === "android" && !!control()?.playClip,
+    /**
+     * Play a recorded line (a WAV object URL or Blob) with Android's player:
+     * the natural voice in a voice turn over another app, where the page
+     * can't make a sound. Resolves like speak(): "done", "stopped" or "error".
+     * opts: { turn, onStart }.
+     */
+    async playClip(wav, words = "", opts = {}) {
+      const p = control();
+      if (!p?.playClip) return "error";
+      const generation = hushes;
+      let audio = "";
+      try {
+        const blob = wav instanceof Blob ? wav : await (await fetch(wav)).blob();
+        const bytes = new Uint8Array(await blob.arrayBuffer());
+        let bin = "";
+        for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+        audio = btoa(bin);
+      } catch { return "error"; }
+      if (generation !== hushes) return "stopped";
+      listenSpeech();
+      const id = `c${Date.now().toString(36)}${++speechSeq}`;
+      const text = String(words || "");
+      return new Promise((resolve) => {
+        const entry = { id, resolve, onStart: opts.onStart, guard: 0 };
+        // About 48 KB a second of speech: never wait much longer than it lasts.
+        entry.guard = setTimeout(() => { if (speeches.delete(id)) resolve("done"); }, Math.min(180000, 8000 + (audio.length * 3 / 4 / 48000) * 1000 * 1.5));
+        speeches.set(id, entry);
+        p.playClip({ audio, text, id, turn: String(opts.turn || "") })
+          .catch(() => { if (speeches.delete(id)) { clearTimeout(entry.guard); resolve("error"); } });
+      });
+    },
+    /** The phone's voices for the picker, best first: [{name, label, online}]. */
+    async voices() {
+      try { return (await control()?.voices?.())?.voices || []; } catch { return []; }
+    },
+    /** Use this voice ("" = the best one installed). */
+    setVoice(name) { try { void control()?.voicePrefs?.({ voice: String(name || "") }); } catch {} },
     /** Stop Android's voice now. */
-    async hushSpeech() { try { await control()?.hush?.(); } catch {} },
+    async hushSpeech() { hushes++; try { await control()?.hush?.(); } catch {} },
     /** Native ears are here (Android's speech recognizer, one session at a time). */
     canListen: () => platform() === "android" && !!control()?.listen,
     /**
