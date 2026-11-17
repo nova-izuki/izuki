@@ -189,5 +189,26 @@ const A = window.IzukiAutopilot;
   assert.deepEqual(calls, ["act:tapText:Downloads"]);
   assert.match(A.state.log.at(-1).text, /couldn't find “Downloads”/);
 
-  console.log("Autopilot: visible steps, field targeting, safety refusals, repeats and lock resume pass.");
+  // Anything that isn't a quick routine goes to the AI phone agent, in this same log.
+  const asked = [];
+  window.IzukiBrain = { agentThink: async () => "{}" };
+  window.IzukiAgent = {
+    busy: false,
+    async run(goal, ctx) {
+      asked.push({ goal, via: ctx.viaAutopilot, think: typeof ctx.think });
+      ctx.onStep("Opening Storage…");
+      return { ok: true, text: "Apps use 38 GB; you have 41 GB free." };
+    },
+  };
+  assert.equal(await A.run("open my files and check what's taking space"), true);
+  assert.deepEqual(asked, [{ goal: "open my files and check what's taking space", via: true, think: "function" }]);
+  assert.ok(A.state.log.some((l) => l.text === "Opening Storage"), "the agent's steps show in the log");
+  assert.equal(A.state.log.at(-1).text, "Apps use 38 GB; you have 41 GB free.");
+  assert.equal(A.state.running, false);
+  window.IzukiBrain = undefined;
+  assert.equal(await A.run("make me a sandwich"), false);
+  assert.match(A.state.log.at(-1).text, /Add an AI key/, "without a brain it says what's missing");
+  window.IzukiAgent = undefined;
+
+  console.log("Autopilot: visible steps, field targeting, safety refusals, repeats, lock resume and the AI fallback pass.");
 })().catch((error) => { console.error(error); process.exitCode = 1; });

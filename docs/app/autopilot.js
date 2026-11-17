@@ -290,7 +290,10 @@
         ],
       };
     }
-    if ((m = goal.match(/^(?:open|launch|start)\s+(.+)$/i))) {
+    // Only a plain "open <app>": "open my files and check what's taking
+    // space" used to try opening an app with that whole sentence as its name.
+    if ((m = goal.match(/^(?:open|launch|start)\s+(.+)$/i)) && m[1].trim().split(/\s+/).length <= 3
+      && !/\b(?:and|then|check|what|how|why|find|see|look|show|tell)\b/i.test(m[1])) {
       const app = m[1].trim();
       return { title: `Open ${app}`, steps: [{ label: `Open ${app}`, run: () => openApp(app) }] };
     }
@@ -356,9 +359,37 @@
     state.log = [];
     state.cancelled = false;
     if (!made) {
-      state.running = false;
-      add("I don't know that routine yet. Try “open YouTube and search lofi”, “tap Search”, “scroll down”, or “go home”.", "bad");
-      return false;
+      // Not one of the quick routines: the AI phone agent does it, step by
+      // checked step, in this same log. The old answer was "I don't know
+      // that routine yet" for anything new.
+      const agent = window.IzukiAgent, think = window.IzukiBrain?.agentThink;
+      if (!agent?.run || typeof think !== "function") {
+        state.running = false;
+        add("Add an AI key in Settings so I can work this out, or try “open YouTube and search lofi”, “tap Search”, “scroll down”, or “go home”.", "bad");
+        return false;
+      }
+      state.running = true;
+      state.label = state.goal;
+      add(`Autopilot (AI): ${state.goal}`, "title");
+      emit();
+      try {
+        const result = await agent.run(state.goal, {
+          think,
+          viaAutopilot: true,
+          stopped: () => state.cancelled,
+          onStep: (line) => { state.step += 1; add(line.replace(/…$/, ""), "step"); },
+        });
+        if (state.cancelled || result?.stopped) add("Stopped.", "bad");
+        else add(result?.text || "Done.", result?.ok ? "done" : result?.asked ? "warn" : "bad");
+        return !!result?.ok;
+      } catch (error) {
+        add(String(error?.message || error), "bad");
+        return false;
+      } finally {
+        state.running = false;
+        state.cancelled = false;
+        emit();
+      }
     }
     state.running = true;
     add(`Autopilot: ${made.title}`, "title");

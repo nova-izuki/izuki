@@ -66,7 +66,7 @@
           <button class="pl-run" id="pl-run" type="submit">Run</button>
         </form>
         <div class="pl-chips" id="pl-chips"></div>
-        <div class="pl-log" id="pl-log" aria-live="polite"><div class="pl-empty">Ready. Try “open YouTube and search lofi”, “tap Search”, “scroll down twice” or “go home”.</div></div>
+        <div class="pl-log" id="pl-log" aria-live="polite"><div class="pl-empty">Ready. Ask for anything on the phone: “open my files and check what’s taking space”, “turn on dark mode”, “open YouTube and search lofi”, “go home”.</div></div>
         <div class="pl-test">
           <div class="pl-test-head"><b>Test phone control</b><button id="pl-test-run" type="button" disabled>Run test</button></div>
           <p class="pl-test-copy">Only taps and swipes the test targets below — never another app. Useful on a real phone without guessing.</p>
@@ -186,7 +186,7 @@
     const log = $("pl-log");
     if (!log) return;
     if (!state?.log?.length) {
-      log.innerHTML = '<div class="pl-empty">Ready. Try “open YouTube and search lofi”, “tap Search”, “scroll down twice” or “go home”.</div>';
+      log.innerHTML = '<div class="pl-empty">Ready. Ask for anything on the phone: “open my files and check what’s taking space”, “turn on dark mode”, “open YouTube and search lofi”, “go home”.</div>';
     } else {
       log.innerHTML = state.log.map((line) => `<div class="pl-line ${esc(line.kind)}">${esc(line.text)}</div>`).join("");
       log.scrollTop = log.scrollHeight;

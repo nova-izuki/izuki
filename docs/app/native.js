@@ -99,6 +99,8 @@
       orbOverApps = !!on;
       try { void control()?.voicePrefs?.({ keep: orbOverApps }); } catch {}
     },
+    /** The glowing screen edges over other apps during a voice turn (Android). */
+    setEdgeGlow(on) { try { void control()?.voicePrefs?.({ edgeGlow: !!on }); } catch {} },
     /** The hearing language for native listening and the voice turn ("" = the phone's). */
     setHearing(lang) { try { void control()?.voicePrefs?.({ lang: String(lang || "") }); } catch {} },
     /** Android's own voice (TextToSpeech) is here: replies are never silent in the app. */
@@ -680,7 +682,9 @@
         return failed;
       }
       const open = text.match(/^open (.+)$/);
-      if (open) {
+      // Only a plain "open <app>"; "open my files and check what's taking
+      // space" is a job for the phone agent, not an app name.
+      if (open && open[1].split(/\s+/).length <= 3 && !/\b(?:and|then|check|what|how|why|find|see|look|show|tell)\b/.test(open[1])) {
         const app = await window.IzukiNative.launch(open[1]);
         if (!app?.name) return null;
         // Opening is only "opened" once Android shows that app in front.

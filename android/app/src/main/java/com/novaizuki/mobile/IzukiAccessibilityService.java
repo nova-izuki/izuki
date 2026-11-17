@@ -924,7 +924,6 @@ public class IzukiAccessibilityService extends AccessibilityService {
     // TalkBack and Switch Access "click" the orb without a touch: same as a tap.
     box.setOnClickListener(v -> IzukiVoice.tap(service));
     dot = new OrbDot(service);
-    box.addView(dot, new LinearLayout.LayoutParams(dp(service, 56), dp(service, 56)));
     // Room for the orb to grow while it listens and talks.
     box.setPadding(dp(service, 6), dp(service, 6), dp(service, 6), dp(service, 6));
     caption = new TextView(service);
@@ -941,17 +940,13 @@ public class IzukiAccessibilityService extends AccessibilityService {
     capBg.setColor(Color.argb(210, 8, 9, 20));
     capBg.setCornerRadius(dp(service, 18));
     caption.setBackground(capBg);
-    LinearLayout.LayoutParams captionLp = new LinearLayout.LayoutParams(
-      LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-    captionLp.setMargins(dp(service, 8), 0, 0, 0);
-    box.addView(caption, captionLp);
     WindowManager.LayoutParams lp = new WindowManager.LayoutParams(
       WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT,
       WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
       WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
       PixelFormat.TRANSLUCENT);
-    lp.gravity = Gravity.BOTTOM | Gravity.END;
     SharedPreferences prefs = service.getSharedPreferences(PREFS, MODE_PRIVATE);
+    arrange(service, box, lp, prefs.getBoolean("orbLeft", false));
     lp.x = prefs.getInt("orbX", dp(service, 16));
     // Above the navigation bar and the usual keyboard-free area by default.
     lp.y = prefs.getInt("orbY", dp(service, 120));
@@ -968,6 +963,33 @@ public class IzukiAccessibilityService extends AccessibilityService {
     orbError = "";
     orbShownAt = System.currentTimeMillis();
     return true;
+  }
+
+  /** The orb sits on the left edge (its words to its right), or the right (words to its left). */
+  private static boolean orbLeft = false;
+
+  /**
+   * Lay the orb out for its side: the window is anchored to that edge, and
+   * the words grow towards the middle of the screen. It used to be anchored
+   * to the right with the words on the orb's right, so an orb moved to the
+   * left grew off the screen and its words were hidden.
+   */
+  private static void arrange(Context c, LinearLayout box, WindowManager.LayoutParams lp, boolean left) {
+    orbLeft = left;
+    box.removeAllViews();
+    LinearLayout.LayoutParams dotLp = new LinearLayout.LayoutParams(dp(c, 56), dp(c, 56));
+    LinearLayout.LayoutParams capLp = new LinearLayout.LayoutParams(
+      LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+    if (left) {
+      capLp.setMargins(dp(c, 8), 0, 0, 0);
+      box.addView(dot, dotLp);
+      box.addView(caption, capLp);
+    } else {
+      capLp.setMargins(0, 0, dp(c, 8), 0);
+      box.addView(caption, capLp);
+      box.addView(dot, dotLp);
+    }
+    lp.gravity = Gravity.BOTTOM | (left ? Gravity.START : Gravity.END);
   }
 
   /**
@@ -1017,8 +1039,8 @@ public class IzukiAccessibilityService extends AccessibilityService {
           float dx = e.getRawX() - downX, dy = e.getRawY() - downY;
           if (!dragging && Math.hypot(dx, dy) < slop) return true;
           if (!dragging) { dragging = true; ui.removeCallbacks(longPress); }
-          // Gravity is bottom-end: x grows to the left, y grows upwards.
-          lp.x = Math.max(0, startX - Math.round(dx));
+          // Anchored to its side: x grows away from that edge, y grows upwards.
+          lp.x = Math.max(0, orbLeft ? startX + Math.round(dx) : startX - Math.round(dx));
           lp.y = Math.max(0, startY - Math.round(dy));
           try { wm.updateViewLayout(v, lp); } catch (Exception ignored) { }
           return true;
@@ -1036,12 +1058,15 @@ public class IzukiAccessibilityService extends AccessibilityService {
           if (orbView == null) return true; // the long press hid it
           DisplayMetrics dm = context.getResources().getDisplayMetrics();
           int edge = dp(context, 12);
-          int width = v.getWidth();
-          // Settle on the nearer side, inside the screen.
-          lp.x = (lp.x + width / 2 > dm.widthPixels / 2) ? Math.max(edge, dm.widthPixels - width - edge) : edge;
+          // Where the orb itself is (not its words), then settle on that side.
+          int half = dp(context, 6) + dp(context, 28);
+          int centre = orbLeft ? lp.x + half : dm.widthPixels - lp.x - half;
+          boolean left = centre < dm.widthPixels / 2;
+          if (left != orbLeft && v instanceof LinearLayout) arrange(context, (LinearLayout) v, lp, left);
+          lp.x = edge;
           lp.y = Math.min(Math.max(lp.y, dp(context, 48)), Math.max(dp(context, 48), dm.heightPixels - v.getHeight() - dp(context, 48)));
           try { wm.updateViewLayout(v, lp); } catch (Exception ignored) { }
-          context.getSharedPreferences(PREFS, MODE_PRIVATE).edit().putInt("orbX", lp.x).putInt("orbY", lp.y).apply();
+          context.getSharedPreferences(PREFS, MODE_PRIVATE).edit().putInt("orbX", lp.x).putInt("orbY", lp.y).putBoolean("orbLeft", orbLeft).apply();
           return true;
         case MotionEvent.ACTION_CANCEL:
           ui.removeCallbacks(longPress);
@@ -1056,6 +1081,113 @@ public class IzukiAccessibilityService extends AccessibilityService {
   /** The page's own reply or phone agent run is showing on the orb ("Tap to stop"). */
   static boolean pageWorking() {
     return orbView != null && "page".equals(orbOwner) && ("think".equals(orbState) || "talk".equals(orbState));
+  }
+
+  /** The live voice level for the orb and the glowing edges, 0..1 (any thread). */
+  static void voiceLevel(float level) {
+    ui.post(() -> {
+      if (dot != null) dot.setVoice(level);
+      if (glowView != null) glowView.setVoice(level);
+    });
+  }
+
+  // ---- the glowing screen edges (during a voice turn) -------------------------
+
+  private static EdgeGlow glowView;
+
+  /**
+   * The light around the screen's edges while Izuki listens, thinks and
+   * talks over other apps, following the voice. Off: removed (it never
+   * stays up between turns, so it costs nothing at rest). It can't be
+   * touched: every tap goes to the app underneath.
+   */
+  static void edgeGlow(boolean on, String state) {
+    ui.post(() -> {
+      IzukiAccessibilityService service = active;
+      if (!on || service == null) { removeGlow(); return; }
+      if (glowView == null) {
+        EdgeGlow v = new EdgeGlow(service);
+        WindowManager.LayoutParams lp = new WindowManager.LayoutParams(
+          WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT,
+          WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+          WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+            | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+          PixelFormat.TRANSLUCENT);
+        if (Build.VERSION.SDK_INT >= 28) lp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
+        try { ((WindowManager) service.getSystemService(WINDOW_SERVICE)).addView(v, lp); glowView = v; }
+        catch (Exception e) { return; }
+      }
+      glowView.setState(state);
+    });
+  }
+
+  private static void removeGlow() {
+    EdgeGlow v = glowView;
+    glowView = null;
+    if (v == null) return;
+    v.stop();
+    IzukiAccessibilityService service = active;
+    if (service != null) { try { ((WindowManager) service.getSystemService(WINDOW_SERVICE)).removeView(v); } catch (Exception ignored) { } }
+  }
+
+  /** A soft, moving rainbow line around the screen, brighter and wider with the voice. */
+  static class EdgeGlow extends View {
+    private static final int[] COLOURS = {
+      Color.rgb(255, 95, 162), Color.rgb(155, 107, 255), Color.rgb(79, 139, 255),
+      Color.rgb(53, 214, 232), Color.rgb(255, 162, 76), Color.rgb(255, 95, 162) };
+    private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final android.graphics.RectF box = new android.graphics.RectF();
+    private final Matrix turn = new Matrix();
+    private final ValueAnimator clock = ValueAnimator.ofFloat(0f, 1f);
+    private float t = 0f, voice = 0f, shown = 0f;
+    private long voiceAt = 0;
+    private String state = "listen";
+    private SweepGradient sweep;
+    private int sweepW, sweepH;
+
+    EdgeGlow(Context c) {
+      super(c);
+      paint.setStyle(Paint.Style.STROKE);
+      clock.setDuration(100000);
+      clock.setRepeatCount(ValueAnimator.INFINITE);
+      clock.addUpdateListener(a -> { t = (float) a.getCurrentPlayTime() / 1000f; invalidate(); });
+      clock.start();
+    }
+
+    void setState(String s) { state = s == null ? "listen" : s; }
+
+    void setVoice(float v) {
+      voice = Math.max(0f, Math.min(1f, v));
+      voiceAt = SystemClock.uptimeMillis();
+    }
+
+    void stop() { clock.cancel(); }
+
+    @Override protected void onDraw(Canvas c) {
+      int w = getWidth(), h = getHeight();
+      if (w == 0 || h == 0) return;
+      if (sweep == null || w != sweepW || h != sweepH) {
+        sweep = new SweepGradient(w / 2f, h / 2f, COLOURS, null);
+        sweepW = w; sweepH = h;
+      }
+      boolean live = SystemClock.uptimeMillis() - voiceAt < 450;
+      shown += ((live ? voice : 0f) - shown) * 0.2f;
+      float level = "think".equals(state) ? 0.35f + 0.12f * (float) Math.sin(t * 2.4)
+          : live ? 0.25f + 0.75f * shown : 0.3f + 0.08f * (float) Math.sin(t * 1.8);
+      turn.setRotate(t * ("think".equals(state) ? 70f : 35f), w / 2f, h / 2f);
+      sweep.setLocalMatrix(turn);
+      paint.setShader(sweep);
+      float radius = dp(getContext(), 34);
+      float[] widths = { 3f, 10f, 22f };
+      int[] alphas = { 235, 110, 40 };
+      for (int k = 0; k < widths.length; k++) {
+        float sw = dp(getContext(), 1) * widths[k] * (0.6f + level * 0.9f);
+        paint.setStrokeWidth(sw);
+        paint.setAlpha(Math.round(alphas[k] * (0.45f + 0.55f * level)));
+        box.set(sw / 2f, sw / 2f, w - sw / 2f, h - sw / 2f);
+        c.drawRoundRect(box, radius, radius, paint);
+      }
+    }
   }
 
   /** For the diagnostics screen and the Phone Readiness check. */
@@ -1171,10 +1303,24 @@ public class IzukiAccessibilityService extends AccessibilityService {
       return Color.argb(Math.round(Math.max(0f, Math.min(1f, a)) * 255f), c[0], c[1], c[2]);
     }
 
-    /** How much it moves, 0..1: a voice while talking, a soft pulse while listening. */
+    /** The live voice (0..1) and when it last came: the person's while listening, Izuki's words while talking. */
+    private float voice = 0f, shown = 0f;
+    private long voiceAt = 0;
+
+    void setVoice(float v) {
+      voice = Math.max(0f, Math.min(1f, v));
+      voiceAt = SystemClock.uptimeMillis();
+    }
+
+    /**
+     * How much it moves, 0..1. With a live voice it follows it (smoothed, so
+     * it flows with the words); without one, a soft made-up pulse as before.
+     */
     private float level() {
-      if ("talk".equals(state)) return 0.35f + 0.55f * (float) Math.abs(Math.sin(t * 6.6) * Math.sin(t * 2.1));
-      if ("listen".equals(state)) return 0.12f + 0.2f * (float) Math.abs(Math.sin(t * 3.8) * Math.sin(t * 1.1));
+      boolean live = SystemClock.uptimeMillis() - voiceAt < 450;
+      shown += ((live ? voice : 0f) - shown) * 0.25f;
+      if ("talk".equals(state)) return live ? 0.25f + 0.7f * shown : 0.35f + 0.55f * (float) Math.abs(Math.sin(t * 6.6) * Math.sin(t * 2.1));
+      if ("listen".equals(state)) return live ? 0.08f + 0.9f * shown : 0.12f + 0.2f * (float) Math.abs(Math.sin(t * 3.8) * Math.sin(t * 1.1));
       if ("think".equals(state)) return 0.22f + 0.08f * (float) Math.sin(t * 2.6);
       return 0.08f;
     }

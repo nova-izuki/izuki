@@ -146,6 +146,8 @@ public class IzukiWakeService extends Service implements RecognitionListener {
    * final words and uses this only if none come.
    */
   private String partialWake = "";
+  /** When the diagnostics last said why speech wasn't checked. */
+  private long lastSkipNote = -60_000;
   private String noteText = "";
   private SpeechRecognizer recognizer;
 
@@ -630,7 +632,12 @@ public class IzukiWakeService extends Service implements RecognitionListener {
     if (state != WakeGate.State.ARMED || !enabled) return;
     long now = SystemClock.elapsedRealtime();
     synchronized (gate) {
-      if (!gate.mayHear(now)) return;
+      String why = gate.whyNot(now);
+      if (!why.isEmpty()) {
+        // Someone spoke and it wasn't checked: say why in the diagnostics (at most every 20 s).
+        if (now - lastSkipNote > 20_000) { lastSkipNote = now; log("heard someone but didn't check: " + why); }
+        return;
+      }
       budgetSpent = gate.began(now);
     }
     if (!move(WakeGate.State.HEARING)) return;
@@ -780,6 +787,8 @@ public class IzukiWakeService extends Service implements RecognitionListener {
         }
       }
       if (!words.isEmpty()) synchronized (gate) { gate.worked(); }
+      // Close but not the phrase ("hey noah"): only that it happened, never the words.
+      if (!partial) for (String w : words) if (WakeGate.nearMiss(w)) { log("near miss: heard a greeting, but not the wake phrase"); break; }
     }
     if (!partial) finishSession();
   }
