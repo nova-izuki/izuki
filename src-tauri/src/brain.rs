@@ -4088,9 +4088,11 @@ fn submit_task(
     // Done something like this before? Say how it went.
     let experience = crate::recipes::recall(&prompt).map(|r| {
         eprintln!("[agent] recalled how \"{}\" was done last time", r.task);
+        let place = if r.app.trim().is_empty() { String::new() } else { format!(" in {}", r.app) };
         format!(
-            "\nLast time a task like this (\"{}\") worked like this: {}. Take the same route if this screen allows it.",
+            "\nLast time a task like this (\"{}\") worked like this{}: {}. Take the same route if this screen allows it; if the app is different, work out the route for the app in front.",
             r.task,
+            place,
             r.steps.join("; ")
         )
     });
