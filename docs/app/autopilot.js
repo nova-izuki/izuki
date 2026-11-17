@@ -278,6 +278,12 @@
     if (!goal) return null;
     const lower = goal.toLowerCase();
     let m;
+    // An installed app's exact name first: "open Learn and Play Music" is that
+    // app, not "open Learn, then play Music".
+    if ((m = goal.match(/^(?:open|launch|start)\s+(.+)$/i)) && window.IzukiNative?.isAppName?.(m[1]) === true) {
+      const app = m[1].trim();
+      return { title: `Open ${app}`, steps: [{ label: `Open ${app}`, run: () => openApp(app) }] };
+    }
     if ((m = goal.match(/^(?:open|launch|start)\s+(.+?)\s+(?:and|then)\s+(?:search|find|look up|play)\s+(?:for\s+)?(.+)$/i))) {
       const app = m[1].trim();
       const query = m[2].trim();
