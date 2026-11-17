@@ -278,7 +278,17 @@
     if (!goal) return null;
     const lower = goal.toLowerCase();
     let m;
-    if ((m = goal.match(/^(?:open|launch|start)\s+(.+?)\s+(?:and|then)\s+(?:search|find|look up|play)\s+(?:for\s+)?(.+)$/i))) {
+    // An installed app's exact name first: "open Learn and Play Music" is that
+    // app, not "open Learn, then play Music".
+    if ((m = goal.match(/^(?:open|launch|start)\s+(.+)$/i)) && window.IzukiNative?.isAppName?.(m[1]) === true) {
+      const app = m[1].trim();
+      return { title: `Open ${app}`, steps: [{ label: `Open ${app}`, run: () => openApp(app) }] };
+    }
+    // The installed apps couldn't be read (not yet, failed or empty): "open
+    // X and play Y" might be one app's name, so the AI agent, which sees the
+    // phone, decides instead of a guess.
+    const appsUnknown = window.IzukiNative?.isAppName?.("") === null;
+    if (!appsUnknown && (m = goal.match(/^(?:open|launch|start)\s+(.+?)\s+(?:and|then)\s+(?:search|find|look up|play)\s+(?:for\s+)?(.+)$/i))) {
       const app = m[1].trim();
       const query = m[2].trim();
       return {
@@ -290,7 +300,11 @@
         ],
       };
     }
-    if ((m = goal.match(/^(?:open|launch|start)\s+(.+)$/i))) {
+    // Only a plain "open <app>": "open my files and check what's taking
+    // space" used to try opening an app with that whole sentence as its name.
+    // (An installed app's exact name always counts, "Find My Mobile" included.)
+    if ((m = goal.match(/^(?:open|launch|start)\s+(.+)$/i)) && (window.IzukiNative?.isAppName?.(m[1]) === true
+      || (m[1].trim().split(/\s+/).length <= 3 && !/\b(?:and|then|check|what|how|why|find|see|look|show|tell)\b/i.test(m[1])))) {
       const app = m[1].trim();
       return { title: `Open ${app}`, steps: [{ label: `Open ${app}`, run: () => openApp(app) }] };
     }
@@ -342,6 +356,10 @@
 
   async function run(raw) {
     if (state.running) return false;
+    // The installed apps' names first (read once, a moment at most), so an
+    // app called "Find My Mobile" or "Learn and Play Music" is opened as an app.
+    await window.IzukiNative?.appNamesReady?.();
+    if (state.running) return false;
     // The phone agent uses Android's numbered screen list too; one at a time.
     if (window.IzukiAgent?.busy) {
       state.log = [];
@@ -356,9 +374,37 @@
     state.log = [];
     state.cancelled = false;
     if (!made) {
-      state.running = false;
-      add("I don't know that routine yet. Try “open YouTube and search lofi”, “tap Search”, “scroll down”, or “go home”.", "bad");
-      return false;
+      // Not one of the quick routines: the AI phone agent does it, step by
+      // checked step, in this same log. The old answer was "I don't know
+      // that routine yet" for anything new.
+      const agent = window.IzukiAgent, think = window.IzukiBrain?.agentThink;
+      if (!agent?.run || typeof think !== "function") {
+        state.running = false;
+        add("Add an AI key in Settings so I can work this out, or try “open YouTube and search lofi”, “tap Search”, “scroll down”, or “go home”.", "bad");
+        return false;
+      }
+      state.running = true;
+      state.label = state.goal;
+      add(`Autopilot (AI): ${state.goal}`, "title");
+      emit();
+      try {
+        const result = await agent.run(state.goal, {
+          think,
+          viaAutopilot: true,
+          stopped: () => state.cancelled,
+          onStep: (line) => { state.step += 1; add(line.replace(/…$/, ""), "step"); },
+        });
+        if (state.cancelled || result?.stopped) add("Stopped.", "bad");
+        else add(result?.text || "Done.", result?.ok ? "done" : result?.asked ? "warn" : "bad");
+        return !!result?.ok;
+      } catch (error) {
+        add(String(error?.message || error), "bad");
+        return false;
+      } finally {
+        state.running = false;
+        state.cancelled = false;
+        emit();
+      }
     }
     state.running = true;
     add(`Autopilot: ${made.title}`, "title");

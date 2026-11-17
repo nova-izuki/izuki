@@ -55,6 +55,14 @@ final class WakeGate {
   private int loudInWindow = 0;
   private boolean inSpeech = false;
   private int quietRun = 0;
+  /** Frames since the current stretch of sound started a session. */
+  private int speechRun = 0;
+  /**
+   * A long stretch of sound (a TV, people talking) gets a fresh look this
+   * often. Before, one onset waited for 300 ms of quiet, so "Hey Nova" said
+   * over continuing sound was never checked: "sometimes it doesn't come up".
+   */
+  static final int AGAIN_AFTER = 125; // 2.5 s
 
   /** RMS level of 16-bit PCM in dBFS (-96 for silence). */
   static double levelDb(short[] samples, int count) {
@@ -84,12 +92,14 @@ final class WakeGate {
     floorDb = Math.max(-75, Math.min(-30, floorDb));
     quietRun = loud ? 0 : quietRun + 1;
     if (inSpeech) {
-      if (quietRun >= RELEASE) inSpeech = false;
+      if (quietRun >= RELEASE) { inSpeech = false; return false; }
+      if (++speechRun >= AGAIN_AFTER && loud) { speechRun = 0; return true; }
       return false;
     }
     if (loudInWindow >= NEEDED) {
       clearWindow();
       inSpeech = true;
+      speechRun = 0;
       return true;
     }
     return false;
@@ -102,10 +112,12 @@ final class WakeGate {
 
   // ---- how often a recognizer session may start ---------------------------
 
-  static final long MIN_GAP_MS = 4_000;
-  static final int BUDGET = 20;
+  // A short gap after a session (4 s missed a "Hey Nova" said right after
+  // other talk), a bigger budget, and a shorter rest when it runs out.
+  static final long MIN_GAP_MS = 1_500;
+  static final int BUDGET = 30;
   static final long BUDGET_WINDOW_MS = 10 * 60_000;
-  static final long QUIET_MS = 2 * 60_000;
+  static final long QUIET_MS = 60_000;
 
   private final ArrayDeque<Long> sessions = new ArrayDeque<>();
   private long lastSessionEnd = -MIN_GAP_MS;
@@ -113,10 +125,26 @@ final class WakeGate {
 
   /** True when a session may start now; false while resting or over budget. */
   boolean mayHear(long now) {
-    if (now < quietUntil) return false;
-    if (now - lastSessionEnd < MIN_GAP_MS) return false;
+    return whyNot(now).isEmpty();
+  }
+
+  /** Why someone speaking now wouldn't be checked ("" = it would), for the diagnostics. */
+  String whyNot(long now) {
+    if (now < quietUntil) return "resting after lots of talk nearby";
+    if (now - lastSessionEnd < MIN_GAP_MS) return "just checked something else";
     while (!sessions.isEmpty() && now - sessions.peekFirst() > BUDGET_WINDOW_MS) sessions.pollFirst();
-    return sessions.size() < BUDGET;
+    return sessions.size() < BUDGET ? "" : "used up its checks for now";
+  }
+
+  /**
+   * Words that sound close to the wake phrase without being it: a greeting
+   * ("hey …") or something like "nova". Only whether, never the words, goes
+   * into the diagnostics.
+   */
+  static boolean nearMiss(String heard) {
+    if (heard == null) return false;
+    String t = heard.toLowerCase(Locale.ROOT);
+    return t.matches("(?s).*\\b(?:hey|hi|ok|okay|hay)\\b.*") || t.matches("(?s).*\\b(?:no+v|noa)\\w*.*");
   }
 
   /** A session is starting. Returns true when this one used up the budget (go QUIET after it). */
@@ -124,6 +152,9 @@ final class WakeGate {
     sessions.addLast(now);
     return sessions.size() >= BUDGET;
   }
+
+  /** "Hey Nova" was heard: those checks were wanted, so the budget starts over (no rest). */
+  void woke() { sessions.clear(); }
 
   /** A session ended (heard nothing, heard something else, or failed). */
   void ended(long now) { lastSessionEnd = now; }
@@ -240,7 +271,8 @@ final class WakeGate {
 
   // Speech services write "Hey Nova" in several ways: "hey nova", "heynova",
   // "hey, Nova", and "Hanover" for a quick "Hey Nova" at the very start.
-  private static final Pattern WAKE = Pattern.compile("\\b(?:hey|hi|ok|okay|hay|hei)\\s*(?:nova|novah|izuki)\\b|^(?:hannover|hanover)\\b");
+  // Also the ways speech services write a quick "Nova": "nover", "novar", "noba", "nowa".
+  private static final Pattern WAKE = Pattern.compile("\\b(?:hey|hi|ok|okay|hay|hei)\\s*(?:nova|novah|nover|novar|noba|nowa|izuki)\\b|^(?:hannover|hanover)\\b");
   // The start of the phrase can be cut off when the recognizer had to open
   // the microphone itself after speech began: "nova, what's the time".
   private static final Pattern CLIPPED = Pattern.compile("^\\W*(?:a\\s+|ey\\s+)?(?:nova|izuki)\\b");
@@ -249,7 +281,7 @@ final class WakeGate {
   private static final String NOT_WORD_AFTER = "(?![\\p{L}\\p{N}])";
   /** The same phrases on the raw words, case-insensitive, to find where the command starts. */
   private static final Pattern WAKE_AT = Pattern.compile(
-      "(?iu)(?:" + NOT_WORD_BEFORE + "(?:hey|hi|ok|okay|hay|hei)[^\\p{L}\\p{N}']*(?:nova|novah|izuki)" + NOT_WORD_AFTER
+      "(?iu)(?:" + NOT_WORD_BEFORE + "(?:hey|hi|ok|okay|hay|hei)[^\\p{L}\\p{N}']*(?:nova|novah|nover|novar|noba|nowa|izuki)" + NOT_WORD_AFTER
       + "|^[^\\p{L}\\p{N}]*(?:hannover|hanover)" + NOT_WORD_AFTER + ")[^\\p{L}\\p{N}]*");
   // The separators and edges above are isWake's: it turns everything but
   // letters, digits and the apostrophe into spaces (so "_" is a space too),

@@ -12,6 +12,7 @@ function phone({ locked = false } = {}) {
   const state = { app: "com.novaizuki.mobile", locked };
   const screens = {
     "com.novaizuki.mobile": [{ n: 1, text: "Ask Izuki", kind: "box" }, { n: 2, text: "Send", kind: "button" }],
+    "com.android.chrome": [{ n: 1, text: "Search or type web address", kind: "box" }],
     "com.android.settings": [
       { n: 1, text: "Storage", kind: "text" },
       { n: 2, text: "86.7 GB used of 128 GB", kind: "text" },
@@ -126,6 +127,19 @@ function brain(replies) {
     const r = await A.run("open storage", { think: ai.think, stopped: () => stop });
     assert.equal(r.stopped, true);
     assert.deepEqual(p.calls, [], "a step chosen after Stop is never done");
+  }
+
+  // 5b. Stop pressed while the box is being tapped: nothing is typed or searched.
+  {
+    const p = phone();
+    p.state.app = "com.android.chrome";
+    let stop = false;
+    const act = p.native.act;
+    p.native.act = async (args) => { const r = await act(args); if (args.op === "click") stop = true; return r; };
+    const A = load(p.native);
+    const r = await A.run("search lofi", { think: brain(['{"do":"type","n":1,"text":"lofi","enter":true}']).think, stopped: () => stop });
+    assert.equal(r.stopped, true);
+    assert.deepEqual(p.calls, ["act:click:1"], "nothing typed or submitted after Stop");
   }
 
   // 6. A model that answers in words (twice) is taken at its word; an unknown app is reported, not invented.

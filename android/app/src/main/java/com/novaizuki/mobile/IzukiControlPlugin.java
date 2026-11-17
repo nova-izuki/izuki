@@ -221,6 +221,8 @@ public class IzukiControlPlugin extends Plugin {
     if (keep != null) IzukiVoice.keepOrb = keep;
     String lang = call.getString("lang");
     if (lang != null) IzukiVoice.lang = lang.trim();
+    Boolean glow = call.getBoolean("edgeGlow");
+    if (glow != null) IzukiVoice.setEdgeGlow(glow);
     call.resolve();
   }
 

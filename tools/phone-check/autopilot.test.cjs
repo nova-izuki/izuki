@@ -41,6 +41,17 @@ const A = window.IzukiAutopilot;
   }));
   assert.equal(JSON.stringify(A.plan("tap Search")), JSON.stringify({ title: "Tap Search", steps: ["Tap “Search”"] }));
   assert.equal(A.plan("write a poem"), null, "an unknown plan must not pretend it can run");
+  // The installed-app list: an exact name is that app; while the list is
+  // unknown (not read, failed, empty or slow) "open X and play Y" isn't guessed.
+  const names = new Set(["youtube", "learn and play music"]);
+  window.IzukiNative.isAppName = (n) => names.has(String(n).trim().toLowerCase());
+  assert.equal(JSON.stringify(A.plan("open Learn and Play Music")), JSON.stringify({ title: "Open Learn and Play Music", steps: ["Open Learn and Play Music"] }));
+  assert.equal(A.plan("open YouTube and search lofi").steps.length, 2, "a known list still splits a real open-and-search");
+  window.IzukiNative.isAppName = () => null;
+  assert.equal(A.plan("open Learn and Play Music"), null, "unknown list: the AI agent decides");
+  assert.equal(A.plan("open YouTube and search lofi"), null, "unknown list: no split on a guess");
+  assert.equal(A.plan("open YouTube").title, "Open YouTube", "a plain short open still works");
+  delete window.IzukiNative.isAppName;
 
   calls.length = 0;
   const openedSearch = await A.run("open YouTube and search lofi");
@@ -189,5 +200,26 @@ const A = window.IzukiAutopilot;
   assert.deepEqual(calls, ["act:tapText:Downloads"]);
   assert.match(A.state.log.at(-1).text, /couldn't find “Downloads”/);
 
-  console.log("Autopilot: visible steps, field targeting, safety refusals, repeats and lock resume pass.");
+  // Anything that isn't a quick routine goes to the AI phone agent, in this same log.
+  const asked = [];
+  window.IzukiBrain = { agentThink: async () => "{}" };
+  window.IzukiAgent = {
+    busy: false,
+    async run(goal, ctx) {
+      asked.push({ goal, via: ctx.viaAutopilot, think: typeof ctx.think });
+      ctx.onStep("Opening Storage…");
+      return { ok: true, text: "Apps use 38 GB; you have 41 GB free." };
+    },
+  };
+  assert.equal(await A.run("open my files and check what's taking space"), true);
+  assert.deepEqual(asked, [{ goal: "open my files and check what's taking space", via: true, think: "function" }]);
+  assert.ok(A.state.log.some((l) => l.text === "Opening Storage"), "the agent's steps show in the log");
+  assert.equal(A.state.log.at(-1).text, "Apps use 38 GB; you have 41 GB free.");
+  assert.equal(A.state.running, false);
+  window.IzukiBrain = undefined;
+  assert.equal(await A.run("make me a sandwich"), false);
+  assert.match(A.state.log.at(-1).text, /Add an AI key/, "without a brain it says what's missing");
+  window.IzukiAgent = undefined;
+
+  console.log("Autopilot: visible steps, field targeting, safety refusals, repeats, lock resume and the AI fallback pass.");
 })().catch((error) => { console.error(error); process.exitCode = 1; });

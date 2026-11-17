@@ -154,8 +154,26 @@ vm.runInNewContext(fs.readFileSync(path.resolve(__dirname, "../../docs/app/nativ
   assert.equal(calls.at(-1), "panel:wifi");
   assert.equal(await window.IzukiNative.quickDeviceCommand("bluetooth"), "Here's Bluetooth.");
   assert.match(await window.IzukiNative.quickDeviceCommand("how much storage do I have left"), /^41 GB free of 128 GB\./, "whole gigabytes above ten, as people say them");
+  // An installed app's exact name opens even with "find" in it; a sentence doesn't pass for a name.
+  window.Capacitor.Plugins.IzukiControl.apps = async () => ({ apps: [{ name: "Find My Mobile", id: "com.samsung.fmm" }, { name: "YouTube", id: "YouTube" }] });
+  window.IzukiNative._resetAppNames?.();
+  window.IzukiNative.isAppName("x");
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(window.IzukiNative.isAppName("find my mobile"), true);
+  assert.equal(window.IzukiNative.isAppName("my files and check what's taking space"), false);
+  calls.length = 0;
+  assert.equal(await window.IzukiNative.quickDeviceCommand("open my files and check what's taking space"), null, "a job for the agent, not an app name");
+  assert.ok(!calls.some((c) => String(c).startsWith("launch:")), "nothing was launched");
   assert.equal(await window.IzukiNative.quickDeviceCommand("split screen"), "Split screen is on: pick the second app.");
   assert.equal(calls.at(-1), "split_screen");
+  // Right after startup a plan waits for the app list (a moment at most) instead of guessing.
+  window.IzukiNative._resetAppNames?.();
+  let releaseApps;
+  window.Capacitor.Plugins.IzukiControl.apps = () => new Promise((r) => { releaseApps = () => r({ apps: [{ name: "Learn and Play Music", id: "learn" }] }); });
+  const ready = window.IzukiNative.appNamesReady(2000);
+  setTimeout(() => releaseApps(), 20);
+  await ready;
+  assert.equal(window.IzukiNative.isAppName("learn and play music"), true, "the list read during the wait is used");
   // Android's own voice: one promise per line, settled by its "done" event.
   assert.equal(window.IzukiNative.canSpeak(), true);
   assert.equal(await window.IzukiNative.speak("Your phone has 41 GB free."), "done");

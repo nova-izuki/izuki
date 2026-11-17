@@ -653,6 +653,8 @@
         <div class="row" style="flex-wrap:wrap;gap:8px;margin-top:6px"><button class="btn ghost" id="vm-teach" type="button">Teach my voice</button><button class="btn ghost" id="vm-toggle" type="button" hidden>Turn off</button><button class="btn ghost" id="vm-forget" type="button" hidden>Forget my voice</button></div>
         <p class="note" style="margin-top:6px">A safety switch for “Hey Nova”: once it knows your voice, other voices (the TV, a video, other people) can't start Izuki by voice. A tap on the orb still works, because that needs your hand on the phone. Three short sentences; only a voice template stays on this phone — never the recordings or the words. The first time downloads the voice model (about 95 MB). A very similar voice or a recording of you could still pass, so it isn't a lock.</p>
       </div>
+      <label class="swatch" style="margin-top:10px"><input type="checkbox" id="edge-glow-phone" checked> Glowing screen edges while Izuki listens and talks</label>
+      <p class="note" style="margin-top:4px">The soft rainbow light around the screen, over any app during “Hey Nova” and the orb, moving with your voice and Izuki's. Off: just the orb.</p>
       <label class="swatch" style="margin-top:10px"><input type="checkbox" id="keep-orb"> Keep a small orb resting over other apps</label>
       <p class="note" style="margin-top:4px">Off (the default): the orb only appears when you say “Hey Nova”, use the Ask Izuki tile or notification, or while Izuki is working or talking — then it goes away. On: a small orb also rests over your apps. Tap the orb to talk (tap again to stop), tap its words to open Izuki, drag it anywhere, long-press to hide it. Needs Android control.</p>
     </section>
@@ -1666,6 +1668,9 @@
     try { return await otherBrain(contents, null, undefined, system); }
     catch (e) { if (key && !requestEnd) return gemini(contents, null, undefined, true, system); throw e; }
   }
+  // Autopilot's Run hands anything that isn't a quick routine to the phone
+  // agent, with this same brain (only once a key is set).
+  window.IzukiBrain = { agentThink: (system, prompt) => (ready() ? agentThink(system, prompt) : Promise.reject(new Error("Add an AI key in Settings first."))) };
 
   /** Whoever answers: the chosen brain, with Gemini standing in if it fails.
    *  `system` swaps in different instructions (the apps lane's protocol). */
@@ -2664,7 +2669,9 @@
       const geminiOnly = files.some((a) => !/^image\//.test(a.type) && a.text == null);
       if (geminiOnly && !key) throw new Error("To look at that kind of file, add a free Gemini key in Settings (pictures and text files work with any brain).");
       // On a call, Izuki starts talking as soon as the first sentence is written.
-      early = talking && voiceOn && !files.length ? voiceStream() : null;
+      // On a call, or a voice turn over another app: Izuki starts talking as
+      // soon as the first sentence is written (the rest is fetched meanwhile).
+      early = (talking && voiceOn || !!turnCtx) && !files.length ? voiceStream() : null;
       stage(readsWeb ? "Reading the page…" : `Asking ${audio || geminiOnly ? "Gemini" : brainName()}…`);
       let writing = false;
       reply = await (audio || geminiOnly || readsWeb ? gemini : think)(contents, (t) => {
@@ -3122,6 +3129,8 @@
       while (alive()) {
         if (i >= pieces.length) {
           if (closed) break;
+          // A voice turn: the rest is still being written, so Android keeps the turn open.
+          if (turnCtx && nativeVoiceFirst()) window.IzukiNative.turnState(turnCtx.id, "think", first);
           await new Promise((r) => (kick = r));
           continue;
         }
@@ -4799,8 +4808,17 @@
   })();
   $("orb-style").onchange = () => { window.IzukiOrb.style($("orb-style").value); updateOrbPreview(); };
   $("orb-preview-state").onchange = updateOrbPreview;
-  try { $("edge-glow").checked = window.IzukiEdge?.enabled() ?? true; } catch {}
-  $("edge-glow").onchange = () => window.IzukiEdge?.enabled($("edge-glow").checked);
+  // One setting, two switches (Orb Studio and Settings → Phone), and Android's
+  // own glowing edges over other apps follow it too.
+  const glowSwitches = ["edge-glow", "edge-glow-phone"].map((id) => $(id)).filter(Boolean);
+  const setGlow = (on) => {
+    window.IzukiEdge?.enabled(on);
+    for (const s of glowSwitches) s.checked = on;
+    window.IzukiNative?.setEdgeGlow?.(on);
+  };
+  const glowOn = (() => { try { return window.IzukiEdge?.enabled() ?? true; } catch { return true; } })();
+  for (const s of glowSwitches) { s.checked = glowOn; s.onchange = () => setGlow(s.checked); }
+  window.IzukiNative?.setEdgeGlow?.(glowOn);
   $("orb-response").oninput = () => { const v=Number($("orb-response").value);window.IzukiOrb.response(v);$("orb-response-value").textContent=Math.round(v*100)+'%'; };
   $("orb-surface").onclick = () => { const light=$("orb-studio").classList.toggle('light');$("orb-surface").setAttribute('aria-pressed',String(light));$("orb-surface").textContent=light?'Dark surface':'Light surface'; };
 

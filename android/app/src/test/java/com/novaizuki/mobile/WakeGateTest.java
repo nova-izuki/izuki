@@ -33,6 +33,47 @@ public class WakeGateTest {
     assertEquals("five loud frames out of eight are speech", 1, onsets);
   }
 
+  @Test public void speechOverContinuingSoundIsCheckedAgain() {
+    WakeGate gate = new WakeGate();
+    short[] room = tone(0.002, 320);
+    short[] tv = tone(0.15, 320); // a TV talking: loud, and it doesn't stop
+    for (int i = 0; i < 200; i++) gate.frame(WakeGate.levelDb(room, room.length));
+    int onsets = 0;
+    for (int i = 0; i < 50 * 6; i++) if (gate.frame(WakeGate.levelDb(tv, tv.length))) onsets++;
+    assertTrue("six seconds of continuing sound get more than one look, got " + onsets, onsets >= 2);
+    assertTrue("but not a flood, got " + onsets, onsets <= 3);
+  }
+
+  @Test public void whyASessionWasSkipped() {
+    WakeGate gate = new WakeGate();
+    assertEquals("", gate.whyNot(100_000));
+    gate.began(100_000);
+    gate.ended(100_500);
+    assertEquals("just checked something else", gate.whyNot(101_000));
+    gate.rest(101_000);
+    assertEquals("resting after lots of talk nearby", gate.whyNot(102_000));
+    assertTrue(WakeGate.nearMiss("hey noah"));
+    assertFalse(WakeGate.nearMiss("what's for dinner"));
+  }
+
+  @Test public void aWakeInTheLastBudgetedSessionDoesNotLeaveItDeaf() {
+    WakeGate gate = new WakeGate();
+    long t = 100_000;
+    boolean spent = false;
+    for (int i = 0; i < WakeGate.BUDGET; i++) { spent = gate.began(t); gate.ended(t + 500); t += WakeGate.MIN_GAP_MS + 600; }
+    assertTrue(spent);
+    assertEquals("used up its checks for now", gate.whyNot(t));
+    gate.woke();
+    assertEquals("", gate.whyNot(t));
+  }
+
+  @Test public void quickSpellingsOfNova() {
+    assertTrue(WakeGate.isWake("hey nover what's the time", false));
+    assertTrue(WakeGate.isWake("hey noba", false));
+    assertEquals("what's the time", WakeGate.command("hey novar, what's the time", false, ""));
+    assertFalse(WakeGate.isWake("hey noah", false));
+  }
+
   @Test public void aSteadyNoiseBecomesTheFloor() {
     WakeGate gate = new WakeGate();
     short[] fan = tone(0.02, 320); // a fan: loud but steady, about -37 dBFS

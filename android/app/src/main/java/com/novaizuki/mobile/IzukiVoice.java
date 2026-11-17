@@ -51,6 +51,17 @@ final class IzukiVoice {
   /** The page's hearing language ("" = the phone's) and the keep-orb setting, from the page. */
   static volatile String lang = "";
   static volatile boolean keepOrb = false;
+  /** The glowing screen edges during a turn (Settings → Phone; on unless switched off). */
+  static volatile boolean edgeGlow = true;
+
+  /** The glow switch, applied to a turn that's running now too. */
+  static void setEdgeGlow(boolean on) {
+    edgeGlow = on;
+    ui.post(() -> {
+      if (turn.isEmpty()) return;
+      IzukiAccessibilityService.edgeGlow(on, "greet".equals(phase) ? "listen" : phase);
+    });
+  }
 
   private static void bind(Context c) {
     if (app == null && c != null) app = c.getApplicationContext();
@@ -89,7 +100,11 @@ final class IzukiVoice {
             .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build());
       } catch (Exception ignored) { }
       tts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
-        @Override public void onStart(String id) { ui.post(() -> started(id)); }
+        @Override public void onStart(String id) { IzukiAccessibilityService.voiceLevel(0.5f); ui.post(() -> started(id)); }
+        // Each word Izuki says pulses the orb and the edges: they move with the voice.
+        @Override public void onRangeStart(String id, int start, int end, int frame) {
+          IzukiAccessibilityService.voiceLevel(0.45f + 0.5f * (float) Math.random());
+        }
         @Override public void onDone(String id) { ui.post(() -> ended(id, "done")); }
         @Override public void onError(String id) { ui.post(() -> ended(id, "error")); }
         @Override public void onError(String id, int code) { ui.post(() -> ended(id, "error")); }
@@ -156,6 +171,7 @@ final class IzukiVoice {
     boolean forTurn = !turn.isEmpty() && turn.equals(turnId);
     if (forTurn && !id.startsWith("greet:")) {
       phase = "talk";
+      IzukiAccessibilityService.edgeGlow(edgeGlow, "talk");
       ui.removeCallbacks(pageTimeout);
       ui.removeCallbacks(afterTalk);
       long ms = Math.min(120_000, 6_000 + words.length() * 75L);
@@ -238,7 +254,8 @@ final class IzukiVoice {
     ears.setRecognitionListener(new RecognitionListener() {
       @Override public void onReadyForSpeech(Bundle b) { }
       @Override public void onBeginningOfSpeech() { }
-      @Override public void onRmsChanged(float db) { }
+      // The person's voice level (about -2…10 dB from Android) moves the orb and the edges.
+      @Override public void onRmsChanged(float db) { IzukiAccessibilityService.voiceLevel(Math.max(0f, Math.min(1f, (db + 2f) / 12f))); }
       @Override public void onBufferReceived(byte[] buffer) { }
       @Override public void onEndOfSpeech() { }
       @Override public void onEvent(int type, Bundle b) { }
@@ -265,8 +282,9 @@ final class IzukiVoice {
         .putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
         .putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
         .putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, app.getPackageName())
-        .putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 1300)
-        .putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 1000);
+        // How long a pause ends what you said: shorter answers sooner (it was 1.3 s).
+        .putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 1000)
+        .putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 800);
     String want = lang == null ? "" : lang;
     intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, want.isEmpty() ? Locale.getDefault().toLanguageTag() : want);
     try { ears.startListening(intent); }
@@ -381,6 +399,7 @@ final class IzukiVoice {
     KeyguardManager km = (KeyguardManager) app.getSystemService(Context.KEYGUARD_SERVICE);
     locked = km != null && km.isKeyguardLocked();
     IzukiWakeService.hold(IzukiWakeService.HOLD_TURN, true);
+    IzukiAccessibilityService.edgeGlow(edgeGlow, "listen");
     holdScreen(true);
     if ("tile".equals(src)) IzukiAccessibilityService.perform("close_shade");
     if (!command.isEmpty()) { deliver(command); return; }
@@ -400,6 +419,7 @@ final class IzukiVoice {
     if (turn.isEmpty()) return;
     ui.removeCallbacks(greetGuard);
     phase = "listen";
+    IzukiAccessibilityService.edgeGlow(edgeGlow, "listen");
     // Never listen while "Yes?" is still playing: the recognizer would hear it.
     if (speakingId.startsWith("greet:") && tts != null) {
       try { tts.stop(); } catch (Exception ignored) { }
@@ -420,6 +440,7 @@ final class IzukiVoice {
 
   private static void deliver(String text) {
     phase = "think";
+    IzukiAccessibilityService.edgeGlow(edgeGlow, "think");
     IzukiAccessibilityService.orbFor("voice", "think", "“" + VoiceText.caption(text, 90) + "”", 30_000);
     if (!IzukiControlPlugin.sendTurn(turn, text, locked, source, followUp)) {
       String src = source;
@@ -435,7 +456,14 @@ final class IzukiVoice {
   /** The page's progress during a turn ("Opening Settings…"): the orb shows it. */
   static void state(String id, String state, String text) {
     ui.post(() -> {
-      if (turn.isEmpty() || !turn.equals(id) || "talk".equals(phase)) return;
+      if (turn.isEmpty() || !turn.equals(id)) return;
+      if ("talk".equals(phase)) {
+        // Between two sentences of a reply that's still being written: wait
+        // for the rest (the page timeout), not the 12-second "done" fallback.
+        if (!speakingId.isEmpty()) return;
+        ui.removeCallbacks(afterTalk);
+        IzukiAccessibilityService.edgeGlow(edgeGlow, "think");
+      }
       phase = "think";
       String s = "listen".equals(state) || "talk".equals(state) ? state : "think";
       IzukiAccessibilityService.orbFor("voice", s, VoiceText.caption(text == null ? "" : text, 120), 30_000);
@@ -500,6 +528,7 @@ final class IzukiVoice {
     ui.removeCallbacks(greetGuard);
     IzukiWakeService.hold(IzukiWakeService.HOLD_TURN, false);
     holdScreen(false);
+    IzukiAccessibilityService.edgeGlow(false, "");
   }
 
   /** The screen stays on while a turn runs (a lock screen dims after a few seconds). */

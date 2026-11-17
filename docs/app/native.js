@@ -69,6 +69,22 @@
   };
 
   let orbOverApps = false;
+  // A read that failed (control not ready yet) is tried again after 30 s,
+  // a good one after 10 minutes.
+  // The read in flight is shared, so a caller can wait for it.
+  let appNames = null, appNamesAt = 0, appNamesTried = 0, appNamesLoad = null;
+  const loadAppNames = () => {
+    if (appNamesLoad) return appNamesLoad;
+    if (Date.now() - appNamesTried < 30000) return Promise.resolve();
+    appNamesTried = Date.now();
+    appNamesLoad = (async () => {
+      try {
+        const list = (await control()?.apps?.())?.apps || [];
+        if (list.length) { appNames = new Set(list.map((a) => String(a.name || "").trim().toLowerCase())); appNamesAt = Date.now(); }
+      } catch {} finally { appNamesLoad = null; }
+    })();
+    return appNamesLoad;
+  };
   let wakeExtra = { audio: "", voice: false };
   // Native speech: one promise per line, settled by the "speech" events.
   const speeches = new Map();
@@ -90,7 +106,7 @@
   };
   // Listen for Android's speech events from the start: the very first line's
   // "done" must not arrive before anyone is listening for it.
-  if (platform() === "android") listenSpeech();
+  if (platform() === "android") { listenSpeech(); setTimeout(() => { void loadAppNames(); }, 1500); }
   window.IzukiNative = {
     installed: () => !!window.Capacitor?.isNativePlatform?.(),
     platform,
@@ -99,6 +115,8 @@
       orbOverApps = !!on;
       try { void control()?.voicePrefs?.({ keep: orbOverApps }); } catch {}
     },
+    /** The glowing screen edges over other apps during a voice turn (Android). */
+    setEdgeGlow(on) { try { void control()?.voicePrefs?.({ edgeGlow: !!on }); } catch {} },
     /** The hearing language for native listening and the voice turn ("" = the phone's). */
     setHearing(lang) { try { void control()?.voicePrefs?.({ lang: String(lang || "") }); } catch {} },
     /** Android's own voice (TextToSpeech) is here: replies are never silent in the app. */
@@ -487,6 +505,28 @@
     async apps() {
       try { return (await control()?.apps())?.apps || []; } catch { return []; }
     },
+    /**
+     * Is this exactly an installed app's name? From a list read once (and
+     * again after 10 minutes), so "open Find My Mobile" is an app even though
+     * it has "find" in it. null until the list has been read.
+     */
+    isAppName(name) {
+      const wanted = String(name || "").trim().toLowerCase();
+      if (!appNamesAt || Date.now() - appNamesAt > 600000) void loadAppNames();
+      return appNames ? appNames.has(wanted) : null;
+    },
+    /**
+     * Wait (at most `ms`) for the app list when it hasn't been read yet, so
+     * a plan made right after startup still knows "Learn and Play Music" is an app.
+     */
+    async appNamesReady(ms = 2500) {
+      if (appNames && Date.now() - appNamesAt <= 600000) return;
+      let timer = 0;
+      await Promise.race([loadAppNames(), new Promise((r) => { timer = setTimeout(r, ms); })]);
+      clearTimeout(timer);
+    },
+    /** For the tests: read the app list again on the next ask. */
+    _resetAppNames() { appNamesTried = 0; appNamesAt = 0; },
     /** play, pause, next, previous, stop. */
     async media(key) {
       try { await control()?.media({ key }); return true; } catch { return false; }
@@ -680,7 +720,10 @@
         return failed;
       }
       const open = text.match(/^open (.+)$/);
-      if (open) {
+      // Only a plain "open <app>"; "open my files and check what's taking
+      // space" is a job for the phone agent, not an app name.
+      if (open && (window.IzukiNative.isAppName(open[1]) === true
+        || (open[1].split(/\s+/).length <= 3 && !/\b(?:and|then|check|what|how|why|find|see|look|show|tell)\b/.test(open[1])))) {
         const app = await window.IzukiNative.launch(open[1]);
         if (!app?.name) return null;
         // Opening is only "opened" once Android shows that app in front.
