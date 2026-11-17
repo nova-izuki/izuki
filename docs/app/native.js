@@ -89,6 +89,8 @@
   // Native speech: one promise per line, settled by the "speech" events.
   const speeches = new Map();
   let speechSeq = 0, speechListening = false;
+  /** Bumped by every hush: a clip still being prepared then is never played. */
+  let hushes = 0;
   const listenSpeech = () => {
     const p = control();
     if (speechListening || !p?.addListener) return;
@@ -160,6 +162,7 @@
     async playClip(wav, words = "", opts = {}) {
       const p = control();
       if (!p?.playClip) return "error";
+      const generation = hushes;
       let audio = "";
       try {
         const blob = wav instanceof Blob ? wav : await (await fetch(wav)).blob();
@@ -168,6 +171,7 @@
         for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
         audio = btoa(bin);
       } catch { return "error"; }
+      if (generation !== hushes) return "stopped";
       listenSpeech();
       const id = `c${Date.now().toString(36)}${++speechSeq}`;
       const text = String(words || "");
@@ -187,7 +191,7 @@
     /** Use this voice ("" = the best one installed). */
     setVoice(name) { try { void control()?.voicePrefs?.({ voice: String(name || "") }); } catch {} },
     /** Stop Android's voice now. */
-    async hushSpeech() { try { await control()?.hush?.(); } catch {} },
+    async hushSpeech() { hushes++; try { await control()?.hush?.(); } catch {} },
     /** Native ears are here (Android's speech recognizer, one session at a time). */
     canListen: () => platform() === "android" && !!control()?.listen,
     /**

@@ -40,6 +40,7 @@
     `{"do":"settings","page":"<${PAGES.join("|")}>"}  (straight to that Settings page; faster than menus)`,
     '{"do":"tap","n":<number from the screen>}',
     '{"do":"long_press","n":<number from the screen>}  (menus that open on a long press)',
+    '{"do":"double_tap","n":<number>} or {"do":"double_tap","x":<0-1000>,"y":<0-1000>}  (zoom a photo or map, like a post)',
     '{"do":"tap_at","x":<0-1000>,"y":<0-1000>}  (a point on the screenshot, 0-1000 across and down; only for something with no number)',
     '{"do":"type","n":<number of a box>,"text":"<words>","enter":true|false}  (enter only for a search box)',
     '{"do":"scroll","dir":"down|up"}  (lists and pages)',
@@ -120,6 +121,7 @@
       tap: "tap", click: "tap", press: "tap", select: "tap",
       type: "type", input: "type", write: "type", enter_text: "type",
       long_press: "long_press", longpress: "long_press", hold: "long_press", press_and_hold: "long_press",
+      double_tap: "double_tap", doubletap: "double_tap", double_click: "double_tap",
       tap_at: "tap_at", tap_xy: "tap_at", click_at: "tap_at", tap_point: "tap_at",
       key: "key", recents: "key", notifications: "key", quick_settings: "key",
       media: "media", volume: "volume", torch: "torch", flashlight: "torch", navigate: "navigate", directions: "navigate",
@@ -235,6 +237,7 @@
       case "scroll": return `Scrolling ${a.dir}…`;
       case "swipe": return `Swiping ${a.dir}…`;
       case "long_press": return item ? `Holding “${norm(item.text).slice(0, 40)}”…` : "Holding…";
+      case "double_tap": return item ? `Double-tapping “${norm(item.text).slice(0, 40)}”…` : "Double-tapping…";
       case "tap_at": return "Tapping the screen…";
       case "key": return { recents: "Opening recent apps…", notifications: "Opening notifications…", quick_settings: "Opening quick settings…" }[a.key] || "Pressing a key…";
       case "media": return `Media: ${a.key || "play"}…`;
@@ -275,7 +278,7 @@
       const items = screen?.items || [];
       const own = screen?.app === OWN;
       // A quiz, test or exam on screen: Izuki explains, but never picks or types answers.
-      if (["tap", "type", "tap_at", "long_press"].includes(a.do) && testPage(screen)) {
+      if (["tap", "type", "tap_at", "long_press", "double_tap"].includes(a.do) && testPage(screen)) {
         return { ok: false, stop: true, note: "This looks like a quiz or test, so I won't pick or type answers for you. Say “explain this” and I'll walk you through the question." };
       }
       switch (a.do) {
@@ -343,33 +346,41 @@
           return { ok: true, note };
         }
         case "long_press":
+        case "double_tap":
         case "tap_at": {
           if (own) return { ok: false, note: "that's Izuki's own chat; open the app you need first" };
           let x, y, item = null;
-          if (a.do === "long_press") {
-            item = items.find((i) => i.n === a.n);
-            if (!item) return { ok: false, note: `there's no [${a.n}] on this screen` };
-            x = item.x + item.w / 2; y = item.y + item.h / 2;
+          if (a.do === "long_press" || (a.do === "double_tap" && a.n)) {
+            const target = items.find((i) => i.n === a.n);
+            if (!target) return { ok: false, note: `there's no [${a.n}] on this screen` };
+            x = target.x + target.w / 2; y = target.y + target.h / 2;
           } else {
             if (!shotSize || !(a.x >= 0 && a.x <= 1000 && a.y >= 0 && a.y <= 1000)) return { ok: false, note: "there was no screenshot to point at: use a number from the list" };
             x = (a.x / 1000) * shotSize.w; y = (a.y / 1000) * shotSize.h;
-            // What's under that point, if Android lists it: the same safety rules
-            // as a numbered tap, for every control there (a harmless label
-            // inside a "Delete" button doesn't hide the button). A point over
-            // nothing listed (a map, a game, a drawing) is allowed.
-            const under = items.filter((i) => i.w > 0 && i.h > 0 && x >= i.x && x <= i.x + i.w && y >= i.y && y <= i.y + i.h)
-              .sort((p, q) => p.w * p.h - q.w * q.h);
-            item = under.find((i) => RISKY.test(norm(i.text))) || under[0] || null;
           }
+          // Everything under the point, if Android lists it: the same safety
+          // rules as a numbered tap, for every control there (a harmless label
+          // inside a "Delete" button doesn't hide the button). A point over
+          // nothing listed (a map, a game, a drawing) is allowed.
+          const under = items.filter((i) => i.w > 0 && i.h > 0 && x >= i.x && x <= i.x + i.w && y >= i.y && y <= i.y + i.h)
+            .sort((p, q) => p.w * p.h - q.w * q.h);
+          item = under.find((i) => RISKY.test(norm(i.text))) || (a.n ? items.find((i) => i.n === a.n) : null) || under[0] || null;
           if (item && RISKY.test(norm(item.text))) {
             return { ok: false, stop: true, note: `That last step needs your finger: tap “${norm(item.text)}” yourself if you want it. I don't press buttons that call, send, pay, buy, delete or reset.` };
           }
           const before = look(screen);
-          const r = await n.act({ op: a.do === "long_press" ? "longpress" : "tap", x: Math.round(x), y: Math.round(y), ms: 650 });
+          const point = { x: Math.round(x), y: Math.round(y) };
+          let r = await n.act({ op: a.do === "long_press" ? "longpress" : "tap", ...point, ms: 650 });
+          // A double tap: the second touch right after the first (Android's double-tap window is about 300 ms).
+          if (r?.done && a.do === "double_tap") {
+            if (stopped()) return { ok: false, stop: true, note: "Stopped after the first tap." };
+            r = await n.act({ op: "tap", ...point });
+          }
           if (!r?.done) return { ok: false, note: n.why?.(r, "") || "Android didn't take the touch" };
           const after = await changedFrom(before, 2500);
           const what = item ? `“${norm(item.text).slice(0, 40)}”` : "that spot";
-          return { ok: true, note: `${a.do === "long_press" ? "held" : "tapped"} ${what}${after ? ", the screen changed" : " but nothing changed"}` };
+          const did = a.do === "long_press" ? "held" : a.do === "double_tap" ? "double-tapped" : "tapped";
+          return { ok: true, note: `${did} ${what}${after ? ", the screen changed" : " but nothing changed"}` };
         }
         case "swipe": {
           const w = Number(screen?.w) || 1080, h = Number(screen?.h) || 2340;
@@ -448,11 +459,16 @@
       const own = screen.app === OWN;
       // Eyes as well as the list (a brain that sees pictures): the screen
       // with each control's number drawn on it. Protected screens have none.
-      let image = null;
+      let image = null, picture = "";
       shotSize = null;
       if (ctx.see && !own && n.snapshot) {
         const shot = await n.snapshot().catch(() => null);
         if (shot?.image) {
+          // A cheap fingerprint of the whole picture (FNV over every 61st character):
+          // swiping through photos changes it even when the list doesn't.
+          let h = 2166136261;
+          for (let k = 0; k < shot.image.length; k += 61) { h ^= shot.image.charCodeAt(k); h = Math.imul(h, 16777619); }
+          picture = `${shot.image.length}:${(h >>> 0).toString(36)}`;
           shotSize = { w: Number(shot.w) || Number(screen.w) || 0, h: Number(shot.h) || Number(screen.h) || 0 };
           if (!(shotSize.w > 0 && shotSize.h > 0)) shotSize = null;
           image = await mark(shot, screen, shotSize);
@@ -488,7 +504,7 @@
       if (a.do === "ask") return { text: a.say || "What should I do next?", ok: true, asked: true };
       const what = label(a, screen);
       // The same action on the same screen a third time: it isn't working.
-      const sameKey = `${look(screen)}#${a.do}|${a.n}|${a.app}|${a.page}|${a.text}|${a.dir}|${a.x}|${a.y}|${a.key}`;
+      const sameKey = `${look(screen)}#${picture}#${a.do}|${a.n}|${a.app}|${a.page}|${a.text}|${a.dir}|${a.x}|${a.y}|${a.key}`;
       const times = (tried.get(sameKey) || 0) + 1;
       tried.set(sameKey, times);
       if (times >= 3) {

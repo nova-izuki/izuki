@@ -174,7 +174,9 @@ final class IzukiVoice {
     int top = -1;
     for (Voice v : all) {
       if (v == null || v.getLocale() == null) continue;
-      if (!picked.isEmpty() && picked.equals(v.getName()) && usable(v) && (online || !v.isNetworkConnectionRequired())) return v;
+      // The person's pick, only in the language being spoken (an English voice can't read French).
+      if (!picked.isEmpty() && picked.equals(v.getName()) && usable(v) && (online || !v.isNetworkConnectionRequired())
+          && v.getLocale().getLanguage().equals(locale.getLanguage())) return v;
       int s = VoiceText.voiceScore(v.getLocale().getLanguage(), v.getLocale().getCountry(), v.getQuality(),
           v.isNetworkConnectionRequired(), usable(v), locale.getLanguage(), locale.getCountry(), online);
       if (s > top || (s == top && s >= 0 && best != null && v.getName().compareTo(best.getName()) < 0)) { best = v; top = s; }
@@ -366,7 +368,8 @@ final class IzukiVoice {
       java.io.File f = new java.io.File(app.getCacheDir(), "izuki-voice-" + Math.abs(uid.hashCode()) + ".wav");
       try (java.io.FileOutputStream out = new java.io.FileOutputStream(f)) { out.write(bytes); }
       catch (Exception e) { IzukiControlPlugin.speechEvent(uid, "error"); return; }
-      // It replaces whatever is being said.
+      // It replaces whatever is being said, and lines still waiting for the engine.
+      speechGen++;
       if (tts != null) { try { tts.stop(); } catch (Exception ignored) { } }
       stopClip();
       if (!speakingId.isEmpty() && !speakingId.equals(uid)) IzukiControlPlugin.speechEvent(speakingId, "stopped");
@@ -427,6 +430,8 @@ final class IzukiVoice {
   private static BiConsumer<String, String> earsDone;
   private static String earsLast = "";
   private static boolean earsSpoke = false;
+  /** The person said they're done, or time ran out: no more quiet retries. */
+  private static boolean earsFinishing = false;
   private static int earsTries = 0;
   private static long earsUntil = 0;
   private static Intent earsIntent;
@@ -436,6 +441,7 @@ final class IzukiVoice {
   };
   private static final Runnable earsTimeout = () -> {
     if (!earsOn) return;
+    earsFinishing = true;
     if (ears == null) { earsGiveUp.run(); return; }
     try { ears.stopListening(); } catch (Exception ignored) { }
     ui.postDelayed(earsGiveUp, 2500);
@@ -463,6 +469,7 @@ final class IzukiVoice {
     earsDone = done;
     earsLast = "";
     earsSpoke = false;
+    earsFinishing = false;
     earsTries = 0;
     earsUntil = android.os.SystemClock.elapsedRealtime() + maxMs;
     earsIntent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
@@ -535,7 +542,7 @@ final class IzukiVoice {
   private static boolean again(int error) {
     String word = VoiceText.errorWord(error);
     long left = earsUntil - android.os.SystemClock.elapsedRealtime();
-    if (!VoiceText.listenAgain(word, earsSpoke, left, earsTries)) return false;
+    if (earsFinishing || !VoiceText.listenAgain(word, earsSpoke, left, earsTries)) return false;
     earsTries++;
     SpeechRecognizer r = ears;
     ears = null;
@@ -588,6 +595,7 @@ final class IzukiVoice {
   static void finishListening() {
     ui.post(() -> {
       if (!earsOn) return;
+      earsFinishing = true;
       // Between two tries: nothing more is coming, use what was heard.
       if (ears == null) { earsGiveUp.run(); return; }
       try { ears.stopListening(); } catch (Exception ignored) { }

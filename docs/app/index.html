@@ -393,6 +393,11 @@
     </div>
   </div>
 
+  <!-- what a phone feature does, how, and a real try: opened from "On your phone" -->
+  <div class="guide-sheet" id="guide-sheet" hidden>
+    <div class="guide-panel" id="guide-panel" role="dialog" aria-modal="true" aria-labelledby="guide-title"></div>
+  </div>
+
   <button class="island" id="island" type="button" hidden aria-live="polite"></button>
   <main id="log" aria-live="polite"></main>
 
@@ -653,8 +658,8 @@
         <div class="row" style="flex-wrap:wrap;gap:8px;margin-top:6px"><button class="btn ghost" id="vm-teach" type="button">Teach my voice</button><button class="btn ghost" id="vm-toggle" type="button" hidden>Turn off</button><button class="btn ghost" id="vm-forget" type="button" hidden>Forget my voice</button></div>
         <p class="note" style="margin-top:6px">A safety switch for “Hey Nova”: once it knows your voice, other voices (the TV, a video, other people) can't start Izuki by voice. A tap on the orb still works, because that needs your hand on the phone. Three short sentences; only a voice template stays on this phone — never the recordings or the words. The first time downloads the voice model (about 95 MB). A very similar voice or a recording of you could still pass, so it isn't a lock.</p>
       </div>
-      <label class="swatch" style="margin-top:10px"><input type="checkbox" id="edge-glow-phone" checked> Glowing screen edges while Izuki listens and talks</label>
-      <p class="note" style="margin-top:4px">The soft rainbow light around the screen, over any app during “Hey Nova” and the orb, moving with your voice and Izuki's. Off: just the orb.</p>
+      <label class="swatch" style="margin-top:10px"><input type="checkbox" id="edge-glow-phone" checked> Rainbow light around the screen</label>
+      <p class="note" style="margin-top:4px">While Izuki listens, works and talks, over any app and inside Izuki, moving with the voice. It goes out as soon as Izuki is done. Off: just the orb.</p>
       <label class="swatch" style="margin-top:10px"><input type="checkbox" id="keep-orb"> Keep a small orb resting over other apps</label>
       <p class="note" style="margin-top:4px">Off (the default): the orb only appears when you say “Hey Nova”, use the Ask Izuki tile or notification, or while Izuki is working or talking — then it goes away. On: a small orb also rests over your apps. Tap the orb to talk (tap again to stop), tap its words to open Izuki, drag it anywhere, long-press to hide it. Needs Android control.</p>
     </section>
@@ -984,7 +989,14 @@
     if (turnCtx) return;
     const send = () => {
       const mode = turnCtx ? "" : window.IzukiEdge?.enabled?.() === false ? "" : workMode();
-      void native.glow(mode, 30000);
+      // Android's service isn't connected after all: the page draws the light
+      // (Android control connecting again hands it back, see onControl).
+      void Promise.resolve(native.glow(mode, 30000)).then((shown) => {
+        if (shown || !mode || !glowNative) return;
+        glowNative = false;
+        clearInterval(glowBeat);
+        window.IzukiEdge?.useNative?.(false);
+      });
       if (!mode) clearInterval(glowBeat);
       return !!mode;
     };
@@ -1121,18 +1133,16 @@
       notesBtn.onclick = () => void showNotes(true);
       w.appendChild(notesBtn);
     }
-    // Autopilot is a normal-home action, not something hidden behind the cockpit.
-    if (window.IzukiNative?.installed?.() && window.IzukiNative.platform?.() === "android" && window.IzukiPilot) {
-      const pilotBtn = el("button", "home-resume", "\ud83c\udfce\ufe0f Autopilot \u2014 run it on my phone");
-      pilotBtn.type = "button";
-      pilotBtn.onclick = () => window.IzukiPilot.open();
-      w.appendChild(pilotBtn);
-    }
+    const onAndroid = !!window.IzukiNative?.installed?.() && window.IzukiNative.platform?.() === "android";
+    // What Izuki can do on this phone, each with a short how-to and a real try.
+    if (onAndroid) phoneFeatures(w);
     // A small, visible phone dock: the same actions are still available by
-    // voice, but this works before the microphone or model is ready.
-    if (window.IzukiNative?.installed?.() && window.IzukiNative.platform?.() === "android") {
+    // voice, but this works before the microphone or model is ready. Folded
+    // until opened once (it remembers), so the home stays calm.
+    if (onAndroid) {
       const dock = el("details", "phone-dock");
-      dock.open = true;
+      try { dock.open = localStorage.getItem("izuki.dockOpen") === "1"; } catch { dock.open = false; }
+      dock.addEventListener("toggle", () => { try { localStorage.setItem("izuki.dockOpen", dock.open ? "1" : "0"); } catch {} });
       dock.append(el("summary", "", "One-tap phone controls"));
       const grid = el("div", "phone-grid");
       const svg = (d) => `<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'>${d}</svg>`;
@@ -1200,9 +1210,12 @@
       w.appendChild(dock);
     }
     const pendingReminders = reminders.filter((r) => !r.done).length;
-    pulseItem("Private", "Chats stay on this phone");
-    pulseItem(pendingReminders ? "Reminder set" : "No reminders", pendingReminders ? "Izuki will nudge you" : "Ask me to remember something");
-    pulseItem(pc ? "PC linked" : "Phone first", pc ? "Ready when your PC is on" : "Link a PC whenever you want");
+    // On Android the phone list says what matters; only a set reminder and the weather stay.
+    if (!onAndroid) {
+      pulseItem("Private", "Chats stay on this phone");
+      pulseItem(pendingReminders ? "Reminder set" : "No reminders", pendingReminders ? "Izuki will nudge you" : "Ask me to remember something");
+      pulseItem(pc ? "PC linked" : "Phone first", pc ? "Ready when your PC is on" : "Link a PC whenever you want");
+    } else if (pendingReminders) pulseItem("Reminder set", "Izuki will nudge you");
     w.appendChild(pulse);
     // The weather, when Izuki knows your town (from your PC, or what you've told it).
     window.IzukiWeather?.now().then((wx) => {
@@ -1235,6 +1248,172 @@
     peopleRow(people);
     w.append(ideas, el("p", "home-label", "Choose your companion"), people);
   }
+
+  // ---- "On your phone": each feature, what it does, how, and a real try --------
+  const GUIDE_ICON = {
+    agent: "<path d='M8 3h8a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z'/><path d='M11 18h2'/><path d='m9.5 10.5 1.8 1.8 3.4-3.6'/>",
+    screen: "<path d='M2.5 12s3.5-6.5 9.5-6.5S21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z'/><circle cx='12' cy='12' r='3'/>",
+    wake: "<rect x='9' y='2.5' width='6' height='11' rx='3'/><path d='M18.5 10.5v.5a6.5 6.5 0 0 1-13 0v-.5M12 17.5v4'/>",
+    orb: "<circle cx='12' cy='12' r='6'/><path d='M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2'/>",
+    pilot: "<path d='M4 19V5M4 19h16'/><path d='m7 15 4-4 3 2 5-6'/>",
+    drive: "<path d='M4 17h16M5.5 17l1.7-6.8A2.5 2.5 0 0 1 9.6 8.3h4.8a2.5 2.5 0 0 1 2.4 1.9L18.5 17'/><circle cx='7.5' cy='17.5' r='1.8'/><circle cx='16.5' cy='17.5' r='1.8'/>",
+  };
+  const guideSvg = (d) => `<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'>${d}</svg>`;
+  /** id, name, one line, the steps, examples to tap, and what the main button does. */
+  const PHONE_FEATURES = [
+    { id: "agent", name: "Do it for me", line: "I work your apps, one visible step at a time",
+      what: "Ask for anything on your phone. I open the right app and do it while you watch, and I tell you what I found.",
+      steps: ["Say or type what you want done.", "I open apps, tap and scroll; each step shows on the orb.", "Anything that sends, pays or deletes waits for your own tap."],
+      tries: ["What's taking space on my phone?", "Turn on dark mode", "Open YouTube and search lofi"] },
+    { id: "screen", name: "Explain my screen", line: "On any app or site, ask what you're looking at",
+      what: "Stuck on a page, a setting or a message? I read what's on the screen and explain it, right where you are.",
+      steps: ["Open the app or page you're curious about.", "Tap the orb (or say “Hey Nova”) and ask “what's this?”", "I read the screen and answer there. Izuki stays closed."],
+      tries: [] },
+    { id: "wake", name: "“Hey Nova”", line: "Call me hands-free, even from the lock screen",
+      what: "Say “Hey Nova” and your question. I answer over whatever is open; on the lock screen only general questions, and I never unlock.",
+      steps: ["Turn the wake word on (one tap, it asks for the microphone).", "Say “Hey Nova, what's the weather?”", "Optional: teach me your voice so other voices can't wake me."],
+      tries: [] },
+    { id: "orb", name: "The orb", line: "A small orb over your apps: tap to talk",
+      what: "A small orb rests over your apps. Tap it to talk, tap again to stop. It glows while I listen, think and talk.",
+      steps: ["Tap the orb and speak; the words show beside it.", "Drag it to either side; long-press to hide it.", "Tap its words to open the whole answer in Izuki."],
+      tries: [] },
+    { id: "pilot", name: "Autopilot", line: "Routines you can watch, step by step",
+      what: "Type a goal and press Run: quick routines run instantly, anything else goes to the AI phone agent, with every step in the log.",
+      steps: ["Open Autopilot and type a goal.", "Watch each step as it happens.", "Stop whenever you like; nothing risky is pressed."],
+      tries: [] },
+    { id: "drive", name: "Drive mode", line: "A hands-free co-pilot for the road",
+      what: "Directions, music and short spoken answers while you drive. I can't see the road, so keep your eyes on it.",
+      steps: ["Start Drive mode before you set off.", "Say where to, or what to play.", "Answers stay short and spoken, nothing to read."],
+      tries: [] },
+  ];
+
+  /** Live status beside a feature: what's on, what needs setting up. */
+  async function featureStatus(id) {
+    const native = window.IzukiNative;
+    if (id === "orb") return keepOrb ? { text: "On", on: true } : { text: "Off" };
+    if (id === "wake") {
+      const st = await native?.wakeStatus?.().catch?.(() => null);
+      return st?.on ? { text: "On", on: true } : { text: "Set up" };
+    }
+    if (id === "agent" || id === "screen" || id === "pilot") {
+      return (await native?.controlStatus?.()) ? null : { text: "Set up" };
+    }
+    return null;
+  }
+
+  function phoneFeatures(w) {
+    w.appendChild(el("p", "home-label", "On your phone"));
+    const list = el("div", "feature-list");
+    for (const f of PHONE_FEATURES) {
+      const row = el("button", "feature-row");
+      row.type = "button";
+      const icon = el("i");
+      icon.innerHTML = guideSvg(GUIDE_ICON[f.id]);
+      const words = el("span", "feature-words");
+      words.append(el("b", "", f.name), el("small", "", f.line));
+      const side = el("span", "feature-side");
+      side.innerHTML = guideSvg("<path d='m9 5 7 7-7 7'/>");
+      row.append(icon, words, side);
+      row.onclick = () => openGuide(f.id);
+      list.appendChild(row);
+      void featureStatus(f.id).then((s) => {
+        if (!s) return;
+        const pill = el("span", "feature-pill" + (s.on ? " on" : ""), s.text);
+        side.prepend(pill);
+      }).catch(() => {});
+    }
+    w.appendChild(list);
+  }
+
+  // Each opening gets a number: a slow status check from an earlier one never fills a closed or newer sheet.
+  let guideSeq = 0;
+  function closeGuide() {
+    guideSeq++;
+    $("guide-sheet").hidden = true;
+    $("guide-panel").replaceChildren();
+  }
+
+  /** The explainer: what it does, three steps, examples to tap, and one real action. */
+  async function openGuide(id) {
+    const f = PHONE_FEATURES.find((x) => x.id === id);
+    if (!f) return;
+    const mine = ++guideSeq;
+    const panel = $("guide-panel");
+    panel.replaceChildren();
+    const head = el("div", "guide-head");
+    const icon = el("i", "guide-icon");
+    icon.innerHTML = guideSvg(GUIDE_ICON[f.id]);
+    const close = el("button", "tools-close");
+    close.type = "button";
+    close.setAttribute("aria-label", "Close");
+    close.innerHTML = guideSvg("<path d='M18 6 6 18M6 6l12 12'/>");
+    close.onclick = closeGuide;
+    head.append(icon, el("h2", "", f.name), close);
+    head.querySelector("h2").id = "guide-title";
+    const steps = el("ol", "guide-steps");
+    for (const s of f.steps) steps.appendChild(el("li", "", s));
+    panel.append(head, el("p", "guide-what", f.what), steps);
+    // The first example is the main button's; the others are chips.
+    const more = f.id === "agent" ? f.tries.slice(1) : f.tries;
+    if (more.length) {
+      panel.appendChild(el("p", "guide-try-label", "Or try one of these"));
+      const tries = el("div", "guide-tries");
+      for (const t of more) {
+        const chip = el("button", "guide-try", t);
+        chip.type = "button";
+        chip.onclick = () => { closeGuide(); void ask(t); };
+        tries.appendChild(chip);
+      }
+      panel.appendChild(tries);
+    }
+    const actions = el("div", "guide-actions");
+    const main = el("button", "guide-main");
+    main.type = "button";
+    const native = window.IzukiNative;
+    const controlOn = !!(await native?.controlStatus?.());
+    if (mine !== guideSeq) return;
+    const needsControl = f.id === "agent" || f.id === "screen" || f.id === "pilot" || f.id === "orb";
+    if (needsControl && !controlOn) {
+      main.textContent = "Turn on Android control";
+      main.onclick = () => { closeGuide(); openSettings("native-health"); };
+      panel.appendChild(el("p", "guide-need", "This needs Android control (an accessibility switch), so I can see the screen and tap for you. It takes about a minute."));
+    } else if (f.id === "agent") {
+      main.textContent = "Try: what's taking space?";
+      main.onclick = () => { closeGuide(); void ask(f.tries[0]); };
+    } else if (f.id === "screen" || f.id === "orb") {
+      const set = () => { main.textContent = keepOrb ? "The orb is on: go try it" : "Show the orb over my apps"; };
+      set();
+      main.onclick = () => {
+        if (!keepOrb && $("keep-orb")) {
+          $("keep-orb").checked = true;
+          $("keep-orb").dispatchEvent(new Event("change"));
+          set();
+          return;
+        }
+        closeGuide();
+        void native?.phoneAction?.("home");
+      };
+    } else if (f.id === "wake") {
+      const st = await native?.wakeStatus?.().catch?.(() => null);
+      if (mine !== guideSeq) return;
+      main.textContent = st?.on ? "Hey Nova settings" : "Turn on “Hey Nova”";
+      main.onclick = () => { closeGuide(); openSettings("native-wake"); };
+    } else if (f.id === "pilot") {
+      main.textContent = "Open Autopilot";
+      main.onclick = () => { closeGuide(); window.IzukiPilot?.open?.(); };
+    } else if (f.id === "drive") {
+      main.textContent = "Start Drive mode";
+      main.onclick = () => { closeGuide(); $("go-drive")?.click(); };
+    }
+    actions.appendChild(main);
+    panel.appendChild(actions);
+    $("guide-sheet").hidden = false;
+    // Focus starts on the sheet itself (a screen reader reads it from the top).
+    panel.tabIndex = -1;
+    panel.focus({ preventScroll: true });
+  }
+  $("guide-sheet").addEventListener("click", (e) => { if (e.target === $("guide-sheet")) closeGuide(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("guide-sheet").hidden) closeGuide(); });
 
   /** Recent chats on the home screen: tap to pick one up again, × to delete it. */
   function recentChats(w) {
@@ -3226,7 +3405,7 @@
         if (url && overApps && window.IzukiNative?.canPlayClip?.()) {
           const how = await window.IzukiNative.playClip(url, p.words, { turn: turnCtx?.id || "" });
           URL.revokeObjectURL(url);
-          if (how === "error") await speakWithPhone(p.words, () => {});
+          if (how === "error" && alive()) await speakWithPhone(p.words, () => {});
         } else if (url) {
           await playAudio(url, p.words, () => {
             blocked = true;
@@ -4517,7 +4696,29 @@
     }
   }
 
+  /**
+   * Settings stays scannable: an explanation longer than two lines shows its
+   * start, and "How it works" opens the rest. Status lines (with an id) and
+   * short notes stay as they are.
+   */
+  function foldNotes() {
+    for (const p of document.querySelectorAll("#sheet p.note:not([id]):not(.clamp)")) {
+      if ((p.textContent || "").trim().length < 150) continue;
+      p.classList.add("clamp");
+      const more = el("button", "note-more", "How it works");
+      more.type = "button";
+      more.setAttribute("aria-expanded", "false");
+      more.onclick = () => {
+        const open = p.classList.toggle("open");
+        more.textContent = open ? "Show less" : "How it works";
+        more.setAttribute("aria-expanded", String(open));
+      };
+      p.after(more);
+    }
+  }
+
   function openSettings(focusId = "") {
+    foldNotes();
     try { $("orb-style").value = localStorage.getItem("izuki.orbStyle") || "liquid"; } catch { $("orb-style").value = "liquid"; }
     try { $("orb-response").value = localStorage.getItem("izuki.orbResponse") || "1"; } catch {}
     $("orb-response-value").textContent = Math.round(Number($("orb-response").value)*100)+'%';

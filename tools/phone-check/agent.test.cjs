@@ -260,6 +260,7 @@ async function A_run(p, goal, ctx) { return load(p.native).run(goal, ctx); }
     assert.equal(parse('{"do":"swipe","dir":"left"}').do, "swipe");
     assert.equal(parse('{"action":"tap_xy","x":"512","y":300}').x, 512);
     assert.equal(parse('{"do":"long-press","n":4}').do, "long_press");
+    assert.equal(parse('{"do":"double_tap","x":400,"y":300}').do, "double_tap");
     assert.equal(parse('{"do":"notifications"}').key, "notifications");
     assert.equal(parse('{"do":"torch","on":"on"}').on, true);
     assert.equal(parse('{"do":"tap","n":2,"plan":"1. open Files 2. read sizes"}').plan, "1. open Files 2. read sizes");
@@ -319,6 +320,34 @@ async function A_run(p, goal, ctx) { return load(p.native).run(goal, ctx); }
     p.native.phoneAction = async (k) => { keys.push(k); return true; };
     await A_run(p, "next photo, then notifications", { think: brain(['{"do":"swipe","dir":"left"}', '{"do":"key","key":"notifications"}', '{"do":"done","say":"ok"}']).think });
     assert.ok(touches[0] && touches[0].x > touches[0].x2, "a left swipe moves the finger right to left");
+    // A double tap is two touches on the same spot.
+    const d = phone();
+    d.state.app = "com.android.settings";
+    const taps = [];
+    const dact = d.native.act;
+    d.native.act = async (args) => { if (args.op === "tap") taps.push([args.x, args.y]); return dact(args); };
+    d.native.screen = async () => ({ app: "com.android.settings", w: 1000, h: 2000, items: [{ n: 1, text: "Photo", kind: "button", x: 0, y: 0, w: 1000, h: 1000 }] });
+    await A_run(d, "zoom in", { think: brain(['{"do":"double_tap","n":1}', '{"do":"done","say":"ok"}']).think });
+    assert.deepEqual(taps, [[500, 500], [500, 500]]);
+    // A long press on a harmless label inside a risky button is refused too.
+    const lp = phone();
+    lp.native.screen = async () => ({ app: "com.android.settings", w: 1000, h: 2000, items: [
+      { n: 1, text: "Delete account", kind: "button", x: 0, y: 800, w: 1000, h: 300 },
+      { n: 2, text: "Signed in as you", kind: "text", x: 300, y: 900, w: 400, h: 100 },
+    ] });
+    const lr = await A_run(lp, "hold it", { think: brain(['{"do":"long_press","n":2}']).think });
+    assert.match(lr.text, /tap “Delete account” yourself/);
+    assert.ok(!lp.calls.some((c) => c.startsWith("act:longpress")), "the risky parent is never pressed");
+    // Swiping through photos: the list stays the same but the picture changes, so it isn't a repeat.
+    const g = phone();
+    g.state.app = "com.android.settings";
+    let shotNo = 0;
+    g.native.snapshot = async () => ({ image: ("P" + (++shotNo)).repeat(90), w: 1000, h: 2000 });
+    const gp = brain([
+      '{"do":"swipe","dir":"left"}', '{"do":"swipe","dir":"left"}', '{"do":"swipe","dir":"left"}',
+      (prompt) => { assert.doesNotMatch(prompt, /third time on this same screen/, "a new photo each time is progress"); return '{"do":"done","say":"ok"}'; },
+    ]);
+    await A_run(g, "show me three photos", { think: gp.think, see: true });
     assert.deepEqual(keys, ["notifications"]);
     const q = phone();
     q.state.app = "com.android.settings";
