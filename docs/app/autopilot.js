@@ -292,8 +292,9 @@
     }
     // Only a plain "open <app>": "open my files and check what's taking
     // space" used to try opening an app with that whole sentence as its name.
-    if ((m = goal.match(/^(?:open|launch|start)\s+(.+)$/i)) && m[1].trim().split(/\s+/).length <= 3
-      && !/\b(?:and|then|check|what|how|why|find|see|look|show|tell)\b/i.test(m[1])) {
+    // (An installed app's exact name always counts, "Find My Mobile" included.)
+    if ((m = goal.match(/^(?:open|launch|start)\s+(.+)$/i)) && (window.IzukiNative?.isAppName?.(m[1]) === true
+      || (m[1].trim().split(/\s+/).length <= 3 && !/\b(?:and|then|check|what|how|why|find|see|look|show|tell)\b/i.test(m[1])))) {
       const app = m[1].trim();
       return { title: `Open ${app}`, steps: [{ label: `Open ${app}`, run: () => openApp(app) }] };
     }

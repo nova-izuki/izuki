@@ -123,6 +123,8 @@ public class IzukiAccessibilityService extends AccessibilityService {
   private void gone() {
     if (active != this) return;
     hideOrb();
+    // While this service still owns it: a reconnect can then draw a new one.
+    removeGlow();
     synchronized (listed) { releaseListed(); }
     active = null;
     disconnectedAt = System.currentTimeMillis();
@@ -1115,7 +1117,7 @@ public class IzukiAccessibilityService extends AccessibilityService {
           PixelFormat.TRANSLUCENT);
         if (Build.VERSION.SDK_INT >= 28) lp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
         try { ((WindowManager) service.getSystemService(WINDOW_SERVICE)).addView(v, lp); glowView = v; }
-        catch (Exception e) { return; }
+        catch (Exception e) { v.stop(); return; }
       }
       glowView.setState(state);
     });

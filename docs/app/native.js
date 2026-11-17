@@ -69,6 +69,18 @@
   };
 
   let orbOverApps = false;
+  // A read that failed (control not ready yet) is tried again after 30 s,
+  // a good one after 10 minutes.
+  let appNames = null, appNamesAt = 0, appNamesTried = 0, appNamesBusy = false;
+  const loadAppNames = async () => {
+    if (appNamesBusy || Date.now() - appNamesTried < 30000) return;
+    appNamesBusy = true;
+    appNamesTried = Date.now();
+    try {
+      const list = (await control()?.apps?.())?.apps || [];
+      if (list.length) { appNames = new Set(list.map((a) => String(a.name || "").trim().toLowerCase())); appNamesAt = Date.now(); }
+    } catch {} finally { appNamesBusy = false; }
+  };
   let wakeExtra = { audio: "", voice: false };
   // Native speech: one promise per line, settled by the "speech" events.
   const speeches = new Map();
@@ -90,7 +102,7 @@
   };
   // Listen for Android's speech events from the start: the very first line's
   // "done" must not arrive before anyone is listening for it.
-  if (platform() === "android") listenSpeech();
+  if (platform() === "android") { listenSpeech(); setTimeout(() => { void loadAppNames(); }, 1500); }
   window.IzukiNative = {
     installed: () => !!window.Capacitor?.isNativePlatform?.(),
     platform,
@@ -489,6 +501,18 @@
     async apps() {
       try { return (await control()?.apps())?.apps || []; } catch { return []; }
     },
+    /**
+     * Is this exactly an installed app's name? From a list read once (and
+     * again after 10 minutes), so "open Find My Mobile" is an app even though
+     * it has "find" in it. null until the list has been read.
+     */
+    isAppName(name) {
+      const wanted = String(name || "").trim().toLowerCase();
+      if (!appNamesAt || Date.now() - appNamesAt > 600000) void loadAppNames();
+      return appNames ? appNames.has(wanted) : null;
+    },
+    /** For the tests: read the app list again on the next ask. */
+    _resetAppNames() { appNamesTried = 0; appNamesAt = 0; },
     /** play, pause, next, previous, stop. */
     async media(key) {
       try { await control()?.media({ key }); return true; } catch { return false; }
@@ -684,7 +708,8 @@
       const open = text.match(/^open (.+)$/);
       // Only a plain "open <app>"; "open my files and check what's taking
       // space" is a job for the phone agent, not an app name.
-      if (open && open[1].split(/\s+/).length <= 3 && !/\b(?:and|then|check|what|how|why|find|see|look|show|tell)\b/.test(open[1])) {
+      if (open && (window.IzukiNative.isAppName(open[1]) === true
+        || (open[1].split(/\s+/).length <= 3 && !/\b(?:and|then|check|what|how|why|find|see|look|show|tell)\b/.test(open[1])))) {
         const app = await window.IzukiNative.launch(open[1]);
         if (!app?.name) return null;
         // Opening is only "opened" once Android shows that app in front.
