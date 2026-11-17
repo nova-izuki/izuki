@@ -105,3 +105,12 @@ Install the 1.0.217 APK (Settings → Phone → App updates). Android control an
 4. "Hey Nova" or an orb tap: a rainbow light runs around the screen edges over any app and grows with the voice. Settings → Phone → glowing edges off: no light on the next turn (and none in the app).
 5. "Hey Nova" ten times from across a room, with a TV on for some: count how many open. Settings → Phone → Diagnostics shows "heard someone but didn't check: …" or a "near miss" for the ones that didn't.
 6. Ask a long question by voice: Izuki starts speaking before the whole answer is written.
+
+## 1.0.220: Android listening, Stop, one light, natural voice, agent with eyes, home guides
+
+1. Tap the orb, wait three seconds, then speak: it still hears you (no "I didn't catch that"). Tap it and say nothing: after about ten seconds it says it didn't hear anything.
+2. Autopilot → Run "open my files and check what's taking space"; while it works, leave Izuki and tap the orb: "Stopped.", the steps stop, the orb goes away. After a task that finished on its own, the orb doesn't say "Working…".
+3. The rainbow light shows inside Izuki and over other apps while Izuki works or talks, never twice, and goes out when it's done. Settings → Phone → Rainbow light off: no light at all.
+4. "Hey Nova, what's the weather?" over another app: the answer is in Gemini's voice (or the phone's voice after a few seconds); the orb moves with it. Settings → Izuki's voice → pick a voice → Hear it.
+5. "Swipe to the next photo in my gallery", "long-press the first photo", "double-tap to zoom": the agent does them. On a screen with a Delete button it asks you to tap it yourself.
+6. Home → On your phone: each row shows On, Off or Set up; each opens its guide; "Try" runs a real example. Settings: long explanations show two lines and "How it works".
