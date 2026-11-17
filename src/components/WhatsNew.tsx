@@ -23,6 +23,7 @@ interface Item {
 }
 
 const ITEMS: Item[] = [
+  { icon: "🏎️", title: "Android: Run does anything, and the orb follows your voice", how: "In Autopilot, Run now hands anything that isn't a quick routine to the AI phone agent (“open my files and check what's taking space”). The orb swells with your voice and pulses with Izuki's words, its caption stays on screen on either side, and a glowing light runs around the screen edges during a turn (switch in Settings → Phone). “Hey Nova” checks again sooner and Diagnostics says why it skipped." },
   { icon: "👀", title: "Android: a screen assistant", how: "On any site or app, say “Hey Nova, explain this” (or “what does this mean”, “help me with this page”, “summarize this”): Izuki reads what's on the phone's screen and answers right there. Links are read on the phone without your PC, and on a quiz or test the phone agent explains instead of picking answers." },
   { icon: "🏝️", title: "The Island stays out of the way", how: "Nothing sits at the top any more: move the mouse to the top of the screen and the Island slides down. The Screen notch has the laptop-notch shape and only comes down from the top middle. Settings → Always show the Island brings the sliver back." },
   { icon: "🗂️", title: "Storage in short lines", how: "“What's taking up space” answers with a headline, the top folders and what's inside them, the biggest apps and files (a split archive counts once) and what you can clear.", try: { label: "Check my storage", say: "what's taking up space on my PC" } },
