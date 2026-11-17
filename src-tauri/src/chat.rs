@@ -627,6 +627,9 @@ pub fn stream(app: AppHandle, id: u64, history: Vec<Turn>, style: Style) {
             crate::brain::prefer_strong(&mut chain);
         }
         if chain.is_empty() {
+            if crate::brain::local_only() {
+                return emit(String::new(), true, Some(crate::brain::NO_LOCAL.into()));
+            }
             if !crate::brain::online() {
                 // Offline with no AI on this PC: help anyway (offline.rs).
                 let said = history.iter().rev().find(|t| t.role == "user").map(|t| t.content.clone()).unwrap_or_default();
@@ -1405,6 +1408,9 @@ pub fn complete_with_web(messages: &[Value], id: u64, deep: bool, on_text: &dyn 
 pub fn complete_streaming(messages: &[Value], id: u64, on_text: &dyn Fn(&str)) -> anyhow::Result<String> {
     let chain: Vec<ProviderConfig> = crate::brain::chat_chain().into_iter().filter(streamable).collect();
     if chain.is_empty() {
+        if crate::brain::local_only() {
+            anyhow::bail!("{}", crate::brain::NO_LOCAL);
+        }
         if !crate::brain::online() {
             anyhow::bail!("{}", crate::brain::OFFLINE);
         }

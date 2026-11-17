@@ -34,7 +34,12 @@ export async function setUpWorkspace({windowId,getSource,getConnection,readTab,o
   // "answer all …" sent it to the native task handoff and its focus guard.
   // Only "all": a bare "answer these" / "answer them" is as likely to be about
   // questions just pasted into the chat, and starting a run would cancel it.
-  const QUIZ_RUN=new RegExp(`(?<![a-z])(?:answer|ans|solve|complete|do|take)\\s+${BETWEEN}(?:questions|quiz(?:zes)?|tests?)${NOT_COMPOUND}|^(?:ans|answer) +all(?: +of +them)?(?: +please)?[.!?]?$`,"i");
+  // A bare "ans" (and "ans it/this") is what the owner actually types on a
+  // question page. It used to go to ordinary chat, where the page reader often
+  // supplied the options but not the stem, so the AI asked for the question it
+  // was already looking at. Only "ans" is shorthand here; a bare "answer" can
+  // still mean "answer the text I just pasted".
+  const QUIZ_RUN=new RegExp(`(?<![a-z])(?:answer|ans|solve|complete|do|take)\\s+${BETWEEN}(?:questions|quiz(?:zes)?|tests?)${NOT_COMPOUND}|^(?:ans|answer) +all(?: +of +them)?(?: +please)?[.!?]?$|^ans(?: +(?:it|this|that))?[.!?]?$`,"i");
   const LAB_RUN=new RegExp(`(?<![a-z])(?:plan|do|complete|finish|start)\\s+${BETWEEN}(?:lab|labs|laboratory)${NOT_COMPOUND}`,"i");
   // One bar above the message box for whatever is running (a question run
   // or a lab), always in sight with no section to open: what it's doing,
@@ -126,7 +131,7 @@ export async function setUpWorkspace({windowId,getSource,getConnection,readTab,o
   function paintQuiz(state){
     runs.quiz=state||null;paintRunBar();
     // A run going on: its section opens too, for the answers as they come.
-    if(active(state))$("quiz-tools").open=true;text("quiz-status",state?.text||"Choose your question page, then start. On a page that says it's practice, Izuki picks each answer and presses Next. On a graded or unclear quiz it explains each one and you choose. You press Submit. Stop with Esc on that page or Alt+Shift+X.");$("quiz-start").disabled=active(state);$("quiz-stop").hidden=!active(state);text("quiz-answer",state?.answer||"");}
+    if(active(state))$("quiz-tools").open=true;text("quiz-status",state?.text||"Choose your question page, then start. Izuki answers, picks each choice and presses Next. You press Submit. Stop with Esc on that page or Alt+Shift+X.");$("quiz-start").disabled=active(state);$("quiz-stop").hidden=!active(state);text("quiz-answer",state?.answer||"");}
   async function planLab() {
     if(planning)return;
     const source=getSource();if(!source||!$("share").checked)throw Error("Choose and share the page containing your lab first.");

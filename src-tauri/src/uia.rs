@@ -165,6 +165,34 @@ pub struct Control {
     pub identity: Option<ControlIdentity>,
 }
 
+/// Labels shared by more than one control in the same look, with their ids.
+/// A model that sees only "Next" twice tends to pick the first one; naming
+/// both here is what lets it use the section/bounds or ask the user instead.
+pub fn repeated_labels(controls: &[Control]) -> Vec<(String, Vec<u32>)> {
+    let mut groups: Vec<(String, String, Vec<u32>)> = Vec::new();
+    for c in controls {
+        let name = c.name.trim();
+        if name.is_empty() {
+            continue;
+        }
+        let key = name.to_lowercase();
+        if let Some(group) = groups.iter_mut().find(|g| g.0 == key) {
+            group.2.push(c.id);
+        } else {
+            groups.push((key, name.chars().take(40).collect(), vec![c.id]));
+        }
+    }
+    groups
+        .into_iter()
+        .filter(|(_, _, ids)| ids.len() > 1)
+        .take(5)
+        .map(|(_, name, mut ids)| {
+            ids.truncate(6);
+            (name, ids)
+        })
+        .collect()
+}
+
 /// Runtime IDs distinguish duplicate names and unnamed radio buttons. The
 /// window and clipped bounds keep an old plan tied to the surface it saw.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

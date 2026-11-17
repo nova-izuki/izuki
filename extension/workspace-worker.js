@@ -27,9 +27,8 @@
   async function page(run,op,args={}) {
     await sourceTab(run.source);
     if(run.controller.signal.aborted && op!=="stop")throw new DOMException("Stopped","AbortError");
-    // The page decides practice or graded with the shared classifier, so it
-    // goes in first. (Fresh before every pick: a reload loses it, and the
-    // page then refuses.)
+    // The shared classifier goes in first so the page can label itself, and
+    // again before every pick because a reload loses it.
     if(op==="install"||op==="select"||op==="advance")await chrome.scripting.executeScript({target:{tabId:run.source.id},files:["assess.js"]});
     const [result]=await chrome.scripting.executeScript({target:{tabId:run.source.id},func:root.IzukiQuestionPage,args:[op,{...args,runId:run.id,hadQuestion:run.hadQuestion}]});
     return result?.result;
@@ -71,7 +70,7 @@
       return out;
     },
     answer:async(run,q,prompt)=>{run.requestId=crypto.randomUUID();return answer(run.connection,prompt,run.requestId,run.controller.signal);},
-    // Practice pages only; the page itself refuses anything else.
+    // Any question page; the page itself still never presses Submit.
     select:(run,q,choices,pageId)=>page(run,"select",{questionId:q.id,choices,pageId}),
     advance:(run,pageId)=>page(run,"advance",{pageId}),
     record:(run,q,selection)=>histories.commit(run.windowId,{id:run.chat.id,epoch:run.chat.epoch,requestId:run.requestId,

@@ -1078,7 +1078,7 @@ export function ChatTab() {
           return;
         }
         if (STUDY_ASK.test(t) && !answersOnScreenQuestion(t)) {
-          setLast({ content: "Open the quiz or assignment in your browser, then ask again — I can answer the question you point at, or walk you through it. I won't submit it for you.", status: undefined });
+          setLast({ content: "Open the quiz or assignment in your browser, then ask again — I'll answer it and pick the choice; you press Submit.", status: undefined });
           if (streamId.current === id) { streamId.current = null; setBusy(false); }
           return;
         }

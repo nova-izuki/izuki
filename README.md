@@ -198,9 +198,9 @@ left to the AI's judgement — a free model is told to behave and sometimes does
   unless you asked for that in so many words in that same request. Say "delete
   that file" and it deletes it; say "sort this page out" and it does everything
   else, then stops and asks.
-- **It won't pick or submit answers on a quiz or test.** It will explain the
-  question and the idea behind it, and point at what matters, and you choose.
-  Ask it outright and it will tell you an answer — it just won't click it.
+- **It answers quiz and test questions, and picks the choice when you ask.**
+  Say "coach me" if you want the explanation without the answer. It never
+  presses Submit, Finish or End test unless you asked for that final step.
 - **It won't type a command into your terminal** unless you spelled that command
   out yourself.
 - **Esc stops everything**, mid-task, mid-click, every mode.

@@ -716,10 +716,13 @@ export function Island({
   // grew to almost the whole 720p desktop when opened. The compact notch is
   // unaffected; only the expanded card scrolls inside this height.
   const viewportH = typeof window === "undefined" ? 800 : window.innerHeight;
-  const panelMaxH =
-    look === "notch"
-      ? Math.min(viewportH - top - 16, Math.max(360, Math.min(620, viewportH * 0.66)))
-      : viewportH - top - 16;
+  // A task may open the card, but it must never turn into a full-screen sheet:
+  // keep the live progress and its Stop/Take over controls in a compact card
+  // that leaves the work behind it visible. Long content scrolls inside.
+  const panelMaxH = Math.min(
+    viewportH - top - 16,
+    Math.max(300, Math.min(520, viewportH * 0.58)),
+  );
   return (
     <>
     <IslandPal cue={palCue} pill={pill} away={palAway} />

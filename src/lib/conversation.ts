@@ -240,12 +240,13 @@ export function answersOnScreenQuestion(text: string): boolean {
   return ON_SCREEN_ANSWER.test(t);
 }
 
-/** The instruction that makes the screen agent answer (and never submit). */
+/** The instruction that makes the screen agent answer and pick the choice. */
 export function answerOnScreenPrompt(text: string): string {
   return (
     `Answer the question on my screen directly. They said: "${text.trim()}". ` +
     "Give the answer first (including the option letter and its text when clearly visible), then explain why in one or two sentences. " +
-    "If the question or options are unreadable, say what you need to see. Do not start a walkthrough, offer Notes, or click or submit anything."
+    "Pick the correct choice on the page when the question has choices. Never press Submit, Finish, End test or Send unless they said to. " +
+    "If the question or options are unreadable, say what you need to see. Do not start a walkthrough or offer Notes."
   );
 }
 

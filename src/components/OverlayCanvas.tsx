@@ -49,6 +49,7 @@ import type {
   OverlayOpenPayload,
   ShapeKind,
   Callout,
+  Settings,
 } from "../lib/types";
 import { CalloutLayer } from "./CalloutChips";
 
@@ -597,6 +598,21 @@ export function OverlayCanvas() {
           setActionHandOn(!!s.action_hand_enabled);
           setInk(s.ink_color);
         });
+      }),
+      // The settings panel is another window. Its debounced save eventually
+      // sends `settingsChanged`, but a shape button must not wait for a disk
+      // write (or miss the event while this overlay is waking): apply the
+      // exact field it just changed now.
+      on<Partial<Settings>>(EV.patchSettings, (p) => {
+        if (p.island_style) setIslandStyle(p.island_style);
+        if (p.island_size) setIslandSize(p.island_size);
+        if (p.island_opacity != null) setIslandOpacity(p.island_opacity);
+        if (p.island_blur != null) setIslandBlur(p.island_blur);
+        if (p.island_accent) setIslandAccent(p.island_accent);
+        if (p.island_shadow != null) setIslandShadow(p.island_shadow);
+        if (p.island_light_glass != null) setIslandLightGlass(p.island_light_glass);
+        if (p.island_motion != null) setIslandMotion(p.island_motion);
+        if (p.island_auto_expand != null) setIslandAutoExpand(p.island_auto_expand);
       }),
       on<boolean>(EV.thinking, setThinking),
       // The live line from the core ("Asking Gemini…", "Clicking “Next”…").

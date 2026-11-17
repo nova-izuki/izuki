@@ -92,11 +92,12 @@ async function ping() {
 }
 
 /** What's on a tab: its words (and what's selected), or null when the browser won't let anyone read it. */
-async function readTab(tabId) {
+async function readTab(tabId, mode = "page") {
   try {
     const [r] = await chrome.scripting.executeScript({
       target: { tabId },
       func: extractPage,
+      args: [mode],
     });
     return r ? r.result : null;
   } catch {
@@ -432,7 +433,22 @@ async function ask(question, sourceOverride = null, userInitiated = false) {
   try {
     const ticket=await workspace?.begin();
     if(!requests.active(request))return false;
-    const page = share ? await readTab(source.id) : null;
+    let page = share ? await readTab(source.id) : null;
+    // Some quiz pages put the stem outside the part the ordinary page reader
+    // reaches first (or render it in a question container while the options
+    // are elsewhere). Read the visible question root too, and put it at the
+    // top of the reference text: "ans" was otherwise answered from A/B/C/D
+    // with no question at all.
+    const focused = share ? await readTab(source.id, "question") : null;
+    if (focused?.text) {
+      if (!page) page = { ...focused, selection: "" };
+      // Both reads must be the same document: the tab can navigate between
+      // them, and merging page B's question into page A's labelled text would
+      // share the wrong page's content under page A's URL.
+      else if (focused.url === page.url && !page.text.includes(focused.text.slice(0, 80))) {
+        page.text = `Current question on the page:\n${focused.text}\n\n${page.text}`;
+      }
+    }
     if (!requests.active(request)) return false;
     if (page?.url && page.url !== source.url) {
       // A queued question or a follow-up was asked about the page it was

@@ -317,6 +317,8 @@ export interface Settings {
   island_enabled: boolean;
   /** When music plays, the orb comes up and flows with it. */
   music_visuals: boolean;
+  /** Use only AI running on this PC, even while the internet is up. */
+  offline_mode?: boolean;
   /** App colour theme: auto, nova, ocean, sunset, forest, rose, gold, graphite, custom. */
   app_theme: string;
   /** The colour for the "custom" theme (#rrggbb). */

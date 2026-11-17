@@ -77,15 +77,9 @@
       });
       return Promise.race([Promise.resolve().then(()=>this.adapter.answer(run,q,questionPrompt(q))),limit]).finally(()=>clearTimeout(timer));
     }
-    // Each question, by what the page says it is (page.kind, decided inside
-    // the page by assess.js):
-    //
-    // - Practice (the page says practice, self-check or ungraded, and shows
-    //   no grading sign): pick the assistant's answer, check it took, and
-    //   press Next once Izuki has answered. Submit stays the student's.
-    // - Graded or unclear: explain only. Read the question, ask the assistant,
-    //   show the answer and why; the student chooses and moves on, and the
-    //   next question is explained when it appears. Nothing is clicked.
+    // Each question: read it, ask the assistant, pick its answer, check the
+    // page took it, and press Next once Izuki has answered. This works on
+    // graded and practice pages alike. Submit stays the student's.
     async loop(run) {
       const wait=(ms)=>new Promise(resolve=>{const t=setTimeout(resolve,ms);run.controller.signal.addEventListener("abort",()=>{clearTimeout(t);resolve();},{once:true});});
       try {
@@ -96,27 +90,27 @@
           if(!this.active(run))return;
           if(!page?.ok)throw Error(page?.text||"The selected page cannot be read.");
           if(page.state==="complete"){this.update(run,"complete",`The page shows the attempt summary. ${run.state.count} questions were ${run.pickedAny?"answered":"explained"} in this run.`);break;}
-          const practice=page.kind==="practice"&&typeof this.adapter.select==="function";
+          const canPick=typeof this.adapter.select==="function";
           const q=page.state==="question"?page.question:null;
           if(q&&!run.seen.has(q.id)) {
             run.hadQuestion=true;run.seen.add(q.id);
             if(q.missingImage){this.update(run,"suggested","This question has a picture I can't read, so I can't answer it. Go on to the next one when you're ready.",{answer:""});continue;}
-            this.update(run,"answering",`${practice?"Practice page: asking":"Asking"} ${run.connection?.name||"your assistant"} about question ${run.state.count+1}…`,{question:q.stem});
+            this.update(run,"answering",`Asking ${run.connection?.name||"your assistant"} about question ${run.state.count+1}…`,{question:q.stem});
             const result=await this.answerWithin(run,q);
             if(!this.active(run))return;
             let said,picked=false;
             try {
               const answer=parseAnswer(result.text,q);
               const names=answer.choices.map(i=>q.options[i-1]).join("; "),why=answer.reason?` — ${answer.reason}`:"";
-              said=`Suggested: ${names}${why}`;
-              if(practice) {
+              said=`Answer: ${names}${why}`;
+              if(canPick) {
                 let out=await this.adapter.select(run,q,answer.choices,page.pageId);
                 // The page moved between reading it and the click (the student
                 // touched it, or it re-rendered): read again and try once more,
                 // only if the same question is still waiting.
                 if(out?.changed&&this.active(run)){
                   const again=await this.adapter.read(run);
-                  if(again?.state==="question"&&again.question?.id===q.id&&again.kind==="practice")out=await this.adapter.select(run,q,answer.choices,again.pageId);
+                  if(again?.state==="question"&&again.question?.id===q.id)out=await this.adapter.select(run,q,answer.choices,again.pageId);
                 }
                 if(!this.active(run))return;
                 if(out?.ok){picked=true;run.picked=true;run.pickedAny=true;said=`Picked: ${names}${why}`;}
@@ -127,22 +121,21 @@
               said=`${error.message}${result.text?`
 ${String(result.text).slice(0,800)}`:""}`;
             }
-            if(picked)this.update(run,"picked",`${said}\nOn to the next question…`,{answer:said,count:run.state.count+1,kind:"practice"});
+            if(picked)this.update(run,"picked",`${said}\nOn to the next question…`,{answer:said,count:run.state.count+1});
             else this.update(run,"suggested",`${said}
-Choose your answer on the page, then go on — I'll explain the next one.${!practice&&!run.saidWhy?"\n(This quiz looks graded or doesn't say it's practice, so I explain and you choose.)":""}`,{answer:said,count:run.state.count+1,kind:page.kind||"graded"});
-            if(!practice)run.saidWhy=true;
+Choose your answer on the page, then go on — I'll answer the next one.`,{answer:said,count:run.state.count+1,kind:page.kind||"graded"});
             continue;
           }
-          // Practice: every question here is answered and Izuki answered at
-          // least one of them, so go on. Never the final Submit.
-          if(practice&&page.state==="next"&&run.picked&&typeof this.adapter.advance==="function") {
+          // Every question here is answered and Izuki answered at least one
+          // of them, so go on. Never the final Submit.
+          if(canPick&&page.state==="next"&&run.picked&&typeof this.adapter.advance==="function") {
             run.picked=false;
             const out=await this.adapter.advance(run,page.pageId);
             if(!this.active(run))return;
             if(!out?.ok)this.update(run,"suggested",out?.text||"I couldn't press Next. Go on when you're ready.");
             await wait(1500);continue;
           }
-          if(practice&&page.state==="final"&&run.pickedAny&&!run.toldFinal) {
+          if(canPick&&page.state==="final"&&run.pickedAny&&!run.toldFinal) {
             run.toldFinal=true;
             this.update(run,"suggested",`All ${run.state.count} answered. Check them, then press Submit yourself — I don't submit.`);
           }

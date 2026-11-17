@@ -388,6 +388,20 @@ export function SettingsTab() {
 
         <div className="izk-divider my-3" />
 
+        <Row
+          label="Offline mode"
+          hint="On: every answer uses an AI on this PC (Ollama or a local endpoint), so nothing goes to a cloud provider even when the Wi-Fi is up. Set one up under Ollama below. Off: Izuki uses your normal brains and falls back to a local one only when the internet is down."
+          icon={<Cpu size={14} strokeWidth={2.3} />}
+        >
+          <Toggle
+            label="Offline mode"
+            checked={!!settings.offline_mode}
+            onChange={(v) => patch({ offline_mode: v })}
+          />
+        </Row>
+
+        <div className="izk-divider my-3" />
+
         <div className="flex flex-col gap-2" id="settings-brain-mode">
           <span className="flex items-center gap-2 text-[12.5px] font-semibold text-izk-ink">
             <Brain size={14} strokeWidth={2.3} aria-hidden /> How Izuki uses your brains

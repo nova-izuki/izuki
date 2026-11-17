@@ -22,7 +22,7 @@ const chrome={runtime:{id:'test-extension',getURL:path=>'chrome-extension://test
   }},
 };
 const ctx=vm.createContext({chrome,console,crypto:webcrypto,TextEncoder,Uint8Array,Buffer,structuredClone,AbortController,AbortSignal,DOMException,URL,setTimeout,clearTimeout,
-  IzukiProviderRelay:{ask:async(connection,prompt,id)=>{calls.push(['relay',connection,id]);if(holdAnswer)return new Promise(resolve=>lateAnswer=resolve);return {text:JSON.stringify({questionId:question.id,choices:[2],reason:'Bots'})};},cancel:id=>calls.push(['cancelRelay',id])},
+  IzukiProviderRelay:{ask:async(connection,prompt,id)=>{calls.push(['relay',connection,id]);if(holdAnswer)return new Promise(resolve=>lateAnswer=resolve);return {text:JSON.stringify({questionId:onPage2?question2.id:question.id,choices:[2],reason:'Bots'})};},cancel:id=>calls.push(['cancelRelay',id])},
   fetch:async(url,options)=>{
     // The extension folder's pairing key, and Izuki's /ping signed with it.
     if(url==='chrome-extension://test-extension/pairing.json')return {ok:true,json:async()=>({key:'a5'.repeat(32)})};
@@ -41,7 +41,7 @@ const ctx=vm.createContext({chrome,console,crypto:webcrypto,TextEncoder,Uint8Arr
     let value={ok:true};
     if(url.endsWith('/side/prepare'))value.reviewToken='reviewed-token';
     if(url.endsWith('/side/status')){value={ok:true,state:'finished',outcome:nativeOutcome,text:'Actual fixture check result.'};if(closeAfterFirstStep){closeAfterFirstStep=false;appClosed=true;}}
-    if(url.endsWith('/ask'))value.text=JSON.stringify({questionId:question.id,choices:[2],reason:'Bots'});
+    if(url.endsWith('/ask'))value.text=JSON.stringify({questionId:onPage2?question2.id:question.id,choices:[2],reason:'Bots'});
     return {ok:true,json:async()=>value};
   }});
 for(const name of ['bridge-proof','workspace-state','question-page','question-runner','lab-state','workspace-worker'])vm.runInContext(fs.readFileSync(new URL(`../extension/${name}.js`,import.meta.url),'utf8'),ctx,{filename:name});
@@ -58,38 +58,39 @@ assert.equal((await request({op:'quizStart',source:tab},site)).ok,false,'webpage
 assert.equal((await request({op:'history'},site)).ok,false,'content scripts cannot read saved chats');
 assert.equal((await request({op:'history'},{...panel,url:panel.url+'.spoof'})).ok,false,'require the exact extension page path');
 let result=await request({op:'quizStart',source:tab,connection:{providerId:'any',ready:true,tabId:2}});assert.equal(result.ok,true);
-await until(async()=>((await request({op:'status'})).quiz.phase==='suggested'));
-assert.match((await request({op:'status'})).quiz.answer,/^Suggested: /,'the panel shows the suggested answer');
-assert.equal(calls.filter(c=>c[0]==='page'&&(c[1]==='select'||c[1]==='advance')).length,0,'nothing on the quiz page is clicked');
-// The student clicks Next on a quiz where each question has its own address
-// (Moodle's ?page=N): the run follows them and explains the new question,
-// rather than reading the new address as "the page changed" and pausing.
+const pageClicks=()=>calls.filter(c=>c[0]==='page'&&(c[1]==='select'||c[1]==='advance')).length;
+await until(async()=>((await request({op:'status'})).quiz.phase==='picked'));
+assert.match((await request({op:'status'})).quiz.answer,/^Picked: /,'the panel shows the picked answer');
+assert.equal(pageClicks(),1,'the quiz page is picked');
+// A quiz where each question has its own address (Moodle's ?page=N): the run
+// follows the page and answers the new question, rather than reading the new
+// address as "the page changed" and pausing.
 const firstUrl=tab.url;tab.url=firstUrl+'?page=2';onPage2=true;
 await until(async()=>((await request({op:'status'})).quiz.count===2));
-assert.equal((await request({op:'status'})).quiz.phase,'suggested','following the student to the next page keeps the run going');
-assert.equal(calls.filter(c=>c[0]==='relay').length,2,'the second question was explained');
-assert.equal(calls.filter(c=>c[0]==='page'&&(c[1]==='select'||c[1]==='advance')).length,0,'and still nothing was clicked');
+assert.equal((await request({op:'status'})).quiz.phase,'picked','following the next page keeps the run going');
+assert.equal(calls.filter(c=>c[0]==='relay').length,2,'the second question was answered');
+assert.equal(pageClicks(),2,'the second answer was picked');
 tab.url=firstUrl;onPage2=false;
 studentDone=true;await until(async()=>((await request({op:'status'})).quiz.phase==='complete'));
 assert.equal((await request({op:'history'})).chats.length,1);
-studentDone=false;holdAnswer=true;
+studentDone=false;holdAnswer=true;const beforeStop=pageClicks();
 result=await request({op:'quizStart',source:tab,connection:{providerId:'any',ready:true,tabId:2}});
 await until(()=>lateAnswer);const id=result.state.id;
 assert.equal((await request({op:'stop',kind:'lab',runId:id},site)).ok,false,'a source page cannot stop unrelated desktop tasks');
 assert.equal((await request({op:'stop',runId:id},site)).ok,true);
 lateAnswer({text:JSON.stringify({questionId:question.id,choices:[2]})});await new Promise(r=>setTimeout(r,10));
-assert.equal(calls.filter(c=>c[0]==='page'&&(c[1]==='select'||c[1]==='advance')).length,0,'a late reply after Escape clicks nothing');
+assert.equal(pageClicks(),beforeStop,'a late reply after Escape clicks nothing');
 assert.equal((await request({op:'history'})).chats.length,1,'a late reply after Escape records nothing');
 // A page that says it's practice: the classifier goes into the page right
 // before each pick, and the pick names the question, the choice and the page
-// it was read from.
+// it was read from. (Graded pages take the same path.)
 {
   pageKind='practice';holdAnswer=false;
   const before=calls.length;
   result=await request({op:'quizStart',source:tab,connection:{providerId:'any',ready:true,tabId:2}});assert.equal(result.ok,true);
   await until(async()=>((await request({op:'status'})).quiz.phase==='picked'));
   const mine=calls.slice(before),pick=mine.findIndex(c=>c[0]==='page'&&c[1]==='select');
-  assert(pick>0,'practice pages are picked');
+  assert(pick>0,'practice pages are picked too');
   assert.equal(JSON.stringify(mine[pick-1]),'["inject",["assess.js"]]','the classifier is injected right before the pick');
   assert.equal(mine[pick][2].questionId,question.id);assert.equal(JSON.stringify(mine[pick][2].choices),'[2]');assert.equal(mine[pick][2].pageId,'page-1');
   assert.match((await request({op:'status'})).quiz.answer,/^Picked: Botnet/);

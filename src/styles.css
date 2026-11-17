@@ -1034,6 +1034,44 @@ html[data-backdrop="tabbed"] .izk-card {
   border-radius: 28px !important;
 }
 
+/* The Shape Studio is more than a colour change: at rest each look has its
+   own silhouette, so picking one is visible immediately. These widths only
+   apply closed — opening any look still gives the same readable 372px card. */
+.izk-island.izk-theme-dot:not(.izk-island-open) {
+  width: 40px !important;
+  height: 40px;
+  justify-content: center;
+}
+.izk-island.izk-theme-dot:not(.izk-island-open) > * {
+  opacity: 0;
+}
+.izk-island.izk-theme-bubble:not(.izk-island-open) {
+  width: 240px !important;
+}
+.izk-island.izk-theme-squircle:not(.izk-island-open) {
+  width: 220px !important;
+  border-radius: 18px !important;
+}
+.izk-island.izk-theme-outline:not(.izk-island-open) {
+  width: 260px !important;
+}
+.izk-island.izk-theme-glass:not(.izk-island-open) {
+  width: 300px !important;
+}
+.izk-island.izk-theme-aero:not(.izk-island-open) {
+  width: 330px !important;
+}
+.izk-island.izk-theme-float:not(.izk-island-open) {
+  width: 280px !important;
+}
+.izk-island.izk-theme-windows:not(.izk-island-open) {
+  width: 320px !important;
+}
+.izk-island.izk-theme-strip:not(.izk-island-open) {
+  width: 372px !important;
+  height: 26px;
+}
+
 /* Out of the way until something happens. */
 .izk-island.izk-theme-dot {
   background: radial-gradient(circle at 35% 35%, #3b4a6b, #0b0d14);

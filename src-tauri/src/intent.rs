@@ -32,7 +32,6 @@ const FILLER: &[&str] = &[
 ];
 
 const WHAT_TO_ANSWER: &str = "What should I answer? Paste the question or attach the document, and I'll take it from there.";
-const PRACTICE_OR_GRADED: &str = "What should I answer? Paste the questions or attach the document, and tell me whether they're practice or graded. For graded work I can explain and give hints, but I won't complete or submit it for you.";
 
 /// `None` means send it to the brain. `Some(question)` means the request has
 /// no material to work from yet, so ask exactly one useful thing instead.
@@ -68,7 +67,7 @@ pub fn clarification(text: &str, has_context: bool) -> Option<&'static str> {
     if !asks {
         return None;
     }
-    Some(if names_work || rest.iter().any(|x| MATERIAL.contains(x)) { PRACTICE_OR_GRADED } else { WHAT_TO_ANSWER })
+    Some(WHAT_TO_ANSWER)
 }
 
 /// A short, public explanation for a failed AI call. Provider bodies often
@@ -167,10 +166,10 @@ mod tests {
         assert!(clarification("whatttt", false).is_none());
         assert!(clarification("turn off study log", false).is_none());
         assert!(clarification("what is photosynthesis?", false).is_none());
-        assert_eq!(clarification("answer all these practice questions.", false), Some(PRACTICE_OR_GRADED));
-        assert_eq!(clarification("answer all my questions about this document.", false), Some(PRACTICE_OR_GRADED));
-        assert_eq!(clarification("explain all these graded questions", false), Some(PRACTICE_OR_GRADED));
-        assert_eq!(clarification("do the quiz", false), Some(PRACTICE_OR_GRADED));
+        assert_eq!(clarification("answer all these practice questions.", false), Some(WHAT_TO_ANSWER));
+        assert_eq!(clarification("answer all my questions about this document.", false), Some(WHAT_TO_ANSWER));
+        assert_eq!(clarification("explain all these graded questions", false), Some(WHAT_TO_ANSWER));
+        assert_eq!(clarification("do the quiz", false), Some(WHAT_TO_ANSWER));
         assert_eq!(clarification("solve it", false), Some(WHAT_TO_ANSWER));
     }
 

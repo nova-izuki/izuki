@@ -210,6 +210,8 @@ export function FloatingChat() {
                 ref={inputRef}
                 value={text}
                 rows={1}
+                onPointerDown={() => void api.setOverlayInteractive(true).then(() => markHit())}
+                onFocus={() => void api.setOverlayInteractive(true).then(() => markHit())}
                 onChange={(e) => {
                   setText(e.target.value);
                   // Reading the screen takes a second — start while you type.

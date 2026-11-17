@@ -12,9 +12,9 @@
 //     runs when the person presses Run — an answer from an AI tab never turns
 //     itself into a command.
 //
-// What it will not do, on a graded page: pick, type or submit the answer.
-// It reads the question and shows you what the AI said, which is what Izuki
-// has always done on a test — the page itself stays yours to click.
+// What it never does on a quiz page: press Submit, Finish or End test. It may
+// read the question, answer it and pick the choice; the final button stays
+// yours to click.
 
 import { PROVIDERS, provider, providerTabs, typeIntoComposer, handoffProblem, hostedBy } from "./providers.js";
 import { QuestionGate, extractPage } from "./sidepanel-state.js";
@@ -551,7 +551,7 @@ export async function setUpConnection({ ask, onFollowed, windowId = null }) {
     gate.reset();
     if (state.follow) {
       void startFollowing(onFollowed);
-      followState("On. A new question on the page you're reading is sent once, on its own. It never picks or submits an answer for you.");
+      followState("On. A new question on the page you're reading is sent once, on its own. It never presses Submit.");
     } else {
       stopFollowing();
       followState("Off. Turn it on to have each new question on the page sent for you.");

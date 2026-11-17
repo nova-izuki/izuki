@@ -189,14 +189,20 @@ export function TalkToIzuki() {
         )}
         {settings.island_enabled && <QuietHoursRow value={settings.quiet_hours ?? ""} onChange={(v) => patch({ quiet_hours: v })} />}
         {settings.island_enabled && (
-          <Row label="Island Shape Studio" hint="Pick the Island's shape live — no restart. The screen notch hangs from the top middle like a laptop's notch, its top corners curving out into the screen edge, and stays hidden until your mouse reaches the top middle; Float is a detached glass pill. Classic, Nova and the other looks are unchanged.">
+          <Row label="Island Shape Studio" hint="Pick the Island's shape live — no restart. Each look now has its own compact silhouette as well as its own glass: Tiny dot and Bubble are small, Wide strip stays along the edge, and Float is a detached pill. The screen notch hangs from the top middle like a laptop's notch, its top corners curving out into the screen edge, and stays hidden until your mouse reaches the top middle; Classic and Nova keep the full glass body.">
             <div className="flex flex-wrap justify-end gap-1">
               {([["nova", "✨ Nova"], ["default", "Classic"], ["notch", "Screen notch"], ["float", "Float"], ["windows", "Windows bar"], ["dot", "Tiny dot"], ["strip", "Wide strip"], ["glass", "Glass"], ["bubble", "Bubble"], ["squircle", "Squircle"], ["outline", "Neon outline"], ["aero", "Aero (classic)"]] as const).map(([k, l]) => (
                 <button
                   key={k}
                   type="button"
                   aria-pressed={(settings.island_style ?? "default") === k}
-                  onClick={() => patch({ island_style: k })}
+                  onClick={() => {
+                    patch({ island_style: k });
+                    // Apply it in the always-open overlay at once; its save is
+                    // debounced and can otherwise land after the user opens
+                    // the Island again (looking like a restart was needed).
+                    void emit(EV.patchSettings, { island_style: k });
+                  }}
                   className={`izk-pill izk-no-drag px-2 py-0.5 text-[10.5px] ${(settings.island_style ?? "default") === k ? "border-izk-teal/70 bg-izk-teal/15" : ""}`}
                 >
                   {l}
@@ -238,7 +244,7 @@ export function TalkToIzuki() {
           </Row>
         )}
         {settings.island_enabled && (
-          <Row label="Expand while a task runs" hint="Off: the compact notch shows live progress while you keep working. On: it opens into the live task panel when a task starts, with Stop and Take Over ready.">
+          <Row label="Expand while a task runs" hint="Off: the compact notch shows live progress while you keep working. On: it opens a capped task card when a task starts — live progress, Stop and Take Over, never a panel over the whole desktop.">
             <Toggle label="Expand while a task runs" checked={!!settings.island_auto_expand} onChange={(v) => patch({ island_auto_expand: v })} />
           </Row>
         )}
