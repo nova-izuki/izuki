@@ -123,6 +123,22 @@ structured data, and permits large image previews. These are discovery signals;
 they do not guarantee inclusion in Google Images, a favicon, or any ranking.
 Changes can take days to weeks to be recrawled.
 
+## Logo and official pictures (20 November 2026)
+
+Google takes the icon for a whole hostname from the homepage, so
+`docs/index.html` now declares the full set its favicon guidance asks for: the
+root `favicon.ico`, a **48×48** `icon-48.png` (Google's minimum, and a multiple
+of the 48 px it recommends), the 96/192/512 PNGs for phones and installed
+shortcuts, and the vector `icon.svg` so any size stays crisp. The ICO already
+carries 16/32/48/64. `Organization.logo` (512×512) and the `WebSite`
+`alternateName` list (Nova Izuki, Izuki Nova, Izuki AI) stay as they were.
+
+For Images, the brand-mark entry in the image sitemap and the `/screenshots/`
+title, description and intro now name the product the way people search for it —
+“Izuki Nova (Nova Izuki)”, “the Izuki AI assistant” — instead of “the Windows AI
+companion” alone. Nothing was added that is not visible on the page or already
+in the pictures. Both changed pages have a fresh `lastmod`.
+
 ## References
 
 - [Google: favicons in Search](https://developers.google.com/search/docs/appearance/favicon-in-search)

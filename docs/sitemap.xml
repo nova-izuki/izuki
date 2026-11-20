@@ -3,7 +3,7 @@
   <url>
     <loc>https://izukinova.ai/</loc>
     <image:image><image:loc>https://izukinova.ai/og.jpg</image:loc><image:title>Izuki — the AI that lives on your screen</image:title><image:caption>Izuki’s glass homepage: the centred orb, Earth backdrop and claim.</image:caption></image:image>
-    <image:image><image:loc>https://izukinova.ai/icon-512.png</image:loc><image:title>Izuki orb logo</image:title><image:caption>The Izuki orb logo in cyan, violet and pink.</image:caption></image:image>
+    <image:image><image:loc>https://izukinova.ai/icon-512.png</image:loc><image:title>Izuki Nova (Nova Izuki) logo — the Izuki orb</image:title><image:caption>The official Izuki Nova (Nova Izuki) logo, the orb in cyan, violet and pink, for the Izuki AI assistant on Windows.</image:caption></image:image>
     <image:image><image:loc>https://izukinova.ai/shots/panel-draw.jpg</image:loc><image:title>Izuki Draw on Windows</image:title><image:caption>Circle anything on screen and ask Izuki about it.</image:caption></image:image>
     <image:image><image:loc>https://izukinova.ai/shots/panel-chat.jpg</image:loc><image:title>Izuki Chat</image:title><image:caption>A free Windows AI assistant that answers and does tasks.</image:caption></image:image>
     <image:image><image:loc>https://izukinova.ai/shots/panel-watchers.jpg</image:loc><image:title>Izuki Watchers</image:title><image:caption>Izuki watches part of the screen and tells you when it changes.</image:caption></image:image>
@@ -16,7 +16,7 @@
     <image:image><image:loc>https://izukinova.ai/media/posters/nova-izuki-study-coach.jpg</image:loc><image:title>Izuki Nova (Nova Izuki) — It explains. You answer.</image:title><image:caption>A quiz question on screen with floating answers and Izuki coaching, never picking the answer for you.</image:caption></image:image>
     <image:image><image:loc>https://izukinova.ai/media/posters/nova-izuki-phone.jpg</image:loc><image:title>Izuki Nova (Nova Izuki) — Your PC, from your phone</image:title><image:caption>A phone on a call with Izuki's orb, saying you have two new emails. Works on Android, iPhone and any browser.</image:caption></image:image>
     <image:image><image:loc>https://izukinova.ai/media/posters/nova-izuki-ai-providers.jpg</image:loc><image:title>Izuki Nova (Nova Izuki) — Twelve brains. Your pick.</image:title><image:caption>Twelve AI providers to choose from, including Google Gemini, Anthropic Claude, OpenAI, Groq, NVIDIA and Ollama offline.</image:caption></image:image>
-    <lastmod>2026-11-14</lastmod>
+    <lastmod>2026-11-20</lastmod>
     <changefreq>weekly</changefreq>
     <priority>1.0</priority>
   </url>
@@ -78,6 +78,6 @@
     <image:image><image:loc>https://izukinova.ai/icon-512.png</image:loc><image:title>Izuki orb logo</image:title></image:image>
     <image:image><image:loc>https://izukinova.ai/shots/task-stage.jpg</image:loc><image:title>Izuki Task Stage</image:title></image:image>
     <image:image><image:loc>https://izukinova.ai/og.jpg</image:loc><image:title>Izuki website artwork</image:title></image:image>
-    <lastmod>2026-11-14</lastmod>
+    <lastmod>2026-11-20</lastmod>
   </url>
 </urlset>
