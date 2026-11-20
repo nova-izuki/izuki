@@ -539,6 +539,10 @@
     <section>
       <h3>Your orb</h3>
       <div class="field"><label for="orb-style">Voice companion style</label><select id="orb-style"><optgroup label="Orbs"><option value="liquid">Liquid glass</option><option value="ferrofluid">Clear water</option><option value="dew">Pure water</option><option value="ripple">Tidal pearl</option><option value="constellation">Star crystal</option><option value="particles">Stardust</option><option value="face">Hologram face</option><option value="ferro">Ferrofluid</option></optgroup><optgroup label="2D characters"><option value="toon">My character (follows the voice)</option></optgroup><optgroup label="3D faces" id="orb-faces"><option value="model:holo-female">Hologram woman</option><option value="model:holo-male">Hologram man</option><option value="model:lightskin-female">Woman</option><option value="model:black-male">Man</option></optgroup></select></div>
+      <div class="row" style="align-items:center;gap:10px;margin:8px 0">
+        <label class="swatch" title="One colour for the orb around Izuki and the orb that floats over your other apps">Orb colour <input type="color" id="orb-tint" value="#5ee7ff"></label>
+        <button class="chip" id="orb-tint-default" type="button">Izuki's own colours</button>
+      </div>
       <div class="face-picker">
         <div class="face-grid" id="face-grid" aria-label="3D faces"></div>
         <input type="file" id="face-add-file" accept=".glb,model/gltf-binary" hidden>
@@ -5649,6 +5653,8 @@
   };
   window.IzukiNative?.setHearing?.(hearing().code);
   window.IzukiOrb.add($("orb-preview"));
+  // The orb over other apps is drawn natively: give it the saved colour too.
+  try { const savedTint = localStorage.getItem("izuki.orbTint") || ""; if (savedTint) window.IzukiNative?.setOrbTint?.(savedTint); } catch {}
   function updateOrbPreview() {
     window.IzukiOrb.preview($("orb-preview"),$("orb-style").value,$("orb-preview-state").value);
     $("orb-response-field").hidden = $("orb-style").value === 'liquid';
@@ -5830,6 +5836,20 @@
     };
   })();
   $("orb-style").onchange = () => { window.IzukiOrb.style($("orb-style").value); updateOrbPreview(); };
+  // One colour for every orb: the ones drawn on this page, and the one that
+  // floats over your other apps (Android draws that one itself, hence the
+  // bridge call). An empty value puts Izuki's own palettes back.
+  function applyOrbTint(hex) {
+    const v = /^#[0-9a-f]{6}$/i.test(String(hex || "")) ? String(hex) : "";
+    window.IzukiOrb?.tint?.(v);
+    window.IzukiNative?.setOrbTint?.(v);
+    try { $("orb-tint").value = v || "#5ee7ff"; } catch {}
+    updateOrbPreview();
+    return v;
+  }
+  try { const savedTint = localStorage.getItem("izuki.orbTint") || ""; if (/^#[0-9a-f]{6}$/i.test(savedTint)) $("orb-tint").value = savedTint; } catch {}
+  $("orb-tint").oninput = () => applyOrbTint($("orb-tint").value);
+  $("orb-tint-default").onclick = () => applyOrbTint("");
   $("orb-preview-state").onchange = updateOrbPreview;
   // One setting, two switches (Orb Studio and Settings → Phone), and Android's
   // own glowing edges over other apps follow it too.

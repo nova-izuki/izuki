@@ -1280,6 +1280,12 @@ public class IzukiAccessibilityService extends AccessibilityService {
   private static int dp(Context c, int v) {
     return (int) TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v, c.getResources().getDisplayMetrics());
   }
+  /** The person's orb colour ("#rrggbb", or "" for Izuki's own): the floating orb leans towards it. */
+  static void orbTint(String hex) {
+    String h = hex == null ? "" : hex.trim().replace("#", "");
+    int argb = h.matches("[0-9a-fA-F]{6}") ? 0xFF000000 | Integer.parseInt(h, 16) : 0;
+    OrbDot.tintTo(argb);
+  }
 
   /**
    * Izuki's liquid orb, the same one the PC, the phone app and the website
@@ -1289,6 +1295,10 @@ public class IzukiAccessibilityService extends AccessibilityService {
    * only rests, it holds still instead of redrawing 60 times a second.
    */
   static class OrbDot extends View {
+    private static OrbDot last;
+    /** 0 = Izuki's own palettes; otherwise the colour the person picked. */
+    private static int tint = 0;
+    static void tintTo(int argb) { tint = argb; if (last != null) last.postInvalidate(); }
     private static final int[][] LISTEN = { { 6, 182, 212 }, { 10, 132, 255 }, { 99, 102, 241 }, { 34, 211, 238 } };
     private static final int[][] THINK = { { 147, 51, 234 }, { 79, 70, 229 }, { 219, 39, 119 }, { 124, 58, 237 } };
     private static final int[][] TALK = { { 236, 72, 153 }, { 6, 182, 212 }, { 16, 185, 129 }, { 139, 92, 246 } };
@@ -1309,6 +1319,7 @@ public class IzukiAccessibilityService extends AccessibilityService {
 
     OrbDot(Context c) {
       super(c);
+      last = this;
       edge.setStyle(Paint.Style.STROKE);
       // Each layer clears its own middle, then screens onto the others.
       clear.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.DST_OUT));
@@ -1339,7 +1350,14 @@ public class IzukiAccessibilityService extends AccessibilityService {
     void stop() { removeCallbacks(holdStill); clock.cancel(); }
 
     private static int rgba(int[] c, float a) {
-      return Color.argb(Math.round(Math.max(0f, Math.min(1f, a)) * 255f), c[0], c[1], c[2]);
+      int r = c[0], g = c[1], b = c[2];
+      if (tint != 0) {
+        // The chosen colour leads; the state's own tone keeps it readable.
+        r = (Color.red(tint) * 3 + r) >> 2;
+        g = (Color.green(tint) * 3 + g) >> 2;
+        b = (Color.blue(tint) * 3 + b) >> 2;
+      }
+      return Color.argb(Math.round(Math.max(0f, Math.min(1f, a)) * 255f), r, g, b);
     }
 
     /** The live voice (0..1) and when it last came: the person's while listening, Izuki's words while talking. */

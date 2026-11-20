@@ -74,6 +74,23 @@
       mix:pal.colors.map(parse), glowMix:parse(pal.glow) };
   }
 
+  // The person's own orb colour (Settings → Your orb), when they picked one.
+  // It is applied to the finished orb rather than to each palette, so it works
+  // for every style — glass, water, galaxy, a 2D character or a 3D face — and
+  // in every state, resting, listening, thinking, talking or blinking.
+  let tint = null;
+  const hexRgb = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+  try { const saved = localStorage.getItem("izuki.orbTint") || ""; if (/^#[0-9a-f]{6}$/i.test(saved)) tint = hexRgb(saved); } catch {}
+  function tintOver(ctx, size) {
+    if (!tint) return;
+    ctx.save();
+    // "color" takes the hue and keeps the orb's own light and shade.
+    ctx.globalCompositeOperation = "color";
+    ctx.globalAlpha = 0.75;
+    ctx.fillStyle = `rgb(${tint.join(",")})`;
+    ctx.fillRect(0, 0, size, size);
+    ctx.restore();
+  }
   function paint(o, now) {
     fit(o);
     const { ctx, lx, size: SIZE } = o;
@@ -92,10 +109,10 @@
       // The realistic GPU look first; the 2D drawers if this phone can't.
       const face = isFace(selectedStyle) ? { ...savedFace(now, selectedStyle), poke: o.poke, say: sayNow } : null;
       const smile = (o.preview ? o.preview.mode : mode) === "speaking" ? 0.4 : 0;
-      if (material.drawGlassOrb && material.drawGlassOrb(ctx, SIZE, selectedStyle, reduced ? 0 : state.time, state.energy, state.waiting || 0, smile, face)) return;
+      if (material.drawGlassOrb && material.drawGlassOrb(ctx, SIZE, selectedStyle, reduced ? 0 : state.time, state.energy, state.waiting || 0, smile, face)) return tintOver(ctx, SIZE);
       if (selectedStyle === 'ferrofluid' || selectedStyle === 'dew') material.drawWaterOrb(ctx,SIZE,state.time,state.energy,0,(o.preview?.mode || mode)==='thinking',state);
       else (selectedStyle === 'ripple' ? material.drawRippleOrb : material.drawConstellationOrb)(ctx,SIZE,reduced?0:state.time,state.energy);
-      return;
+      return tintOver(ctx, SIZE);
     }
 
     if (!small) {
@@ -175,6 +192,7 @@
       for (let k = 0; k <= 4; k++) rim.addColorStop(k / 4, rgba(mix[k % 4], 0.35 + level * 0.45));
       ctx.strokeStyle = rim; ctx.lineWidth = 1.4 + level * 1.6; ctx.stroke();
     }
+    tintOver(ctx, SIZE);
   }
 
   function tick(now) {
@@ -235,6 +253,13 @@
       // Only the local WAV already generated for this reply; no extra API call.
       if(!String(url).startsWith('blob:'))return;
       fetch(url).then(r=>r.arrayBuffer()).then(buffer=>{const envelope=motionModule?.waveEnvelope(buffer);if(generation===audioGeneration&&envelope)audioTrack={player,envelope};}).catch(()=>{});
+    },
+    /** The person's own orb colour ("#rrggbb", or "" for Izuki's own), applied to every orb and every state. */
+    tint(value) {
+      const v = String(value || "");
+      tint = /^#[0-9a-f]{6}$/i.test(v) ? hexRgb(v) : null;
+      try { tint ? localStorage.setItem("izuki.orbTint", v) : localStorage.removeItem("izuki.orbTint"); } catch {}
+      wake();
     },
     /** The 3D face's look changed (setup saved it): show it now. */
     face() { faceCache = {}; wake(); },

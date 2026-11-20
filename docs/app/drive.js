@@ -28,8 +28,9 @@
   // ------------------------------------------------------------ the screen
   const css = `
   #live.driving .lines { display: none; }
-  /* No typing at the wheel. */
-  #live.driving #live-type { display: none; }
+  /* Nothing opens the keyboard by itself at the wheel — but the Type button
+     stays, so "Where to?" can be answered by typing when the car is parked. */
+  #live.driving #live-type { opacity: 0.9; }
   #live.driving #live-orb { width: min(34vw, 150px); height: min(34vw, 150px); }
   .drive-hud { display: none; }
   #live.driving .drive-hud { display: flex; flex-direction: column; gap: 14px; width: min(100%, 520px); padding: 0 16px; box-sizing: border-box; }
