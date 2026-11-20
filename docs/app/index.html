@@ -5118,7 +5118,7 @@
       };
       const stop = () => done("");
       let active = true;
-      const timer = setTimeout(stop, 45000);
+      const timer = setTimeout(stop, 20000);
       requestAbort?.signal.addEventListener("abort", stop, { once: true });
       row.appendChild(el("span", "", question));
       for (const [label, value] of choices) {

@@ -151,3 +151,21 @@ files are bundled into the phone app where a `../` path would not exist.
 - [Google: site names](https://developers.google.com/search/docs/appearance/site-names)
 - [Google: image SEO](https://developers.google.com/search/docs/appearance/google-images)
 - [GitHub Pages: custom domains](https://docs.github.com/en/pages/configuring-a-custom-domain-for-your-github-pages-site)
+
+## Official name and misspellings (20 November 2026)
+
+The product now names itself **IZUKI NOVA** in the places Google reads for a
+site name: `<title>`, `og:site_name`, `application-name`,
+`apple-mobile-web-app-title`, and the `name` of the Organization, WebSite and
+SoftwareApplication nodes. "Izuki", "Nova Izuki" and "Izuki AI" stay as
+`alternateName`s — they are what people already search — and the hero's
+screen-reader label reads the full name. The canonical URL is still
+`https://izukinova.ai/`; the `nova-izuki.github.io/izuki` address serves the
+same files but is not the address search results should use.
+
+A seventh FAQ answers the misspellings people actually type — "Ixzuki",
+"Izuki Novsa", "Nova" — with the real spelling, the official site and the
+GitHub repo, and says plainly that a download asking for money is not this one.
+The same question and answer sit in the FAQPage markup, so the visible text and
+the structured data match. No hidden keywords, no duplicate pages, no invented
+ratings, reviews or download counts.
