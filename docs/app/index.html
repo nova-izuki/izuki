@@ -1707,7 +1707,7 @@
   };
   // Google Search makes every answer slower. Attach it only when the words
   // ask for something current or factual, not for "hi" or "make it shorter".
-  const WEB_WORDS = /\b(news|today|tonight|tomorrow|yesterday|latest|current(?:ly)?|right now|this week|this weekend|weather|forecast|temperature|rain(?:ing|y)?|snow(?:ing)?|sunny|storm|humid|degrees|score|scores|match|who won|price|prices|cost|stock|exchange rate|open now|opening hours|hours|near me|nearby|who is|who's|who was|what is|what's|what's happening|whats happening|happening|going on|top events?|events?|festivals?|concerts?|parades?|headlines?|breaking|traffic|flight|when is|when's|when did|where is|how much|how many|search|look up|google|website|link|recent|update|release|election|president|population|capital)\b|https?:\/\/|www\.|\b20\d\d\b/i;
+  const WEB_WORDS = /\b(news|today|tonight|tomorrow|yesterday|latest|current(?:ly)?|right now|this week|this weekend|weather|forecast|temperature|rain(?:ing|y)?|snow(?:ing)?|sunny|storm|humid|degrees|score|scores|match|who won|price|prices|cost|stock|exchange rate|open now|opening hours|closes|closed|near me|nearby|who is|who's|who was|what's happening|whats happening|happening|going on|top events?|events?|festivals?|concerts?|parades?|headlines?|breaking|traffic|flight|when is|when's|when did|where is|how much|how many|search|look up|google|website|link|recent|update|release|election|president|population|capital)\b|https?:\/\/|www\.|\b20\d\d\b/i;
   // The same in the other languages people use here most.
   const WEB_WORDS_OTHER = /\b(hoy|mañana|ayer|tiempo|clima|lluvia|noticias|precio|quién es|aujourd'hui|demain|météo|pluie|actualités|prix|qui est|heute|morgen|wetter|regen|nachrichten|preis|wer ist)\b/i;
   const needsWeb = (contents) => {
@@ -1736,6 +1736,9 @@
     // app was in the background used to hang for the full 30 s); then up to
     // 30 s between pieces.
     const guard = stallGuard(12000);
+    // A search-attached answer takes longer to start: say what it's doing
+    // instead of a bare "Thinking…" that looks like nothing is happening.
+    if (tools) stage("Looking it up…");
     try {
       let res;
       try {

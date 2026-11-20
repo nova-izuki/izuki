@@ -138,10 +138,12 @@ if (webStart < 0 || webEnd < 0) throw new Error("could not find needsWeb in inde
 const searchFor = (lang) => new Function("speechLanguage", html.slice(webStart, webEnd) + "; return needsWeb;")(lang);
 const needsWeb = searchFor("auto");
 const asked = (...lines) => lines.map((text) => ({ role: "user", parts: [{ text }] }));
-for (const q of ["what's the weather today", "Is it raining in London?", "who won the match last night", "news about the election", "¿Va a llover mañana?", "quel temps fait-il demain", "what's the top event in Houston today", "anything happening in Houston this weekend", "top headlines right now", "any concerts in Houston tonight"]) {
+for (const q of ["what's the weather today", "Is it raining in London?", "who won the match last night", "news about the election", "¿Va a llover mañana?", "quel temps fait-il demain", "what's the top event in Houston today", "anything happening in Houston this weekend", "top headlines right now", "any concerts in Houston tonight", "what are the pharmacy's opening hours", "is the shop closed today"]) {
   is(JSON.stringify(q) + " searches", needsWeb(asked(q)), true);
 }
-for (const q of ["hi", "tell me a joke", "make that shorter", "write me a poem about the sea"]) {
+// Everyday phrasing used to drag Google Search (and its extra seconds) into
+// plain chat: "what's", and any "hours" at all.
+for (const q of ["hi", "tell me a joke", "make that shorter", "write me a poem about the sea", "what's up", "what's your favourite colour", "it took me two hours to get here"]) {
   is(JSON.stringify(q) + " answers without search", needsWeb(asked(q)), false);
 }
 is("a follow-up keeps the search (“and in Paris?”)", needsWeb(asked("what's the weather in London", "and in Paris?")), true);
