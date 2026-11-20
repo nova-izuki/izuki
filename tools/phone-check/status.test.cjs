@@ -54,8 +54,14 @@ lines = statusLines(meta({ screen: { device: 'phone', detail: 'text and a pictur
 assert.equal(lines[lines.length - 1], "Screen read: this phone's screen, text and a picture.");
 lines = statusLines(meta({ screen: { device: 'phone', detail: 'text only' } }));
 assert.equal(lines[lines.length - 1], "Screen read: this phone's screen, text only.");
-lines = statusLines(meta({ provider: 'Izuki on your PC', model: '', screen: { device: 'pc', detail: '' } }));
-assert.match(lines[lines.length - 1], /^Screen: your PC's own — .*cannot see it\.$/);
+// A PC's screen is never claimed as seen: only its own capture receipt counts.
+lines = statusLines(meta({ provider: 'Izuki on your PC', model: '', screen: { device: 'pc', captured: true, reported: true } }));
+assert.equal(lines[lines.length - 1], 'PC screen captured on your PC while it answered — this phone never sees it.');
+lines = statusLines(meta({ provider: 'Izuki on your PC', model: '', screen: { device: 'pc', captured: false, reported: true } }));
+assert.equal(lines[lines.length - 1], 'PC screen requested, not verified: your PC answered without capturing its screen.');
+lines = statusLines(meta({ provider: 'Izuki on your PC', model: '', screen: { device: 'pc', captured: false, reported: false } }));
+assert.equal(lines[lines.length - 1], "PC screen requested, not verified: this PC's version can't say whether it looked.");
+assert.equal(lines.some((l) => /screen read/i.test(l)), false, 'a PC screen is never called read');
 
 // No screen read, no screen line.
 lines = statusLines(meta({ search: { offered: true, queries: ['q'], found: 1, used: true, why: '' } }));
@@ -75,4 +81,4 @@ const all = JSON.stringify([
 ]);
 assert.equal(/AIza|api[_-]?key|Bearer|sk-/i.test(all), false);
 
-console.log('status: 18 checks passed');
+console.log('status: 21 checks passed');

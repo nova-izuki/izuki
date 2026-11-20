@@ -5,6 +5,7 @@
 //! encoding happens later, on a worker, never on the hotkey path.
 
 use anyhow::{anyhow, Result};
+use std::cell::Cell;
 use image::codecs::jpeg::JpegEncoder;
 use image::{ImageBuffer, Rgba};
 
@@ -487,6 +488,19 @@ pub use imp::{capture, capture_thumb, cursor_pos, virtual_bounds};
 #[cfg(windows)]
 pub use imp::capture_window;
 
+thread_local! {
+    /// Captures taken on this thread so far. A request that asks Izuki to look
+    /// runs on its own thread, so the difference across one request is that
+    /// request's receipt: the screen really was grabbed, not just talked about.
+    static LOOKS: Cell<u64> = const { Cell::new(0) };
+}
+
+/// How many times this thread has captured the screen — read before and after
+/// a piece of work, it says whether the screen was actually looked at.
+pub fn looks_here() -> u64 {
+    LOOKS.with(|n| n.get())
+}
+
 /// Grab the whole virtual desktop. While Izuki works in a window behind the
 /// one you're using, that window is drawn back in where it sits — so Izuki
 /// sees it as if it were in front, at its real screen position.
@@ -498,6 +512,7 @@ pub fn capture_all() -> Result<Frame> {
             paste(&mut frame, &shot);
         }
     }
+    LOOKS.with(|n| n.set(n.get() + 1));
     Ok(frame)
 }
 

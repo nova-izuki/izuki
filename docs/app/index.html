@@ -2632,7 +2632,9 @@
   /**
    * Answer through the PC: it does the job and hands back the text, plus a
    * "Connect …" chip for any app that isn't linked yet. `opts.empty` is what
-   * to say when the PC answered with nothing at all.
+   * to say when the PC answered with nothing at all. `opts.screen` marks a
+   * question about the PC's own screen, whose status line must come from the
+   * PC's capture receipt rather than from the words it sent back.
    */
   async function viaPc(said, out, opts = {}) {
     try {
@@ -2644,6 +2646,11 @@
         out.remove();
         bubble("izuki", quiet, { error: true });
         return quiet;
+      }
+      // What the PC said about its own screen: its receipt. A PC too old to
+      // send one, or one that answered without capturing, stays unverified.
+      if (opts.screen && opts.meta) {
+        opts.meta.screen = { device: "pc", captured: v?.screen?.captured === true, reported: v?.screen != null };
       }
       const chips = (v.links || []).map(([name, url]) => {
         const a = document.createElement("a");
@@ -2827,8 +2834,13 @@
       out.push("Web search: offered, but Google answered without searching.");
     }
     // Which screen was actually read — never "your screen" in the abstract.
+    // The PC's screen counts as read only when that PC says it captured it.
     if (m.screen?.device === "phone") out.push("Screen read: this phone's screen" + (m.screen.detail ? ", " + m.screen.detail : "") + ".");
-    else if (m.screen?.device === "pc") out.push("Screen: your PC's own — this phone asked your PC about it and cannot see it.");
+    else if (m.screen?.device === "pc") out.push(m.screen.captured
+      ? "PC screen captured on your PC while it answered — this phone never sees it."
+      : m.screen.reported
+        ? "PC screen requested, not verified: your PC answered without capturing its screen."
+        : "PC screen requested, not verified: this PC's version can't say whether it looked.");
     return out;
   }
   /** The small, quiet, expandable line under a reply. */
@@ -2838,7 +2850,7 @@
     const box = document.createElement("details");
     box.className = "ai-status";
     const s = m.search || {};
-    const screenTag = m.screen?.device === "phone" ? " · this screen" : m.screen?.device === "pc" ? " · PC screen" : "";
+    const screenTag = m.screen?.device === "phone" ? " · this screen" : m.screen?.device === "pc" ? (m.screen.captured ? " · PC screen captured" : " · PC screen not verified") : "";
     const tag = m.local ? "this phone" : (m.model || m.provider) + (s.queries?.length ? " · searched" : s.offered ? "" : " · no search") + screenTag;
     const sum = document.createElement("summary");
     sum.textContent = tag;
@@ -3064,12 +3076,12 @@
         turnMeta.provider = "Izuki on your PC";
         turnMeta.search.offered = false;
         turnMeta.search.why = "Web search: your PC's own assistant answered this one.";
-        turnMeta.screen = { device: "pc" };
         stage("Asking your PC about its screen…");
         out.textContent = "Asking your PC about its screen…";
         reply = await viaPc("Look at your own PC screen and answer this: " + said, out, {
           empty: "Your PC answered with nothing about its screen, so I haven't seen it. Nothing was read for this.",
           meta: turnMeta,
+          screen: true,
         });
         history.push({ role: "model", text: reply });
         saveAll();
