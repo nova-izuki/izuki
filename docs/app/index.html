@@ -699,6 +699,8 @@
           <option value="off">No screen context</option>
         </select>
       </div>
+      <label class="swatch" style="margin-top:10px"><input type="checkbox" id="screen-allow"> Allow Izuki to read this phone's screen</label>
+      <p class="note" style="margin-top:4px">Off until you turn it on, and off again the moment you turn it back. It only reads the screen when you ask about something on it.</p>
       <p class="note" id="screen-source-note" style="margin-top:4px"></p>
     </section>
 
@@ -2010,6 +2012,8 @@
   ].join("\n");
   async function screenHelp(said, onText) {
     const n = window.IzukiNative;
+    // Nothing reads a screen without the person's yes (Settings → What Izuki can see).
+    if (store.get("screenOk", false) !== true) return "I haven't been allowed to read your screen yet. Ask me about it again and tap Allow.";
     const screen = await n.screen().catch(() => null);
     if (!screen) {
       const d = await n.device?.().catch(() => null);
@@ -2966,7 +2970,10 @@
       return ask(said);
     }
     busy = true;
-    beginRequest(wantsWebRead(said) ? 120000 : 90000);
+    // No deadline yet: the screen question comes first, and waiting on the
+    // person's permission is not the AI being slow. requestStart only keeps
+    // the on-screen seconds honest from the moment they answer.
+    requestStart = Date.now();
     refreshSend();
     setOrb("thinking");
     setStatus("");
@@ -3019,8 +3026,24 @@
       // they name the screen or page.
       const aboutScreen = wantsScreenHelp(said) && (!!turnCtx || document.hidden || /\b(?:screen|page|site|app)\b/i.test(said));
       // Which screen, if any: asked, never assumed (Settings → What Izuki can see).
-      const source = aboutScreen && !files.length ? await screenChoice(out) : "";
-      if (source === "pc") {
+      const chosen = aboutScreen && !files.length ? await screenChoice(out) : { source: "", why: "" };
+      // A Stop during the screen question is still a Stop: no deadline is
+      // started for it, and nothing is asked of the brain.
+      if (requestEnd) throw new Error("stopped");
+      // Now the reply has a clock of its own, sized for what it will do.
+      beginRequest(chosen.source === "pc" || wantsWebRead(said) ? 120000 : 90000);
+      if (chosen.why) {
+        // No screen data and no permission: say so instead of answering as if
+        // the screen had been read.
+        reply = chosen.why;
+        out.textContent = reply;
+        history.push({ role: "user", text: said }, { role: "model", text: reply });
+        saveAll();
+        answered();
+        await speak(reply);
+        return;
+      }
+      if (chosen.source === "pc") {
         // Their PC's own Izuki reads that screen; this phone asks it and says so.
         history.push({ role: "user", text: said });
         stage("Asking your PC to look…");
@@ -3032,7 +3055,7 @@
         await speak(reply);
         return;
       }
-      if (!files.length && source === "phone" && agentReady() && !PHONE_DO.test(said.trim())) {
+      if (!files.length && chosen.source === "phone" && agentReady() && !PHONE_DO.test(said.trim())) {
         // The screen assistant: what's on the phone's screen, explained.
         history.push({ role: "user", text: said });
         stage("Looking at your screen…");
@@ -5090,41 +5113,76 @@
    * app the orb is already on that screen, so it is the phone's own; otherwise
    * the setting decides, and the very first look is asked for out loud.
    */
-  let screenSource = store.get("screenSource", "phone");
+  // A new install is asked rather than assumed. Anyone who saved a choice keeps it.
+  let screenSource = store.get("screenSource", "ask");
   async function screenChoice(out) {
     let source = screenSource;
+    // Over another app the orb is already on that screen: that is not a guess.
     if (turnCtx || document.hidden) source = "phone";
-    if (source === "ask") source = await askChips(out, "Which screen is it?", [["📱 This phone", "phone"], ["💻 My PC", "pc"], ["Neither", "off"]]);
-    if (!source || source === "off") return "";
-    if (source === "pc") return pc ? "pc" : "";
-    if (!agentReady()) return "";       // an iPhone or the web: no screen to read
-    if (store.get("screenOk", false) === true) return "phone";
+    if (source === "ask") {
+      const pick = await askChips(out, "Which screen is it?", [["📱 This phone", "phone"], ["💻 My PC", "pc"], ["Neither", "off"]]);
+      if (pick.how === "cancel") return { source: "", why: "" };
+      if (pick.how === "timeout") return { source: "", why: "I didn't get an answer about which screen, so I haven't looked at anything." };
+      source = pick.value;
+    }
+    if (source === "off") return { source: "", why: "Screen context is off in Settings → What Izuki can see, so I haven't looked at any screen." };
+    if (source === "pc") {
+      if (!pc) return { source: "", why: "Your PC isn't linked to this phone, so I can't look at its screen. Link it in Settings → Your PC, or set screen context to this phone." };
+      return { source: "pc", why: "" };
+    }
+    // This phone's screen is only readable inside the Android app, with
+    // control on — a web page on any other phone cannot see it.
+    if (!agentReady()) {
+      const android = !!window.IzukiNative?.installed?.() && window.IzukiNative.platform?.() === "android";
+      return { source: "", why: android
+        ? "I can't read this screen yet. Turn on Android control in Settings → Phone → Phone readiness, then ask again."
+        : isIOS
+          ? "I can't read this iPhone's screen from here — iOS doesn't give a web page the screen. Take a screenshot and attach it, and I'll read that."
+          : "I can only read a screen inside the Izuki app on Android. Take a screenshot and attach it here, and I'll read that instead." };
+    }
+    if (store.get("screenOk", false) === true) return { source: "phone", why: "" };
+    // Over another app, or with Izuki in the background, there is no chat to
+    // tap: say what to do rather than wait on a button nobody can see.
+    if (turnCtx || document.hidden) {
+      return { source: "", why: "I haven't been allowed to read your screen yet. Open Izuki, then Settings → What Izuki can see, and turn on “Allow Izuki to read this phone's screen”." };
+    }
     const allowed = await askChips(out, "Izuki can read the text on this screen to answer. Allow it?", [["Allow", "yes"], ["Not now", "no"]]);
-    if (allowed !== "yes") { note("screen look refused"); return ""; }
-    store.set("screenOk", true);
-    return "phone";
+    if (allowed.how === "cancel") return { source: "", why: "" };
+    if (allowed.how === "pick" && allowed.value === "yes") {
+      store.set("screenOk", true);
+      return { source: "phone", why: "" };
+    }
+    note("screen look refused: " + allowed.how);
+    return { source: "", why: allowed.how === "timeout"
+      ? "You didn't answer, so I haven't looked at the screen. Ask me again when you want me to read it."
+      : "Okay — I won't read your screen. Tell me what's on it, or attach a screenshot and I'll read that." };
   }
-  /** Ask with buttons inside the working bubble. "" if unanswered or stopped. */
+  /** Ask with buttons in the working bubble: { value, how: pick | timeout | cancel }. */
   function askChips(out, question, choices) {
     return new Promise((resolve) => {
+      let active = true, timer = 0, watch = 0;
       const row = el("div", "chip-row");
-      const done = (value) => {
+      const off = () => requestAbort?.signal.removeEventListener("abort", stop);
+      const done = (value, how) => {
         if (!active) return;
         active = false;
         clearTimeout(timer);
-        requestAbort?.signal.removeEventListener("abort", stop);
+        clearInterval(watch);
+        off();
         row.remove();
-        resolve(value);
+        resolve({ value, how });
       };
-      const stop = () => done("");
-      let active = true;
-      const timer = setTimeout(stop, 20000);
+      const stop = () => done("", "cancel");
+      timer = setTimeout(() => done("", "timeout"), 20000);
+      // The reply's clock hasn't started yet, so Stop has no request to abort:
+      // watch the flags the button sets instead.
+      watch = setInterval(() => { if (!busy || requestEnd) stop(); }, 200);
       requestAbort?.signal.addEventListener("abort", stop, { once: true });
       row.appendChild(el("span", "", question));
       for (const [label, value] of choices) {
         const b = el("button", "chip", label);
         b.type = "button";
-        b.onclick = () => done(value);
+        b.onclick = () => done(value, "pick");
         row.appendChild(b);
       }
       out.appendChild(row);
@@ -5136,8 +5194,10 @@
     const pick = $("screen-source"), info = $("screen-source-note");
     if (!pick || !info) return;
     pick.value = screenSource;
+    const allowToggle = $("screen-allow");
     const say = () => {
       const allowed = store.get("screenOk", false) === true;
+      if (allowToggle) allowToggle.checked = allowed;
       info.textContent = !allowed
         ? "Izuki asks once before it reads any screen."
         : screenSource === "off" ? "Izuki answers from what you tell it, without looking at a screen."
@@ -5151,6 +5211,17 @@
       store.set("screenSource", screenSource);
       say();
     };
+    // The same yes the chat asks for, reachable when there is no chat to tap
+    // (a voice turn over another app, or Izuki in the background).
+    const allow = $("screen-allow");
+    if (allow) {
+      allow.checked = store.get("screenOk", false) === true;
+      allow.onchange = () => {
+        store.set("screenOk", !!allow.checked);
+        if (!allow.checked) note("screen permission withdrawn");
+        say();
+      };
+    }
   }
 
   /**
