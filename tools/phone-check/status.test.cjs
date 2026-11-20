@@ -14,7 +14,7 @@ const ctx = vm.createContext({});
 vm.runInContext(html.slice(from, end) + '\nglobalThis.statusLines = statusLines;\nglobalThis.newTurnMeta = newTurnMeta;', ctx);
 const { statusLines, newTurnMeta } = ctx;
 
-const meta = (patch) => Object.assign({ provider: 'Google Gemini', model: 'gemini-flash-latest', fallback: false, local: false, search: { offered: false, queries: [], found: 0, used: false, why: '' } }, patch);
+const meta = (patch) => Object.assign({ provider: 'Google Gemini', model: 'gemini-flash-latest', fallback: false, local: false, screen: { device: '', detail: '' }, search: { offered: false, queries: [], found: 0, used: false, why: '' } }, patch);
 
 // A searched answer that used its sources.
 let lines = statusLines(meta({ search: { offered: true, queries: ['top event in houston'], found: 2, used: true, why: '' } }));
@@ -49,6 +49,18 @@ assert.equal(lines[0], 'Answered by Groq · qwen/qwen3.8-27b, after a fallback.'
 lines = statusLines(meta({ local: true }));
 assert.equal(lines[1], 'Everything ran on this phone — nothing left it.');
 
+// Which screen was read is named, and a PC is never claimed as seen.
+lines = statusLines(meta({ screen: { device: 'phone', detail: 'text and a picture' } }));
+assert.equal(lines[lines.length - 1], "Screen read: this phone's screen, text and a picture.");
+lines = statusLines(meta({ screen: { device: 'phone', detail: 'text only' } }));
+assert.equal(lines[lines.length - 1], "Screen read: this phone's screen, text only.");
+lines = statusLines(meta({ provider: 'Izuki on your PC', model: '', screen: { device: 'pc', detail: '' } }));
+assert.match(lines[lines.length - 1], /^Screen: your PC's own — .*cannot see it\.$/);
+
+// No screen read, no screen line.
+lines = statusLines(meta({ search: { offered: true, queries: ['q'], found: 1, used: true, why: '' } }));
+assert.equal(lines.some((l) => /^Screen/.test(l)), false);
+
 // A reply that never used a brain (a device action) shows nothing at all.
 assert.equal(statusLines(meta({ provider: '' })).length, 0);
 assert.equal(statusLines(null).length, 0);
@@ -63,4 +75,4 @@ const all = JSON.stringify([
 ]);
 assert.equal(/AIza|api[_-]?key|Bearer|sk-/i.test(all), false);
 
-console.log('status: 14 checks passed');
+console.log('status: 18 checks passed');

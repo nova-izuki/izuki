@@ -2031,6 +2031,8 @@
       if (lines.length >= 220) break;
     }
     const shot = await n.snapshot?.().catch(() => null);
+    // What was really read, for the status line under the answer.
+    if (turnMeta) turnMeta.screen = { device: "phone", detail: shot?.image ? "text and a picture" : "text only" };
     const parts = [{ text: `What they asked: ${said}\n\nApp on screen: ${screen.app || "unknown"}\nThe screen's text, top to bottom:\n${lines.join("\n") || "(no readable text)"}` }];
     if (shot?.image) parts.unshift({ inline_data: { mime_type: shot.type || "image/jpeg", data: shot.image } });
     const contents = [{ role: "user", parts }];
@@ -2629,12 +2631,20 @@
 
   /**
    * Answer through the PC: it does the job and hands back the text, plus a
-   * "Connect …" chip for any app that isn't linked yet.
+   * "Connect …" chip for any app that isn't linked yet. `opts.empty` is what
+   * to say when the PC answered with nothing at all.
    */
-  async function viaPc(said, out) {
+  async function viaPc(said, out, opts = {}) {
     try {
       const v = await askPc(said);
-      const text = v.text || "Done.";
+      const text = String(v?.text || "").trim();
+      if (!text) {
+        // Never dress an empty answer up as "Done." — nothing happened.
+        const quiet = opts.empty || "I asked your PC, but it didn't send an answer back.";
+        out.remove();
+        bubble("izuki", quiet, { error: true });
+        return quiet;
+      }
       const chips = (v.links || []).map(([name, url]) => {
         const a = document.createElement("a");
         a.className = "chip primary"; a.href = url; a.target = "_blank"; a.rel = "noopener";
@@ -2642,7 +2652,7 @@
         return a;
       });
       out.remove();
-      bubble("izuki", text, { chips });
+      bubble("izuki", text, { chips, meta: opts.meta });
       return text;
     } catch (e) {
       if (e?.message === "stopped") { out.remove(); throw e; }
@@ -2797,7 +2807,7 @@
   // keys, no prompts, no reasoning.
   let turnMeta = null;
   function newTurnMeta() {
-    turnMeta = { provider: "", model: "", fallback: false, local: false, search: { offered: false, queries: [], found: 0, used: false, why: "" } };
+    turnMeta = { provider: "", model: "", fallback: false, local: false, screen: { device: "", detail: "" }, search: { offered: false, queries: [], found: 0, used: false, why: "" } };
     return turnMeta;
   }
   /** The lines under a reply, from that record alone. */
@@ -2816,6 +2826,9 @@
     } else {
       out.push("Web search: offered, but Google answered without searching.");
     }
+    // Which screen was actually read — never "your screen" in the abstract.
+    if (m.screen?.device === "phone") out.push("Screen read: this phone's screen" + (m.screen.detail ? ", " + m.screen.detail : "") + ".");
+    else if (m.screen?.device === "pc") out.push("Screen: your PC's own — this phone asked your PC about it and cannot see it.");
     return out;
   }
   /** The small, quiet, expandable line under a reply. */
@@ -2825,7 +2838,8 @@
     const box = document.createElement("details");
     box.className = "ai-status";
     const s = m.search || {};
-    const tag = m.local ? "this phone" : (m.model || m.provider) + (s.queries?.length ? " · searched" : s.offered ? "" : " · no search");
+    const screenTag = m.screen?.device === "phone" ? " · this screen" : m.screen?.device === "pc" ? " · PC screen" : "";
+    const tag = m.local ? "this phone" : (m.model || m.provider) + (s.queries?.length ? " · searched" : s.offered ? "" : " · no search") + screenTag;
     const sum = document.createElement("summary");
     sum.textContent = tag;
     box.appendChild(sum);
@@ -3044,18 +3058,26 @@
         return;
       }
       if (chosen.source === "pc") {
-        // Their PC's own Izuki reads that screen; this phone asks it and says so.
+        // The PC's own Izuki can see that screen; this phone only gets words
+        // back, so it asks and never claims to have seen anything itself.
         history.push({ role: "user", text: said });
-        stage("Asking your PC to look…");
-        out.textContent = "Asking your PC to look at its screen…";
-        reply = await viaPc("Look at your screen and answer this: " + said, out);
+        turnMeta.provider = "Izuki on your PC";
+        turnMeta.search.offered = false;
+        turnMeta.search.why = "Web search: your PC's own assistant answered this one.";
+        turnMeta.screen = { device: "pc" };
+        stage("Asking your PC about its screen…");
+        out.textContent = "Asking your PC about its screen…";
+        reply = await viaPc("Look at your own PC screen and answer this: " + said, out, {
+          empty: "Your PC answered with nothing about its screen, so I haven't seen it. Nothing was read for this.",
+          meta: turnMeta,
+        });
         history.push({ role: "model", text: reply });
         saveAll();
         answered();
         await speak(reply);
         return;
       }
-      if (!files.length && chosen.source === "phone" && agentReady() && !PHONE_DO.test(said.trim())) {
+      if (chosen.source === "phone" && agentReady() && !PHONE_DO.test(said.trim())) {
         // The screen assistant: what's on the phone's screen, explained.
         history.push({ role: "user", text: said });
         stage("Looking at your screen…");
@@ -5162,22 +5184,19 @@
     return new Promise((resolve) => {
       let active = true, timer = 0, watch = 0;
       const row = el("div", "chip-row");
-      const off = () => requestAbort?.signal.removeEventListener("abort", stop);
       const done = (value, how) => {
         if (!active) return;
         active = false;
         clearTimeout(timer);
         clearInterval(watch);
-        off();
         row.remove();
         resolve({ value, how });
       };
       const stop = () => done("", "cancel");
       timer = setTimeout(() => done("", "timeout"), 20000);
-      // The reply's clock hasn't started yet, so Stop has no request to abort:
-      // watch the flags the button sets instead.
+      // This runs before the reply's request exists, so there is no signal to
+      // abort: watch the flags the Stop button sets instead.
       watch = setInterval(() => { if (!busy || requestEnd) stop(); }, 200);
-      requestAbort?.signal.addEventListener("abort", stop, { once: true });
       row.appendChild(el("span", "", question));
       for (const [label, value] of choices) {
         const b = el("button", "chip", label);
@@ -5195,9 +5214,9 @@
     if (!pick || !info) return;
     pick.value = screenSource;
     const allowToggle = $("screen-allow");
+    if (allowToggle) allowToggle.checked = store.get("screenOk", false) === true;
     const say = () => {
       const allowed = store.get("screenOk", false) === true;
-      if (allowToggle) allowToggle.checked = allowed;
       info.textContent = !allowed
         ? "Izuki asks once before it reads any screen."
         : screenSource === "off" ? "Izuki answers from what you tell it, without looking at a screen."
@@ -5218,7 +5237,6 @@
       allow.checked = store.get("screenOk", false) === true;
       allow.onchange = () => {
         store.set("screenOk", !!allow.checked);
-        if (!allow.checked) note("screen permission withdrawn");
         say();
       };
     }

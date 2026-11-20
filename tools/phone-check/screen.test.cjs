@@ -70,7 +70,45 @@ function click(o, label) {
 const fire = (ms) => { for (const [id, t] of [...timers]) if (t.ms === ms) { timers.delete(id); t.fn(); } };
 const beat = () => { for (const [id, t] of [...timers]) if (t.kind === 'i') t.fn(); };
 
+// The PC lane: an answer with no words in it is never reported as a reply.
+const pcTimers = [];
+const pcCtx = vm.createContext({ console, document: { createElement: () => ({}) } });
+vm.runInContext(`
+let answer = { text: "" };
+const saids = [];
+const asked = [];
+const askPc = async (t) => { asked.push(t); return answer; };
+const canvas = [];
+const bubble = (who, text, opts) => { canvas.push({ who, text, opts }); return {}; };
+const out = { remove() { this.removed = true; } };
+` + html.slice(html.indexOf("  async function viaPc(said, out, opts = {}) {"), html.indexOf("  // ------------------------------------------------------------ attachments")) + `
+globalThis.PC = { run: viaPc, answer: (v) => { answer = v; }, canvas: () => canvas, asked: () => asked, out: () => out };
+`, pcCtx);
+const PC = pcCtx.PC;
+
 (async () => {
+  // An empty PC answer about a screen is explained, never called "Done.".
+  PC.answer({ text: "   " });
+  const quiet = await PC.run("Look at your own PC screen and answer this: what is this?", PC.out(), { empty: "Your PC answered with nothing about its screen, so I haven't seen it." });
+  assert.match(quiet, /haven't seen it/);
+  const last = PC.canvas().pop();
+  assert.equal(last.text, quiet);
+  assert.equal(last.opts.error, true, 'an empty answer is not a success bubble');
+  assert.equal(quiet.includes('Done'), false);
+
+  // The same for any other PC answer: no invented "Done.".
+  PC.answer({ text: "" });
+  const blank = await PC.run("anything", PC.out());
+  assert.equal(blank.includes('Done'), false);
+  assert.match(blank, /didn't send an answer/);
+
+  // A real answer keeps its status line, screen included.
+  PC.answer({ text: "Your screen shows a chart." });
+  const meta = { provider: 'Izuki on your PC', model: '', screen: { device: 'pc', detail: '' }, search: { offered: false, queries: [], found: 0, used: false, why: '' } };
+  const good = await PC.run("Look at your own PC screen and answer this: what is this?", PC.out(), { meta });
+  assert.equal(good, 'Your screen shows a chart.');
+  assert.equal(PC.canvas().pop().opts.meta, meta);
+  assert.match(PC.asked().pop(), /^Look at your own PC screen/);
   // Ask each time on a new install: the person picks the screen, then allows.
   T.reset();
   T.source('ask');
@@ -199,5 +237,5 @@ const beat = () => { for (const [id, t] of [...timers]) if (t.kind === 'i') t.fn
   assert.ok(html.includes("if (store.get(\"screenOk\", false) !== true) return \"I haven't been allowed"), 'reading a screen needs the permission even from another path');
 
   assert.ok(html.includes('id="screen-allow"'), 'the yes is reachable from Settings');
-  console.log('screen: 34 checks passed');
+  console.log('screen: 39 checks passed');
 })();
