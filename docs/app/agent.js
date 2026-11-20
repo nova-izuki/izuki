@@ -45,6 +45,8 @@
     '{"do":"type","n":<number of a box>,"text":"<words>","enter":true|false}  (enter only for a search box)',
     '{"do":"scroll","dir":"down|up"}  (lists and pages)',
     '{"do":"swipe","dir":"left|right"}  (the next or previous photo, page, tab or story)',
+    '{"do":"drag","from_n":<number>,"to_n":<number>} or {"do":"drag","x":<0-1000>,"y":<0-1000>,"x2":<0-1000>,"y2":<0-1000>}  (drag slowly: reorder a list, move a slider, pan a map)',
+    '{"do":"scroll_to","find":"<words in the control>"}  (scroll down until that control is on screen, at most 8 screens)',
     '{"do":"key","key":"recents|notifications|quick_settings"}  (recent apps, the notification shade, quick settings)',
     '{"do":"media","key":"play|pause|next|previous"}  {"do":"volume","dir":"up|down"}  {"do":"torch","on":true|false}',
     '{"do":"navigate","to":"<place>"}  (Google Maps directions)',
@@ -126,6 +128,8 @@
       key: "key", recents: "key", notifications: "key", quick_settings: "key",
       media: "media", volume: "volume", torch: "torch", flashlight: "torch", navigate: "navigate", directions: "navigate",
       scroll: "scroll", swipe: "swipe", back: "back", go_back: "back", home: "home", go_home: "home", wait: "wait",
+      drag: "drag", move: "drag", reorder: "drag", slide: "drag",
+      scroll_to: "scroll_to", scrollto: "scroll_to", scroll_until: "scroll_to", bring_into_view: "scroll_to",
       done: "done", finish: "done", answer: "done", reply: "done", say: "done", ask: "ask", question: "ask", confirm: "ask",
     };
     let kind = kinds[act];
@@ -146,7 +150,10 @@
       dir: /left/.test(dirWord) ? "left" : /right/.test(dirWord) ? "right"
         : act === "swipe" ? (/down/.test(dirWord) ? "up" : "down")
         : /up/.test(dirWord) ? "up" : "down",
-      x: Number(obj.x), y: Number(obj.y),
+      x: Number(obj.x), y: Number(obj.y), x2: Number(obj.x2 ?? obj.to_x ?? obj.toX), y2: Number(obj.y2 ?? obj.to_y ?? obj.toY),
+      from_n: Number.isFinite(Number(obj.from_n ?? obj.fromN ?? obj.from?.n ?? (typeof obj.from === "number" ? obj.from : undefined))) ? Math.round(Number(obj.from_n ?? obj.fromN ?? obj.from?.n ?? obj.from)) : 0,
+      to_n: Number.isFinite(Number(obj.to_n ?? obj.toN ?? obj.to?.n ?? (typeof obj.to === "number" ? obj.to : undefined))) ? Math.round(Number(obj.to_n ?? obj.toN ?? obj.to?.n ?? obj.to)) : 0,
+      find: norm(obj.find ?? obj.until ?? (kind === "scroll_to" ? obj.text ?? obj.label ?? obj.value : "")),
       key: keyWord,
       on: obj.on === true || /^(on|true)$/i.test(String(obj.on ?? obj.state ?? "")),
       to: norm(obj.to ?? obj.place ?? obj.destination ?? ""),
@@ -236,6 +243,8 @@
       case "type": return `Typing “${a.text.slice(0, 40)}”…`;
       case "scroll": return `Scrolling ${a.dir}…`;
       case "swipe": return `Swiping ${a.dir}…`;
+      case "drag": return "Dragging…";
+      case "scroll_to": return `Looking for “${norm(a.find || a.text).slice(0, 40)}”…`;
       case "long_press": return item ? `Holding “${norm(item.text).slice(0, 40)}”…` : "Holding…";
       case "double_tap": return item ? `Double-tapping “${norm(item.text).slice(0, 40)}”…` : "Double-tapping…";
       case "tap_at": return "Tapping the screen…";
@@ -278,7 +287,7 @@
       const items = screen?.items || [];
       const own = screen?.app === OWN;
       // A quiz, test or exam on screen: Izuki explains, but never picks or types answers.
-      if (["tap", "type", "tap_at", "long_press", "double_tap"].includes(a.do) && testPage(screen)) {
+      if (["tap", "type", "tap_at", "long_press", "double_tap", "drag"].includes(a.do) && testPage(screen)) {
         return { ok: false, stop: true, note: "This looks like a quiz or test, so I won't pick or type answers for you. Say “explain this” and I'll walk you through the question." };
       }
       switch (a.do) {
@@ -381,6 +390,61 @@
           const what = item ? `“${norm(item.text).slice(0, 40)}”` : "that spot";
           const did = a.do === "long_press" ? "held" : a.do === "double_tap" ? "double-tapped" : "tapped";
           return { ok: true, note: `${did} ${what}${after ? ", the screen changed" : " but nothing changed"}` };
+        }
+        case "drag": {
+          if (own) return { ok: false, note: "that's Izuki's own chat; open the app you need first" };
+          let start, end, fromItem = null, toItem = null;
+          if (a.from_n || a.to_n) {
+            if (!a.from_n || !a.to_n) return { ok: false, note: "drag needs both from_n and to_n, or x/y and x2/y2" };
+            fromItem = items.find((i) => i.n === a.from_n);
+            toItem = items.find((i) => i.n === a.to_n);
+            if (!fromItem || !toItem) return { ok: false, note: `there's no [${!fromItem ? a.from_n : a.to_n}] on this screen` };
+            start = { x: fromItem.x + fromItem.w / 2, y: fromItem.y + fromItem.h / 2 };
+            end = { x: toItem.x + toItem.w / 2, y: toItem.y + toItem.h / 2 };
+          } else {
+            if (!shotSize || ![a.x, a.y, a.x2, a.y2].every((v) => Number.isFinite(v) && v >= 0 && v <= 1000)) {
+              return { ok: false, note: "there was no screenshot to point at: use numbers from the list" };
+            }
+            start = { x: (a.x / 1000) * shotSize.w, y: (a.y / 1000) * shotSize.h };
+            end = { x: (a.x2 / 1000) * shotSize.w, y: (a.y2 / 1000) * shotSize.h };
+          }
+          // Both ends get the same risky-control scan as a tap: a drag must not
+          // start or finish on Send, Delete, Buy, Install and the like.
+          const under = (px, py) => items.filter((i) => i.w > 0 && i.h > 0 && px >= i.x && px <= i.x + i.w && py >= i.y && py <= i.y + i.h)
+            .sort((p, q) => p.w * p.h - q.w * q.h);
+          const riskyItem = [fromItem, toItem, ...under(start.x, start.y), ...under(end.x, end.y)].find((i) => i && RISKY.test(norm(i.text)));
+          if (riskyItem) {
+            return { ok: false, stop: true, note: `That last step needs your finger: “${norm(riskyItem.text)}” is at one end of the drag. I don't drag onto buttons that call, send, pay, buy, delete or reset.` };
+          }
+          const before = look(screen);
+          const r = await n.act({ op: "swipe", x: Math.round(start.x), y: Math.round(start.y), x2: Math.round(end.x), y2: Math.round(end.y), ms: 700 });
+          if (!r?.done) return { ok: false, note: n.why?.(r, "") || "Android didn't take the drag" };
+          const after = await changedFrom(before, 2500);
+          const what = fromItem && toItem ? `“${norm(fromItem.text).slice(0, 40)}” to “${norm(toItem.text).slice(0, 40)}”` : "that spot";
+          return { ok: true, note: `dragged ${what}${after ? ", the screen changed" : " but nothing changed"}` };
+        }
+        case "scroll_to": {
+          if (own) return { ok: false, note: "that's Izuki's own chat; open the app you need first" };
+          const wanted = norm(a.find || a.text);
+          if (!wanted) return { ok: false, note: "no control words were given" };
+          const has = (s) => (s?.items || []).find((i) => norm(i.text).toLowerCase().includes(wanted.toLowerCase()));
+          const here = has(screen);
+          if (here) return { ok: true, note: `“${norm(here.text).slice(0, 40)}” is already on screen` };
+          let cur = screen;
+          for (let k = 0; k < 8; k++) {
+            if (stopped()) return { ok: false, stop: true, note: "Stopped while scrolling." };
+            const before = look(cur);
+            const r = await n.act({ op: "scroll", dir: "down" });
+            if (!r?.done) return { ok: false, note: n.why?.(r, "") || "nothing scrolled" };
+            await nap(450);
+            const next = await n.screen().catch(() => null);
+            if (!next || next.locked) return { ok: false, stop: true, note: "I couldn't read the screen while scrolling." };
+            const hit = has(next);
+            if (hit) return { ok: true, note: `scrolled until “${norm(hit.text).slice(0, 40)}” was on screen` };
+            if (look(next) === before) return { ok: false, note: `couldn't find “${wanted}”; the screen stopped moving` };
+            cur = next;
+          }
+          return { ok: false, note: `couldn't find “${wanted}” after 8 scrolls` };
         }
         case "swipe": {
           const w = Number(screen?.w) || 1080, h = Number(screen?.h) || 2340;
@@ -504,7 +568,7 @@
       if (a.do === "ask") return { text: a.say || "What should I do next?", ok: true, asked: true };
       const what = label(a, screen);
       // The same action on the same screen a third time: it isn't working.
-      const sameKey = `${look(screen)}#${picture}#${a.do}|${a.n}|${a.app}|${a.page}|${a.text}|${a.dir}|${a.x}|${a.y}|${a.key}`;
+      const sameKey = `${look(screen)}#${picture}#${a.do}|${a.n}|${a.app}|${a.page}|${a.text}|${a.dir}|${a.x}|${a.y}|${a.x2}|${a.y2}|${a.from_n}|${a.to_n}|${a.find}|${a.key}`;
       const times = (tried.get(sameKey) || 0) + 1;
       tried.set(sameKey, times);
       if (times >= 3) {

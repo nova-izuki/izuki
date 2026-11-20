@@ -123,9 +123,49 @@ structured data, and permits large image previews. These are discovery signals;
 they do not guarantee inclusion in Google Images, a favicon, or any ranking.
 Changes can take days to weeks to be recrawled.
 
+## Logo and official pictures (20 November 2026)
+
+Google takes the icon for a whole hostname from the homepage, so
+`docs/index.html` now declares the full set its favicon guidance asks for: the
+root `favicon.ico`, a **48×48** `icon-48.png` (Google's minimum, and a multiple
+of the 48 px it recommends), the 96/192/512 PNGs for phones and installed
+shortcuts, and the vector `icon.svg` so any size stays crisp. The ICO already
+carries 16/32/48/64. `Organization.logo` (512×512) and the `WebSite`
+`alternateName` list (Nova Izuki, Izuki Nova, Izuki AI) stay as they were.
+
+For Images, the brand-mark entry in the image sitemap and the `/screenshots/`
+title, description and intro now name the product the way people search for it —
+“Izuki Nova (Nova Izuki)”, “the Izuki AI assistant” — instead of “the Windows AI
+companion” alone. Nothing was added that is not visible on the page or already
+in the pictures. Both changed pages have a fresh `lastmod`.
+
+Every other public page (`/help/`, `/links/`, `/privacy/`, `/security/`,
+`/terms/`, `/screenshots/`, `/extension/`, `/extension/privacy.html`) now declares
+the same set with `../` paths, and `404.html` uses root-absolute ones because it
+answers at any depth. `/app/` keeps its own PWA icons and web app manifest, whose
+files are bundled into the phone app where a `../` path would not exist.
+
 ## References
 
 - [Google: favicons in Search](https://developers.google.com/search/docs/appearance/favicon-in-search)
 - [Google: site names](https://developers.google.com/search/docs/appearance/site-names)
 - [Google: image SEO](https://developers.google.com/search/docs/appearance/google-images)
 - [GitHub Pages: custom domains](https://docs.github.com/en/pages/configuring-a-custom-domain-for-your-github-pages-site)
+
+## Official name and misspellings (20 November 2026)
+
+The product now names itself **IZUKI NOVA** in the places Google reads for a
+site name: `<title>`, `og:site_name`, `application-name`,
+`apple-mobile-web-app-title`, and the `name` of the Organization, WebSite and
+SoftwareApplication nodes. "Izuki", "Nova Izuki" and "Izuki AI" stay as
+`alternateName`s — they are what people already search — and the hero's
+screen-reader label reads the full name. The canonical URL is still
+`https://izukinova.ai/`; the `nova-izuki.github.io/izuki` address serves the
+same files but is not the address search results should use.
+
+A seventh FAQ answers the misspellings people actually type — "Ixzuki",
+"Izuki Novsa", "Nova" — with the real spelling, the official site and the
+GitHub repo, and says plainly that a download asking for money is not this one.
+The same question and answer sit in the FAQPage markup, so the visible text and
+the structured data match. No hidden keywords, no duplicate pages, no invented
+ratings, reviews or download counts.

@@ -264,6 +264,13 @@ async function A_run(p, goal, ctx) { return load(p.native).run(goal, ctx); }
     assert.equal(parse('{"do":"notifications"}').key, "notifications");
     assert.equal(parse('{"do":"torch","on":"on"}').on, true);
     assert.equal(parse('{"do":"tap","n":2,"plan":"1. open Files 2. read sizes"}').plan, "1. open Files 2. read sizes");
+    const drag = parse('{"do":"drag","from_n":"1","to":2}');
+    assert.equal(drag.do, "drag");
+    assert.equal(drag.from_n, 1);
+    assert.equal(drag.to_n, 2, "a bare to number is the target item");
+    assert.equal(parse('{"do":"scroll_to","find":"Privacy"}').find, "Privacy");
+    assert.equal(parse('{"do":"scroll_until","text":"Privacy"}').do, "scroll_to");
+    assert.equal(parse('{"do":"scroll_until","text":"Privacy"}').find, "Privacy");
   }
 
   // 11. Eyes: a brain that sees pictures gets the screenshot, a point on it lands on the screen, and the risky check still holds.
@@ -359,5 +366,73 @@ async function A_run(p, goal, ctx) { return load(p.native).run(goal, ctx); }
     await A_run(q, "find it", { think: ai.think });
   }
 
-  console.log("Phone agent: storage answer, risky refusal, own page, lock, Stop, parsing, screenshots, points, swipes, keys, plan and repeat guard pass.");
+  // 13. Drag: from one numbered control to another (and by points), never onto a risky control.
+  {
+    const p = phone();
+    p.native.screen = async () => ({ app: "com.example.list", w: 1000, h: 2000, items: [
+      { n: 1, text: "Milk", kind: "text", x: 0, y: 0, w: 1000, h: 200 },
+      { n: 2, text: "Bread", kind: "text", x: 0, y: 300, w: 1000, h: 200 },
+      { n: 3, text: "Delete list", kind: "button", x: 0, y: 600, w: 1000, h: 200 },
+    ] });
+    const swipes = [];
+    p.native.act = async (args) => { if (args.op === "swipe") swipes.push(args); return { done: true }; };
+    const A = load(p.native);
+    const ai = brain(['{"do":"drag","from_n":1,"to_n":2}', '{"do":"done","say":"Moved."}']);
+    const r = await A.run("reorder my list", { think: ai.think });
+    assert.equal(r.text, "Moved.");
+    assert.deepEqual([swipes[0].x, swipes[0].y, swipes[0].x2, swipes[0].y2], [500, 100, 500, 400]);
+    assert.ok(swipes[0].ms >= 500, "a drag is a slow swipe");
+    // A drag that starts or ends on Delete is refused before Android is asked.
+    const q = phone();
+    q.native.screen = p.native.screen;
+    const qw = [];
+    q.native.act = async (args) => { if (args.op === "swipe") qw.push(args); return { done: true }; };
+    const qr = await A_run(q, "move it onto delete", { think: brain(['{"do":"drag","from_n":1,"to_n":3}']).think });
+    assert.equal(qr.asked, true);
+    assert.match(qr.text, /Delete list/);
+    assert.equal(qw.length, 0, "the risky endpoint was never touched");
+    // Point-to-point drags use the screenshot's 0-1000 coordinates.
+    const d = phone();
+    d.native.snapshot = async () => ({ image: "AAAA", w: 1000, h: 2000 });
+    d.native.screen = async () => ({ app: "com.example.map", w: 1000, h: 2000, items: [] });
+    const dots = [];
+    d.native.act = async (args) => { if (args.op === "swipe") dots.push(args); return { done: true }; };
+    await A_run(d, "pan the map", { think: brain(['{"do":"drag","x":100,"y":100,"x2":500,"y2":500}', '{"do":"done","say":"ok"}']).think, see: true });
+    assert.deepEqual([dots[0].x, dots[0].y, dots[0].x2, dots[0].y2], [100, 200, 500, 1000]);
+  }
+
+  // 14. Scroll to a control by its words, with a step limit and a stop at the bottom.
+  {
+    const p = phone();
+    let scrolled = 0;
+    p.native.screen = async () => ({ app: "com.android.settings", w: 1000, h: 2000, items: scrolled
+      ? [{ n: 2, text: "Privacy", kind: "button" }]
+      : [{ n: 1, text: "Storage", kind: "text" }] });
+    p.native.act = async (args) => { if (args.op === "scroll") scrolled++; return { done: true }; };
+    const ai = brain(['{"do":"scroll_to","find":"Privacy"}', '{"do":"done","say":"Found."}']);
+    const r = await A_run(p, "find privacy", { think: ai.think });
+    assert.equal(r.text, "Found.");
+    assert.equal(scrolled, 1);
+    assert.match(ai.prompts[1].prompt, /scrolled until “Privacy” was on screen/);
+    // Already on screen: no scrolling.
+    const q = phone();
+    q.native.screen = async () => ({ app: "com.android.settings", items: [{ n: 1, text: "Privacy", kind: "button" }] });
+    let qscroll = 0;
+    q.native.act = async (args) => { if (args.op === "scroll") qscroll++; return { done: true }; };
+    await A_run(q, "find privacy", { think: brain(['{"do":"scroll_to","find":"privacy"}', '{"do":"done","say":"ok"}']).think });
+    assert.equal(qscroll, 0, "it was already visible");
+    // The screen stops moving: it says so instead of scrolling for ever.
+    const s = phone();
+    s.native.screen = async () => ({ app: "com.android.settings", items: [{ n: 1, text: "Storage", kind: "text" }] });
+    let sscroll = 0;
+    s.native.act = async (args) => { if (args.op === "scroll") sscroll++; return { done: true }; };
+    const sai = brain(['{"do":"scroll_to","find":"Privacy"}', (prompt) => {
+      assert.match(prompt, /couldn't find “Privacy”/);
+      return '{"do":"done","say":"ok"}';
+    }]);
+    await A_run(s, "find privacy", { think: sai.think });
+    assert.equal(sscroll, 1, "one scroll showed the screen can't move further");
+  }
+
+  console.log("Phone agent: storage answer, risky refusal, own page, lock, Stop, parsing, screenshots, points, drag, scroll-to, swipes, keys, plan and repeat guard pass.");
 })().catch((e) => { console.error(e); process.exitCode = 1; });
