@@ -3200,20 +3200,25 @@
   // out loud word for word, so they get just the words (the voice carries the character).
   const TTS_MODELS = ["gemini-2.5-flash-preview-tts", "gemini-3.1-flash-tts-preview", "gemini-3.8-flash-tts"];
   let ttsModel = store.get("ttsModel", "");
-  async function geminiVoice(t) {
+  async function geminiVoice(t, budgetMs = 8000) {
     if (!key || Date.now() < voiceRestUntil) return null;
+    // One budget for every model tried: three models at 12 s each meant the
+    // first line of a reply could sit silent for half a minute.
+    const deadline = Date.now() + budgetMs;
     for (const m of ttsModel ? [ttsModel] : TTS_MODELS) {
-      const url = await geminiVoiceWith(m, t);
-      if (url === "gone") { if (ttsModel) { ttsModel = ""; store.set("ttsModel", ""); return geminiVoice(t); } continue; }
+      const left = deadline - Date.now();
+      if (left < 1200) break;
+      const url = await geminiVoiceWith(m, t, left);
+      if (url === "gone") { if (ttsModel) { ttsModel = ""; store.set("ttsModel", ""); return geminiVoice(t, Math.max(1200, deadline - Date.now())); } continue; }
       if (url && !ttsModel) { ttsModel = m; store.set("ttsModel", m); }
       return url;
     }
     return null;
   }
-  async function geminiVoiceWith(model, t) {
+  async function geminiVoiceWith(model, t, budgetMs = 12000) {
     // Never wait long for a voice: the phone's own one is right there.
     const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 12000);
+    const timer = setTimeout(() => ctrl.abort(), Math.max(1200, budgetMs));
     try {
       const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
         method: "POST",
@@ -4784,6 +4789,32 @@
     };
   }
 
+  /**
+   * The browser's own voices, the most natural first. This is the list an
+   * iPhone speaks with — its Premium and Enhanced downloads appear here — and
+   * Android's WebView list is empty, so the native bridge is asked first.
+   */
+  function browserVoices() {
+    if (!("speechSynthesis" in window)) return [];
+    const base = String(navigator.language || "en").replace("_", "-").toLowerCase().split("-")[0];
+    const score = (v) => {
+      const name = String(v.name || "");
+      let s = 0;
+      if (/premium/i.test(name)) s += 80;
+      if (/enhanced/i.test(name)) s += 50;
+      if (/siri/i.test(name)) s += 40;
+      if (/neural|natural/i.test(name)) s += 15;
+      if (/compact|eloquence|novelty|whisper|bells|boing|bubble|cellos|zarvox|trinoids|albert|bad news|good news|jester|organ|superstar|wobble|bahh|deranged|hysterical|grandma|grandpa|rocko|shelley|sandy|flo|eddy|reed|junior|ralph|fred/i.test(name)) s -= 100;
+      return s;
+    };
+    const seen = new Set();
+    return (window.speechSynthesis.getVoices?.() || [])
+      .filter((v) => v && v.name && String(v.lang || "").replace("_", "-").toLowerCase().split("-")[0] === base)
+      .filter((v) => !seen.has(v.name) && seen.add(v.name))
+      .sort((a, b) => score(b) - score(a))
+      .map((v) => ({ name: v.name, label: v.name + " (" + v.lang + ")" }));
+  }
+
   /** Settings → Izuki's voice: the natural voice switch and the phone voice picker with a sample. */
   async function loadVoicePanel() {
     const natural = $("natural-voice"), pick = $("phone-voice"), hear = $("phone-voice-hear"), info = $("phone-voice-note");
@@ -4791,18 +4822,25 @@
     natural.checked = naturalOverApps();
     natural.onchange = () => store.set("naturalVoice", !!natural.checked);
     const chosen = store.get("phoneVoice", "");
-    const list = await window.IzukiNative?.voices?.() || [];
-    pick.replaceChildren(new Option(list.length ? `Most natural one installed (${list[0].label})` : "Most natural one installed", ""));
+    // Android lists its engines' voices; an iPhone has no bridge, and its own
+    // list is where the Premium and Enhanced voices live.
+    const native = (await window.IzukiNative?.voices?.()) || [];
+    const list = native.length ? native : browserVoices();
+    pick.replaceChildren(new Option(list.length ? "Most natural one installed (" + list[0].label + ")" : "Most natural one installed", ""));
     for (const v of list) pick.append(new Option(v.label, v.name));
     pick.value = list.some((v) => v.name === chosen) ? chosen : "";
-    if (!list.length) info.textContent = "Android didn't list its voices. Izuki uses the phone's default voice.";
+    if (!list.length) info.textContent = "Your phone has not listed its voices yet. Izuki uses the most natural one it can find.";
+    else if (!native.length) info.textContent = "This is the browser's own list. On iPhone, download a Premium or Enhanced voice in Settings → Accessibility → Spoken Content → Voices, then reopen this page.";
     pick.onchange = () => { store.set("phoneVoice", pick.value); window.IzukiNative?.setVoice?.(pick.value); };
     hear.onclick = async () => {
-      window.IzukiNative?.setVoice?.(pick.value);
       hear.disabled = true;
-      const name = person().name;
-      await window.IzukiNative?.speak?.(`Hi, I'm ${name}. This is how I'll sound when I answer you over other apps.`);
-      hear.disabled = false;
+      try {
+        store.set("phoneVoice", pick.value);
+        window.IzukiNative?.setVoice?.(pick.value);
+        const line = "Hi, I'm " + person().name + ". This is how I'll sound when I answer you.";
+        if (window.IzukiNative?.speak) await window.IzukiNative.speak(line);
+        else await speakWithPhone(line, () => { info.textContent = "The phone would not play the sample. Check media volume, then tap again."; });
+      } finally { hear.disabled = false; }
     };
   }
   // The picked phone voice from the start, not only after Settings was opened.
