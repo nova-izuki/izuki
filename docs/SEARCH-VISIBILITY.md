@@ -139,6 +139,12 @@ title, description and intro now name the product the way people search for it ‚
 companion‚Äù alone. Nothing was added that is not visible on the page or already
 in the pictures. Both changed pages have a fresh `lastmod`.
 
+Every other public page (`/help/`, `/links/`, `/privacy/`, `/security/`,
+`/terms/`, `/screenshots/`, `/extension/`, `/extension/privacy.html`) now declares
+the same set with `../` paths, and `404.html` uses root-absolute ones because it
+answers at any depth. `/app/` keeps its own PWA icons and web app manifest, whose
+files are bundled into the phone app where a `../` path would not exist.
+
 ## References
 
 - [Google: favicons in Search](https://developers.google.com/search/docs/appearance/favicon-in-search)
