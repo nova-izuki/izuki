@@ -153,6 +153,15 @@
   .izuki { align-self: flex-start; background: var(--soft); border: 1px solid var(--line); border-bottom-left-radius: 8px; }
   .izuki.error { color: #ffc2cc; border-color: rgba(255, 107, 129, 0.35); background: rgba(255, 107, 129, 0.08); }
   .chip-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  /* Why the voice changed, beside a Retry: quiet, but never hidden. */
+  .voice-notice { align-items: center; }
+  .voice-note { font-size: 12.5px; color: var(--muted); }
+  .voice-why { font-size: 11.5px; color: var(--muted); opacity: 0.75; }
+  /* What answered, under a reply: closed until asked, then plain facts. */
+  .ai-status { margin-top: 8px; font-size: 12px; color: var(--muted); }
+  .ai-status summary { cursor: pointer; display: inline; opacity: 0.7; font-size: 11.5px; }
+  .ai-status summary:hover, .ai-status summary:focus-visible { opacity: 1; }
+  .ai-status ul { margin: 6px 0 0; padding-left: 16px; display: grid; gap: 3px; }
   .chip { border: 1px solid var(--line); background: rgba(0, 0, 0, 0.25); border-radius: 999px; padding: 7px 13px; font-size: 13.5px; text-decoration: none; color: var(--ink); white-space: normal; }
   .face-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); gap: 8px; margin: 4px 0 8px; }
   .face-tile { position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 6px; border-radius: 14px; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.05); color: var(--ink); font-size: 11.5px; }
@@ -678,6 +687,21 @@
       <p class="note" style="margin-top:4px">Off (the default): the orb only appears when you say “Hey Nova”, use the Ask Izuki tile or notification, or while Izuki is working or talking — then it goes away. On: a small orb also rests over your apps. Tap the orb to talk (tap again to stop), tap its words to open Izuki, drag it anywhere, long-press to hide it. Needs Android control.</p>
     </section>
 
+    <section id="screen-source-panel">
+      <h3>What Izuki can see</h3>
+      <p>When you ask about “this”, Izuki has to know which screen you mean. It never looks on its own, and it asks before the first look.</p>
+      <div class="field" style="margin-top:10px">
+        <label for="screen-source">Screen context</label>
+        <select id="screen-source">
+          <option value="ask">Ask me each time</option>
+          <option value="phone">This phone's screen</option>
+          <option value="pc">My PC's screen</option>
+          <option value="off">No screen context</option>
+        </select>
+      </div>
+      <p class="note" id="screen-source-note" style="margin-top:4px"></p>
+    </section>
+
     <section id="native-voice" hidden>
       <h3>Izuki's voice</h3>
       <label class="swatch"><input type="checkbox" id="natural-voice" checked> Natural voice over other apps</label>
@@ -686,6 +710,14 @@
         <label for="phone-voice">Phone voice</label>
         <div class="row" style="flex-wrap:nowrap;gap:8px"><select id="phone-voice" style="flex:1;min-width:0"><option value="">Most natural one installed</option></select><button class="btn ghost" id="phone-voice-hear" type="button">Hear it</button></div>
         <p class="note" id="phone-voice-note" style="margin-top:4px">Used when there's no natural voice. Izuki picks Google's most natural voice on your phone; pick another and tap Hear it.</p>
+      </div>
+      <div class="field" style="margin-top:12px">
+        <label for="voice-sample-natural">Compare the voices</label>
+        <p class="note" id="voice-compare-note" style="margin-top:2px">Both read the same sentence. <span id="voice-avail-natural"></span></p>
+        <div class="row" style="flex-wrap:wrap;gap:8px;margin-top:6px">
+          <button class="btn ghost" id="voice-sample-natural" type="button">✨ Natural AI voice</button>
+          <button class="btn ghost" id="voice-sample-phone" type="button">📱 Phone voice</button>
+        </div>
       </div>
     </section>
 
@@ -1058,6 +1090,10 @@
       row.className = "chip-row";
       for (const c of opts.chips) row.appendChild(c);
       div.appendChild(row);
+    }
+    if (opts.meta) {
+      const status = aiStatus(opts.meta);
+      if (status) div.appendChild(status);
     }
     log.appendChild(div);
     log.scrollTop = log.scrollHeight;
@@ -1732,6 +1768,19 @@
   async function gemini(contents, onText, model, bare, system, retried = false) {
     model = model || (Date.now() < liteUntil ? LITE : MODEL);
     const tools = !bare && Date.now() > noToolsUntil && needsWeb(contents);
+    // What really ran, for the little status line under the reply.
+    if (turnMeta) {
+      turnMeta.provider = "Google Gemini";
+      turnMeta.model = model;
+      turnMeta.search.offered = tools;
+      if (!tools) {
+        turnMeta.search.why = bare
+          ? "Web search: not offered for this answer."
+          : Date.now() <= noToolsUntil
+            ? "Web search: off for now — Google refused it earlier."
+            : "Web search: not attempted — this question didn't need it.";
+      }
+    }
     // The first answer bytes within 12 s (a connection left stale while the
     // app was in the background used to hang for the full 30 s); then up to
     // 30 s between pieces.
@@ -1759,7 +1808,7 @@
       } catch (e) {
         if (e.name === "AbortError") {
           // Not Stop and not the deadline: one fresh try on the quick model, without search.
-          if (!retried && !requestEnd) { note("gemini: no first answer in 12 s, trying again"); guard.done(); return gemini(contents, onText, LITE, true, system, true); }
+          if (!retried && !requestEnd) { note("gemini: no first answer in 12 s, trying again"); guard.done(); if (turnMeta) turnMeta.fallback = true; return gemini(contents, onText, LITE, true, system, true); }
           bug("gemini: no answer in time", { model });
           throw new Error(TOO_SLOW);
         }
@@ -1784,6 +1833,7 @@
           // again soon, and a full day of silent, unsearched answers is worse.
           noToolsUntil = Date.now() + 3600000;
           store.set("noToolsUntil", noToolsUntil);
+          if (turnMeta) { turnMeta.search.offered = false; turnMeta.search.why = "Web search: Google refused it for this answer."; }
           return gemini(contents, onText, model, true, system);
         }
       }
@@ -1792,6 +1842,7 @@
       if (tools && res.status === 429) {
         noToolsUntil = Date.now() + 3600000;
         store.set("noToolsUntil", noToolsUntil);
+        if (turnMeta) { turnMeta.search.offered = false; turnMeta.search.why = "Web search: today's search allowance is used up."; }
         return gemini(contents, onText, model, true, system);
       }
       if ((res.status === 429 || res.status === 503) && model === MODEL) {
@@ -1799,6 +1850,7 @@
         // sibling has its own, and is quicker anyway.
         liteUntil = Date.now() + (res.status === 429 ? 3600000 : 60000);
         store.set("liteUntil", liteUntil);
+        if (turnMeta) turnMeta.fallback = true;
         return gemini(contents, onText, LITE, bare, system);
       }
       if (!res.ok) {
@@ -1829,6 +1881,16 @@
           if (!line.startsWith("data:")) continue;
           try {
             const v = JSON.parse(line.slice(5));
+            // Grounding is Google's own record of the search: the queries it
+            // ran, the pages it read and whether the words lean on them.
+            const g = v.candidates?.[0]?.groundingMetadata;
+            if (g && turnMeta) {
+              const s = turnMeta.search;
+              s.offered = true;
+              if (Array.isArray(g.webSearchQueries)) s.queries = g.webSearchQueries.filter(Boolean).slice(0, 3);
+              if (Array.isArray(g.groundingChunks)) s.found = Math.max(s.found, g.groundingChunks.length);
+              if (Array.isArray(g.groundingSupports) && g.groundingSupports.length) s.used = true;
+            }
             for (const p of v.candidates?.[0]?.content?.parts || []) if (p.text) out += p.text;
             onText?.(out);
           } catch {}
@@ -1844,6 +1906,12 @@
   async function otherBrain(contents, onText, id, system) {
     const b = BRAINS[id || brain];
     const k = brainKeys[id || brain];
+    if (turnMeta) {
+      turnMeta.provider = b.name;
+      turnMeta.model = b.model;
+      turnMeta.search.offered = false;
+      turnMeta.search.why = "Web search: " + b.name + " can't search from Izuki — only Gemini can.";
+    }
     const messages = [{ role: "system", content: system || systemPrompt() }].concat(
       contents.map((c) => {
         const role = c.role === "model" ? "assistant" : "user";
@@ -1994,7 +2062,10 @@
     try {
       return await otherBrain(contents, onText, undefined, system);
     } catch (e) {
-      if (key) return gemini(contents, onText, undefined, undefined, system);
+      if (key) {
+        if (turnMeta) turnMeta.fallback = true;
+        return gemini(contents, onText, undefined, undefined, system);
+      }
       throw e;
     }
   }
@@ -2715,6 +2786,52 @@
       ? `That took over ${Math.round(requestLimit / 1000)} seconds, so I stopped waiting. Nothing else was sent — try again?`
       : (e?.message || "I couldn't reach my AI brain. Check your internet and try again.");
 
+  // ---- what answered (tested by tools/phone-check/status.test.cjs) --------
+  // Real facts from the request that just ran, never a guess from the words:
+  // who ran it, whether Google's search was offered, the queries it actually
+  // ran, how many sources came back and whether the answer cited them. No
+  // keys, no prompts, no reasoning.
+  let turnMeta = null;
+  function newTurnMeta() {
+    turnMeta = { provider: "", model: "", fallback: false, local: false, search: { offered: false, queries: [], found: 0, used: false, why: "" } };
+    return turnMeta;
+  }
+  /** The lines under a reply, from that record alone. */
+  function statusLines(m) {
+    if (!m || !m.provider) return [];
+    const out = ["Answered by " + m.provider + (m.model ? " · " + m.model : "") + (m.fallback ? ", after a fallback" : "") + "."];
+    const s = m.search || {};
+    if (m.local) {
+      out.push("Everything ran on this phone — nothing left it.");
+    } else if (!s.offered) {
+      out.push(s.why || "Web search wasn't offered for this reply.");
+    } else if (s.queries?.length) {
+      out.push("Web search: " + s.queries.slice(0, 3).map((q) => "“" + q + "”").join(", ") + ".");
+      out.push(s.found ? "Results: " + s.found + " source" + (s.found === 1 ? "" : "s") + " came back." : "Results: nothing useful came back.");
+      if (s.found) out.push(s.used ? "Used in the answer: yes." : "Used in the answer: no — it wrote from what it already knew.");
+    } else {
+      out.push("Web search: offered, but Google answered without searching.");
+    }
+    return out;
+  }
+  /** The small, quiet, expandable line under a reply. */
+  function aiStatus(m) {
+    const lines = statusLines(m);
+    if (!lines.length) return null;
+    const box = document.createElement("details");
+    box.className = "ai-status";
+    const s = m.search || {};
+    const tag = m.local ? "this phone" : (m.model || m.provider) + (s.queries?.length ? " · searched" : s.offered ? "" : " · no search");
+    const sum = document.createElement("summary");
+    sum.textContent = tag;
+    box.appendChild(sum);
+    const ul = document.createElement("ul");
+    for (const line of lines) ul.appendChild(el("li", "", line));
+    box.appendChild(ul);
+    return box;
+  }
+  // ---- end what answered ----
+
   async function ask(said, audio) {
     said = (said || "").trim();
     const files = attached;
@@ -2853,6 +2970,7 @@
     refreshSend();
     setOrb("thinking");
     setStatus("");
+    newTurnMeta();
     stage("Understanding your request…");
     note(audio ? "asked out loud" : "asked in words");
     const me = bubble("me", said || "🎙️ …");
@@ -2900,7 +3018,21 @@
       // app's screen; typed in Izuki, "explain this" is about the chat unless
       // they name the screen or page.
       const aboutScreen = wantsScreenHelp(said) && (!!turnCtx || document.hidden || /\b(?:screen|page|site|app)\b/i.test(said));
-      if (!files.length && aboutScreen && agentReady() && !PHONE_DO.test(said.trim())) {
+      // Which screen, if any: asked, never assumed (Settings → What Izuki can see).
+      const source = aboutScreen && !files.length ? await screenChoice(out) : "";
+      if (source === "pc") {
+        // Their PC's own Izuki reads that screen; this phone asks it and says so.
+        history.push({ role: "user", text: said });
+        stage("Asking your PC to look…");
+        out.textContent = "Asking your PC to look at its screen…";
+        reply = await viaPc("Look at your screen and answer this: " + said, out);
+        history.push({ role: "model", text: reply });
+        saveAll();
+        answered();
+        await speak(reply);
+        return;
+      }
+      if (!files.length && source === "phone" && agentReady() && !PHONE_DO.test(said.trim())) {
         // The screen assistant: what's on the phone's screen, explained.
         history.push({ role: "user", text: said });
         stage("Looking at your screen…");
@@ -2908,7 +3040,7 @@
         reply = await screenHelp(said, (t) => { if (!requestEnd) out.textContent = t || "…"; });
         if (requestEnd) throw new Error("stopped");
         out.remove();
-        bubble("izuki", reply);
+        bubble("izuki", reply, { meta: turnMeta });
         history.push({ role: "model", text: reply });
         saveAll();
         answered();
@@ -3028,7 +3160,7 @@
         reply = shown(reply);
         if (!reply) note("empty reply");
         out.remove();
-        bubble("izuki", reply || "Hmm, I lost my words there — try again?", { chips });
+        bubble("izuki", reply || "Hmm, I lost my words there — try again?", { chips, meta: turnMeta });
       }
       history.push({ role: "model", text: reply });
       saveAll();
@@ -3180,7 +3312,108 @@
       speechSynthesis.speak(u);
     }
   }
-  let voiceRestUntil = store.get("voiceRestUntil", 0);
+  // ---- natural voice health (tested by tools/phone-check/voicefail.test.cjs) ----
+  // A refused natural voice used to go silent for hours whatever went wrong: a
+  // key with no speech access, a busy minute and a lost signal all became one
+  // long, invisible silence. Each reason now rests for its own while, a key
+  // that is refused is never retried behind the person's back, and the phone's
+  // voice takes over out loud with a Retry beside it.
+  const VOICE_SAYS = "Natural voice unavailable. Using your phone's voice.";
+  const VOICE_SLOW = "Natural voice is slow right now. Using your phone's voice.";
+  const voiceTag = () => String(key || "").slice(-6);
+  let voiceRest = store.get("voiceRest", null);
+  let voiceTold = "";
+  /** The rest that still applies. A different key (or Retry) starts fresh. */
+  function voiceResting() {
+    if (!voiceRest || typeof voiceRest !== "object" || !voiceRest.kind) return null;
+    if (voiceRest.tag !== voiceTag()) { voiceRest = null; store.set("voiceRest", null); return null; }
+    // A refused key stays refused until the key changes (or they tap Retry):
+    // asking again every few minutes only burns the allowance.
+    if (voiceRest.kind === "auth") return voiceRest;
+    return Date.now() < voiceRest.until ? voiceRest : null;
+  }
+  /** How long each kind rests, in ms. 0 means "until something changes". */
+  const VOICE_REST = { auth: 0, rate: 300000, server: 60000, network: 20000, unsupported: 1800000, slow: 30000 };
+  /** Retry-After: seconds, or a date. */
+  function retryAfterMs(res) {
+    let raw = "";
+    try { raw = String(res?.headers?.get?.("retry-after") || "").trim(); } catch {}
+    if (!raw) return 0;
+    if (/^\d+$/.test(raw)) return Number(raw) * 1000;
+    const at = Date.parse(raw);
+    return Number.isFinite(at) ? Math.max(0, at - Date.now()) : 0;
+  }
+  /** What a status code means for the natural voice. */
+  function voiceKind(status) {
+    if (status === 401 || status === 403) return "auth";
+    if (status === 429) return "rate";
+    if (status >= 500) return "server";
+    return "unsupported";
+  }
+  const VOICE_WHY = {
+    auth: "check the key in Settings",
+    rate: "rate limit",
+    server: "Google's voice is busy",
+    network: "needs a connection",
+    unsupported: "not open to this key",
+    slow: "too slow",
+  };
+  const voiceWhy = (rest) => VOICE_WHY[rest?.kind] || "not available";
+  /** Remember why, for exactly as long as that reason deserves. */
+  function voiceFail(kind, res, why) {
+    const base = VOICE_REST[kind] ?? 60000;
+    const wait = kind === "auth" ? 0 : Math.min(3600000, Math.max(10000, retryAfterMs(res) || base));
+    voiceRest = { kind, status: Number(res?.status) || 0, until: Date.now() + wait, tag: voiceTag(), why: String(why || "").slice(0, 100) };
+    store.set("voiceRest", voiceRest);
+    note("natural voice resting: " + kind + (wait ? " for " + Math.round(wait / 1000) + " s" : " until the key changes"));
+    return voiceRest;
+  }
+  /** Say it once, where the person is looking, with a Retry beside it. */
+  function voiceNoticeRow(text) {
+    const rest = voiceResting();
+    const row = el("div", "chip-row voice-notice");
+    const says = el("span", "voice-note", text || VOICE_SAYS);
+    if (rest) says.title = voiceWhy(rest);
+    const retry = el("button", "chip primary", "Retry");
+    retry.type = "button";
+    retry.onclick = () => { void voiceRetry(retry); };
+    row.append(says, el("span", "voice-why", text ? "slow" : voiceWhy(rest)), retry);
+    return row;
+  }
+  function voiceNotice(text) {
+    const rest = voiceResting();
+    const words = text || VOICE_SAYS;
+    if (words === VOICE_SAYS && !rest) return;
+    const stamp = words === VOICE_SAYS ? rest.kind + ":" + rest.until : words;
+    if (voiceTold === stamp) return;
+    voiceTold = stamp;
+    const last = [...log.querySelectorAll(".msg.izuki")].pop();
+    (last || log).appendChild(voiceNoticeRow(text));
+    $("live-audio-recovery")?.appendChild(voiceNoticeRow(text));
+    log.scrollTop = log.scrollHeight;
+  }
+  /** The Retry button: forget the rest and really ask again. */
+  async function voiceRetry(button) {
+    voiceRest = null;
+    voiceTold = "";
+    store.set("voiceRest", null);
+    document.querySelectorAll(".voice-notice").forEach((n) => n.remove());
+    if (!key) { setStatus("Add a free Gemini key in Settings to use the natural voice."); return; }
+    const words = lastSpoken || pendingVoice?.words || "";
+    if (!words) { setStatus("Natural voice is on again."); return; }
+    if (button) { button.disabled = true; button.textContent = "Trying…"; }
+    hush();
+    const url = await geminiVoice(words, 12000);
+    if (!url) {
+      voiceTold = "";
+      voiceNotice();
+      setStatus("Natural voice still isn't answering. Check the key in Settings.");
+      return;
+    }
+    setStatus("");
+    try { await playAudio(url, words, () => offerHear(url, words)); } finally { URL.revokeObjectURL(url); }
+  }
+  // ---- end natural voice health ----
 
   /** Raw 16-bit PCM (what Gemini's voice returns) → a playable WAV. */
   function pcmToWavUrl(b64, rate) {
@@ -3201,18 +3434,28 @@
   const TTS_MODELS = ["gemini-2.5-flash-preview-tts", "gemini-3.1-flash-tts-preview", "gemini-3.8-flash-tts"];
   let ttsModel = store.get("ttsModel", "");
   async function geminiVoice(t, budgetMs = 8000) {
-    if (!key || Date.now() < voiceRestUntil) return null;
+    if (!key || voiceResting()) return null;
     // One budget for every model tried: three models at 12 s each meant the
     // first line of a reply could sit silent for half a minute.
     const deadline = Date.now() + budgetMs;
+    let busy = 0, gone = 0;
     for (const m of ttsModel ? [ttsModel] : TTS_MODELS) {
       const left = deadline - Date.now();
-      if (left < 1200) break;
+      if (left < 1200 || voiceResting()) break;
       const url = await geminiVoiceWith(m, t, left);
-      if (url === "gone") { if (ttsModel) { ttsModel = ""; store.set("ttsModel", ""); return geminiVoice(t, Math.max(1200, deadline - Date.now())); } continue; }
+      // Retired or not open to this key: the saved model was the wrong one.
+      if (url === "gone") {
+        gone++;
+        if (ttsModel) { ttsModel = ""; store.set("ttsModel", ""); return geminiVoice(t, Math.max(1200, deadline - Date.now())); }
+        continue;
+      }
+      // This model's own small allowance ran out: the next one has its own.
+      if (url === "busy") { busy++; continue; }
       if (url && !ttsModel) { ttsModel = m; store.set("ttsModel", m); }
       return url;
     }
+    // Nothing left to try: remember whether the allowance or the models were the wall.
+    if (!voiceResting() && (busy || gone)) voiceFail(busy ? "rate" : "unsupported");
     return null;
   }
   async function geminiVoiceWith(model, t, budgetMs = 12000) {
@@ -3229,17 +3472,18 @@
           generationConfig: { responseModalities: ["AUDIO"], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: person().voice } } } },
         }),
       });
-      // Retired, or this model's small daily allowance is used up: the next one.
-      if (r.status === 404 || r.status === 429) return "gone";
-      if (r.status === 400) {
-        const why = await r.text();
-        if (/no longer available|not found|not supported/i.test(why)) return "gone";
-      }
+      // Retired (404): the next speech model may still be open to this key.
+      if (r.status === 404) return "gone";
+      // A 429 here is this model's own allowance; the loop tries the others.
+      if (r.status === 429) { note(model + ": voice allowance used up"); return "busy"; }
       if (!r.ok) {
-        // Not on this key's free plan, or used up for now: the phone's voice
-        // for a while instead of asking every time.
-        voiceRestUntil = Date.now() + (r.status === 429 ? 3600000 : 6 * 3600000);
-        store.set("voiceRestUntil", voiceRestUntil);
+        let why = "";
+        try { why = (await r.text()).slice(0, 400); } catch {}
+        if (r.status === 400 && /no longer available|not found|not supported/i.test(why)) return "gone";
+        // A key that may not speak, words this model refuses, or a service
+        // that is briefly down: each rests for its own while (Retry-After
+        // included), and the phone's voice answers meanwhile.
+        voiceFail(voiceKind(r.status), r, why);
         return null;
       }
       const v = await r.json();
@@ -3498,11 +3742,45 @@
    * whole recording. Never more than two voice requests a reply (free keys
    * have small allowances). The call's caption follows the voice.
    */
+  // ---- when the voice starts (tested by tools/phone-check/speechseg.test.cjs) ----
+  // Words that dangle if the voice stops right after them ("…and", "…the").
+  const CLING = new Set("a an the and or but nor so yet of to in on at by for from with without into onto over under about as than that this these those is are was were be been being am do does did has have had will would can could should may might must not no if then when while very just also too my your his her its our their me you him them us i we they he she it there here what which who whom whose".split(" "));
+  /**
+   * The earliest place a natural voice can safely start: the first complete
+   * sentence, else a clause break, else about eight words ending on a word
+   * that doesn't cling to the next. "" until there is enough to say, so a
+   * half-written word is never spoken.
+   */
+  function firstBreath(text) {
+    const s = String(text || "").replace(/\s+/g, " ").trim();
+    if (!s) return "";
+    // A whole sentence is the nicest first breath — unless it is a long one.
+    const sentence = s.match(/^[^.!?…]{2,}?[.!?…]+(?=\s)/);
+    if (sentence && sentence[0].split(" ").length <= 14) return sentence[0].trim();
+    // A clause that already has a few words in it.
+    const clause = s.match(/^[^.!?…,;:—–]{1,}[,;:—–](?=\s)/);
+    if (clause && clause[0].split(" ").length >= 6) return clause[0].trim();
+    // Eight words, but only once a ninth has begun: nothing is guessed and
+    // nothing is cut inside a word.
+    const words = s.split(" ");
+    if (words.length >= 9) {
+      let n = 8;
+      while (n > 5 && CLING.has(words[n - 1].toLowerCase().replace(/[^a-z']/g, ""))) n--;
+      if (n >= 6) return words.slice(0, n).join(" ");
+    }
+    return "";
+  }
+  // ---- end when the voice starts ----
+
   function voiceStream(opts = {}) {
     clearVoiceRecovery();
     const my = ++speakSeq;
     const pieces = [];
     let first = "", closed = false, cancelled = false, ended = false, kick = null, playing = null;
+    // Time to first audio, measured rather than assumed: eight words only help
+    // if the voice really starts sooner.
+    const startedAt = performance.now();
+    let spokeAt = 0;
     const alive = () => my === speakSeq && !cancelled;
     const wake = () => { const k = kick; kick = null; k?.(); };
     // Over another app (a voice turn, or Izuki in the background) the natural
@@ -3543,7 +3821,11 @@
             url = null;
             p.url.then((u) => u && URL.revokeObjectURL(u));
             // Consistently slow (two lines running): stop paying the wait.
-            if (++late >= 2) plain = true;
+            if (++late >= 2) {
+              plain = true;
+              // Not silent about it either: a person should know why the voice changed.
+              voiceNotice(VOICE_SLOW);
+            }
             note("natural voice was slow: the phone's voice");
           }
         } else url = await p.url;
@@ -3553,6 +3835,10 @@
         // Opened by Siri and not touched yet: an iPhone won't let a web page
         // make a sound before a tap — the answer's voice is one tap away.
         if (!url && opts.siri && !tapped) { offerHear(null, rest()); break; }
+        if (!spokeAt) {
+          spokeAt = performance.now();
+          note("first audio after " + Math.round(spokeAt - startedAt) + " ms, " + p.words.split(" ").length + " words");
+        }
         // The character's mouth and hands follow these words.
         window.IzukiOrb?.say?.(p.words);
         let blocked = false;
@@ -3579,14 +3865,24 @@
       /** The reply so far, while it's written: the first full sentence starts the voice. */
       feed(text) {
         if (closed || first || !alive()) return;
-        const m = text.match(/^[\s\S]{15,}?[.!?…](?=\s)/);
-        if (m && text.slice(m[0].length).trim().length >= 6) { first = m[0].trim(); push(first); }
+        // The earliest natural piece, not the first full sentence: a short
+        // opening starts talking sooner and still sounds whole.
+        const piece = firstBreath(text);
+        if (piece && text.trim().length > piece.length + 1) { first = piece; push(piece); }
       },
       /** The whole reply: say whatever hasn't been said, and wait till it's done. */
       async end(text) {
         if (!closed) {
           let rest = text;
-          if (first) { const at = text.indexOf(first); rest = at >= 0 ? text.slice(at + first.length) : ""; }
+          if (first) {
+            const at = text.indexOf(first);
+            if (at >= 0) rest = text.slice(at + first.length);
+            else {
+              // The same words, but the model wrapped a line: skip by word
+              // count so the rest is still said, in order, exactly once.
+              rest = text.trim().split(/\s+/).slice(first.split(" ").length).join(" ");
+            }
+          }
           closed = true;
           push(rest);
         }
@@ -4790,6 +5086,74 @@
   }
 
   /**
+   * Which screen this question is about — asked, never assumed. Over another
+   * app the orb is already on that screen, so it is the phone's own; otherwise
+   * the setting decides, and the very first look is asked for out loud.
+   */
+  let screenSource = store.get("screenSource", "phone");
+  async function screenChoice(out) {
+    let source = screenSource;
+    if (turnCtx || document.hidden) source = "phone";
+    if (source === "ask") source = await askChips(out, "Which screen is it?", [["📱 This phone", "phone"], ["💻 My PC", "pc"], ["Neither", "off"]]);
+    if (!source || source === "off") return "";
+    if (source === "pc") return pc ? "pc" : "";
+    if (!agentReady()) return "";       // an iPhone or the web: no screen to read
+    if (store.get("screenOk", false) === true) return "phone";
+    const allowed = await askChips(out, "Izuki can read the text on this screen to answer. Allow it?", [["Allow", "yes"], ["Not now", "no"]]);
+    if (allowed !== "yes") { note("screen look refused"); return ""; }
+    store.set("screenOk", true);
+    return "phone";
+  }
+  /** Ask with buttons inside the working bubble. "" if unanswered or stopped. */
+  function askChips(out, question, choices) {
+    return new Promise((resolve) => {
+      const row = el("div", "chip-row");
+      const done = (value) => {
+        if (!active) return;
+        active = false;
+        clearTimeout(timer);
+        requestAbort?.signal.removeEventListener("abort", stop);
+        row.remove();
+        resolve(value);
+      };
+      const stop = () => done("");
+      let active = true;
+      const timer = setTimeout(stop, 45000);
+      requestAbort?.signal.addEventListener("abort", stop, { once: true });
+      row.appendChild(el("span", "", question));
+      for (const [label, value] of choices) {
+        const b = el("button", "chip", label);
+        b.type = "button";
+        b.onclick = () => done(value);
+        row.appendChild(b);
+      }
+      out.appendChild(row);
+      log.scrollTop = log.scrollHeight;
+    });
+  }
+  /** Settings → What Izuki can see: which screen, and a real permission first. */
+  function loadScreenPanel() {
+    const pick = $("screen-source"), info = $("screen-source-note");
+    if (!pick || !info) return;
+    pick.value = screenSource;
+    const say = () => {
+      const allowed = store.get("screenOk", false) === true;
+      info.textContent = !allowed
+        ? "Izuki asks once before it reads any screen."
+        : screenSource === "off" ? "Izuki answers from what you tell it, without looking at a screen."
+        : screenSource === "pc" ? "Screen questions go to your PC, which answers about its own screen." + (pc ? "" : " Link your PC above first.")
+        : screenSource === "ask" ? "Izuki asks which screen each time you say “this”."
+        : "Izuki reads this phone's screen only when you ask about it.";
+    };
+    say();
+    pick.onchange = () => {
+      screenSource = pick.value;
+      store.set("screenSource", screenSource);
+      say();
+    };
+  }
+
+  /**
    * The browser's own voices, the most natural first. This is the list an
    * iPhone speaks with — its Premium and Enhanced downloads appear here — and
    * Android's WebView list is empty, so the native bridge is asked first.
@@ -4842,6 +5206,49 @@
         else await speakWithPhone(line, () => { info.textContent = "The phone would not play the sample. Check media volume, then tap again."; });
       } finally { hear.disabled = false; }
     };
+
+    // Compare both voices on the same sentence, one at a time: a tap while
+    // something plays cuts it off first, so they never overlap.
+    const SAMPLE = "Hi, I'm " + person().name + ". This is how I'll sound when I answer you — clear, quick, and close by.";
+    const naturalBtn = $("voice-sample-natural"), phoneBtn = $("voice-sample-phone");
+    const compare = $("voice-compare-note"), avail = $("voice-avail-natural");
+    const rest = voiceResting();
+    if (avail) avail.textContent = rest
+      ? "Natural voice is unavailable (" + voiceWhy(rest) + ")."
+      : key ? "Natural voice is ready." : "Natural voice needs a free Gemini key.";
+    let sampling = false;
+    const sample = async (which, button) => {
+      if (sampling || manualPlayback) return;
+      sampling = true;
+      const label = button.textContent;
+      button.disabled = true;
+      button.textContent = "Playing…";
+      hush();
+      unlockAudio();
+      try {
+        if (which === "phone") {
+          await speakWithPhone(SAMPLE, () => {
+            if (compare) compare.textContent = "The phone would not play the sample. Check media volume, then tap again.";
+          });
+        } else {
+          const url = await geminiVoice(SAMPLE, 12000);
+          if (!url) {
+            const why = voiceResting();
+            if (compare) compare.textContent = "Natural voice is unavailable" + (why ? " (" + voiceWhy(why) + ")" : "") + ". The phone's voice still works.";
+            voiceNotice();
+            return;
+          }
+          await playAudio(url, SAMPLE, () => offerHear(url, SAMPLE));
+          URL.revokeObjectURL(url);
+        }
+      } finally {
+        button.disabled = false;
+        button.textContent = label;
+        sampling = false;
+      }
+    };
+    if (naturalBtn) naturalBtn.onclick = () => void sample("natural", naturalBtn);
+    if (phoneBtn) phoneBtn.onclick = () => void sample("phone", phoneBtn);
   }
   // The picked phone voice from the start, not only after Settings was opened.
   if (store.get("phoneVoice", "")) window.IzukiNative?.setVoice?.(store.get("phoneVoice", ""));
@@ -4998,6 +5405,7 @@
       $("native-update").hidden = true;
       removeUpdateBanner();
     }
+    void loadScreenPanel();
     $("bug-result").textContent = "";
     if (window.izukiApps?.configured()) showApps();
     sheet.hidden = false;
