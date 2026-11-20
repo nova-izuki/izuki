@@ -129,6 +129,8 @@
       try { return !!(await control().glow({ state: String(state || ""), lease: Math.round(Number(lease) || 30000) }))?.shown; } catch { return false; }
     },
     /** The hearing language for native listening and the voice turn ("" = the phone's). */
+    /** One colour for the orb that floats over other apps (Android draws it natively). */
+    setOrbTint(hex) { try { void control()?.orbTint?.({ color: String(hex || "") }); } catch {} },
     setHearing(lang) { try { void control()?.voicePrefs?.({ lang: String(lang || "") }); } catch {} },
     /** Android's own voice (TextToSpeech) is here: replies are never silent in the app. */
     canSpeak: () => platform() === "android" && !!control()?.say,

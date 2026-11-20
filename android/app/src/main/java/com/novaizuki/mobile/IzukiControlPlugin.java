@@ -273,6 +273,16 @@ public class IzukiControlPlugin extends Plugin {
     call.resolve(result);
   }
 
+  /**
+   * One colour for the orb, everywhere — including the orb that floats over
+   * other apps, which Android draws itself. "" puts Izuki's own palettes back.
+   */
+  @PluginMethod
+  public void orbTint(PluginCall call) {
+    IzukiAccessibilityService.orbTint(call.getString("color", ""));
+    call.resolve();
+  }
+
   private final android.os.Handler later = new android.os.Handler(android.os.Looper.getMainLooper());
 
   /**
