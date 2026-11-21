@@ -49,7 +49,7 @@ for (const url of pageUrls) {
     if (/^(?:https?:)?\/\//i.test(ref)) {
       const u = new URL(ref, url);
       if (u.origin !== SITE) continue;
-      target = path.join(docs, decodeURI(u.pathname));
+      target = path.join(docs, ...u.pathname.split("/").map((part) => decodeURIComponent(part)));
     } else target = ref.startsWith("/") ? path.join(docs, ref) : path.resolve(path.dirname(file), ref);
     const exists = fs.existsSync(target) && (!fs.statSync(target).isDirectory() || fs.existsSync(path.join(target, "index.html")));
     if (!exists) bad(`${where}: broken local link ${ref}`);
