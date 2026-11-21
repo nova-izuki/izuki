@@ -907,7 +907,8 @@ public class IzukiAccessibilityService extends AccessibilityService {
     dot.setState(state);
     // Listening, working and talking: the orb grows a little, like a phone
     // assistant's; resting, it settles back.
-    float size = "rest".equals(state) ? 1f : 1.14f;
+    // A drive line is a reading, not a performance: it sits with the orb calm.
+    float size = ("rest".equals(state) || "trip".equals(state)) ? 1f : 1.14f;
     dot.animate().scaleX(size).scaleY(size).setDuration(220).start();
     String shown = words != null && !words.isEmpty() ? words
       : "listen".equals(state) ? "Listening…" : "think".equals(state) ? "Working…" : "";
@@ -915,6 +916,7 @@ public class IzukiAccessibilityService extends AccessibilityService {
     caption.setVisibility(shown.isEmpty() ? View.GONE : View.VISIBLE);
     ui.removeCallbacks(captionOff);
     // A resting orb's words are a hint, not a status: they fade after a moment.
+    // A drive line ("trip") stays until the page changes it or its lease ends.
     if ("rest".equals(state) && !shown.isEmpty()) ui.postDelayed(captionOff, 6000);
   }
 
@@ -1336,7 +1338,7 @@ public class IzukiAccessibilityService extends AccessibilityService {
      * holds still with no redraw loop.
      */
     private final Runnable holdStill = () -> {
-      if ("rest".equals(state) && clock.isRunning() && !clock.isPaused()) clock.pause();
+      if (("rest".equals(state) || "trip".equals(state)) && clock.isRunning() && !clock.isPaused()) clock.pause();
     };
 
     void setState(String s) {
@@ -1344,7 +1346,7 @@ public class IzukiAccessibilityService extends AccessibilityService {
       removeCallbacks(holdStill);
       if (clock.isPaused()) clock.resume();
       else if (!clock.isStarted()) clock.start();
-      if ("rest".equals(s)) postDelayed(holdStill, 4000);
+      if ("rest".equals(s) || "trip".equals(s)) postDelayed(holdStill, 4000);
       invalidate();
     }
     void stop() { removeCallbacks(holdStill); clock.cancel(); }
