@@ -10,6 +10,13 @@
 //
 // On its own, it speaks up when it matters: a long stretch at the wheel, a
 // low battery, and (if you set one) a speed you asked to be warned above.
+//
+// Once it knows where you're going it rides along, like a car's own co-pilot:
+// it measures the trip itself from location fixes — distance covered, time at
+// the wheel — and speaks at real moments (a check-in on a long leg, a word in
+// a crawl, a nudge when a long stop looks like arrival). It never claims to
+// know your route or your ETA. Maps owns those; a guess would be worse than
+// silence.
 // Fun mode makes it a cheeky road-trip buddy — jokes, roasts, trivia, games.
 (() => {
   const $ = (id) => document.getElementById(id);
@@ -24,6 +31,8 @@
 
   let active = false, fun = store.get("fun", false), started = 0, watch = null, lock = null, timer = null;
   let speed = null, last = null, overSince = 0, warnedAt = 0, breakAt = 0, batteryTold = false, battery = null, awaiting = null;
+  let trip = null, rideAlong = store.get("ride", true), crawlSince = 0, stoppedSince = 0;
+  const rideSaid = {};   // one companion line per trip per moment
 
   // ------------------------------------------------------------ the screen
   const css = `
@@ -45,6 +54,9 @@
   .drive-grid button:active { transform: scale(0.97); background: rgba(255,255,255,0.16); }
   .drive-grid button[aria-pressed="true"] { background: linear-gradient(135deg, rgba(255,92,170,0.75), rgba(124,92,255,0.75)); }
   .drive-alert { border-radius: 16px; padding: 10px 14px; background: rgba(255,170,60,0.16); color: #ffd28a; font-size: 15px; }
+  .drive-trip { display: none; align-items: baseline; gap: 6px; font-size: 15px; opacity: 0.85; font-variant-numeric: tabular-nums; }
+  .drive-trip.on { display: flex; }
+  .drive-trip b { font-weight: 700; }
   `;
 
   function build() {
@@ -61,6 +73,7 @@
         <div class="drive-side"><div id="drive-clock"></div><div id="drive-battery"></div><div id="drive-for"></div></div>
       </div>
       <div class="drive-alert" id="drive-alert" hidden></div>
+      <div class="drive-trip" id="drive-trip"></div>
       <div class="drive-said" id="drive-said" aria-live="polite">Where to? Say “take me to…” — or just talk.</div>
       <div class="drive-grid">
         <button type="button" id="drive-nav"><span>🧭</span>Navigate</button>
@@ -92,12 +105,48 @@
     const mins = Math.floor((Date.now() - started) / 60000);
     show("drive-for", mins < 1 ? "Just set off" : mins < 60 ? `${mins} min driving` : `${Math.floor(mins / 60)} h ${mins % 60} min driving`);
     $("drive-fun")?.setAttribute("aria-pressed", String(fun));
+    const tr = $("drive-trip");
+    if (tr) {
+      const line = trip ? tripLine() : "";
+      tr.textContent = line;
+      tr.classList.toggle("on", Boolean(line));
+    }
   }
   function alertLine(t) {
     const a = $("drive-alert");
     if (!a) return;
     a.textContent = t;
     a.hidden = !t;
+  }
+
+  // ------------------------------------------------------------ the trip
+  // What Izuki can honestly know about a drive it didn't plan: the place you
+  // named, how far the phone has travelled since you set off, and how long
+  // you've been at it. Maps owns the route, the turns and the arrival time.
+  function metresBetween(a, b) {
+    const R = 6371000, toRad = (x) => (x * Math.PI) / 180;
+    const dLat = toRad(b.lat - a.lat), dLon = toRad(b.lon - a.lon);
+    const h = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLon / 2) ** 2;
+    return 2 * R * Math.asin(Math.sqrt(h));
+  }
+  /** How far you've come, in the units you think in. */
+  function far() {
+    const m = trip ? trip.metres : 0;
+    if (metric) return m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(1)} km`;
+    return `${(m / 1609.34).toFixed(1)} mi`;
+  }
+  const tripMins = () => (trip ? Math.max(0, Math.round((Date.now() - trip.at) / 60000)) : 0);
+  function tripLine() {
+    if (!trip) return "";
+    const mins = tripMins();
+    return `To ${trip.place} · ${far()} · ${mins < 1 ? "just set off" : `${mins} min`}`;
+  }
+  function beginTrip(place) {
+    // The last fix becomes the starting anchor, so the first stretch counts.
+    trip = { place, at: Date.now(), metres: 0, anchor: last ? { lat: last.lat, lon: last.lon, t: last.t } : null };
+    crawlSince = 0;
+    stoppedSince = 0;
+    for (const k of Object.keys(rideSaid)) delete rideSaid[k];
   }
 
   // ------------------------------------------------------------ speaking
@@ -129,22 +178,26 @@
     if (!w) location.assign(url);
   }
   const enc = encodeURIComponent;
-  const navigateTo = (place) => ({
-    say: `Taking you to ${place} — Google Maps has the turns. I'm still here if you need me.`,
-    then: () => {
-      const web = `https://www.google.com/maps/dir/?api=1&destination=${enc(place)}&travelmode=driving&dir_action=navigate`;
-      const native = window.IzukiNative;
-      // Android opens Maps' own turn-by-turn screen directly. If that bridge is
-      // missing, the web directions still work.
-      if (native?.installed?.() && native.navigate) {
-        // navigate() opens turn-by-turn and raises the orb itself. If Android
-        // only had a place search, keep the trip going with web directions.
-        void native.navigate(place).then((r) => { if (!r || r.navigation === false) open(web); }).catch(() => open(web));
-        return;
-      }
-      open(web);
-    },
-  });
+
+  const navigateTo = (place) => {
+    if (active) beginTrip(place);
+    return {
+      say: `Taking you to ${place} — Google Maps has the turns. I'll ride along.`,
+      then: () => {
+        const web = `https://www.google.com/maps/dir/?api=1&destination=${enc(place)}&travelmode=driving&dir_action=navigate`;
+        const native = window.IzukiNative;
+        // Android opens Maps' own turn-by-turn screen directly. If that bridge is
+        // missing, the web directions still work.
+        if (native?.installed?.() && native.navigate) {
+          // navigate() opens turn-by-turn and raises the orb itself. If Android
+          // only had a place search, keep the trip going with web directions.
+          void native.navigate(place).then((r) => { if (!r || r.navigation === false) open(web); }).catch(() => open(web));
+          return;
+        }
+        open(web);
+      },
+    };
+  };
   const nearby = (what) => ({
     say: `Here's ${/s$/.test(what) ? "" : "the nearest "}${what} near you in Google Maps.`.replace("the nearest food", "food"),
     then: () => open(`https://www.google.com/maps/search/?api=1&query=${enc(what + " near me")}`),
@@ -183,7 +236,11 @@
     if (!said) return null;
     if (START.test(said)) { start(); return { say: "Drive mode's on. Where to? Or just talk — I'll keep it short." }; }
     if (!active) return null;
-    if (STOP.test(said)) { stop(false); return { say: "Drive mode off. Nice driving." }; }
+    if (STOP.test(said)) {
+      const done = trip ? `Drive mode off — ${far()} covered. Nice driving.` : "Drive mode off. Nice driving.";
+      stop(false);
+      return { say: done };
+    }
     if (awaiting === "destination") {
       awaiting = null;
       if (!/^(?:never ?mind|cancel|nowhere|no)$/i.test(said)) return navigateTo(said.replace(/^(?:to|go to|take me to)\s+/i, ""));
@@ -209,6 +266,14 @@
     if (/^(?:how fast am i going|what'?s my speed|my speed|speed)$/i.test(said)) {
       return { say: speed === null ? "I can't tell your speed yet — I need your location to see it." : `You're doing ${Math.round(speed * perMs)} ${metric ? "kilometres an hour" : "miles an hour"}.` };
     }
+    // The drive itself: answered with what the phone really measured.
+    if (/^(?:how'?s|how is) (?:the )?(?:drive|ride|trip)(?: going)?$|^how far (?:have we|have i)(?: gone| come| driven)$|^how long have (?:we|i) been driving$/i.test(said)) {
+      if (!trip) return { say: "No destination yet — say “take me to…” and I'll ride along." };
+      return { say: `${trip.place}: ${far()} covered in ${tripMins()} minutes. Maps has the turns and the arrival time — I've got the company.` };
+    }
+    if (/^where (?:are we|am i) going$|^what'?s the destination$/i.test(said)) {
+      return { say: trip ? `${trip.place}.` : "Nothing yet — say “take me to…” and I'll take you." };
+    }
     if (/^(?:text|message|tell)\b/i.test(said) && (m = said.match(/\b(?:i'?m|im|i am)\s+(on my way|running (?:a bit )?late|almost there|close|nearly there|\d+\s*(?:min(?:ute)?s?)\s*away)\b/i))) {
       return text(`I'm ${m[1]}`);
     }
@@ -220,7 +285,7 @@
   /** What the brain is told while you drive. */
   function system() {
     if (!active) return "";
-    const base = "The user is DRIVING right now. Answer in one or two short spoken sentences. Never ask them to look at the screen, read, type or tap; never suggest anything that takes their eyes off the road. For directions, places, music or texts, Izuki opens Google Maps, the music app or Messages itself — so if they want one, tell them to say \"take me to…\", \"find … near me\", \"play …\" or \"text that I'm on my way\".";
+    const base = "The user is DRIVING right now. Answer in one or two short spoken sentences. Never ask them to look at the screen, read, type or tap; never suggest anything that takes their eyes off the road. Izuki does not know their route, remaining distance or ETA — never invent them; if asked, say it only knows how far you've come and how long you've been driving. For directions, places, music or texts, Izuki opens Google Maps, the music app or Messages itself — so if they want one, tell them to say \"take me to…\", \"find … near me\", \"play …\" or \"text that I'm on my way\".";
     const party = "FUN MODE is on: you're their road-trip co-pilot — playful, cheeky and bold. Quick jokes, playful roasts, hot takes, trivia, would-you-rather and road-trip games when they're up for it. Banter like a close friend in the passenger seat; nothing hateful, and nothing that pulls their attention from driving.";
     return fun ? base + "\n" + party : base;
   }
@@ -238,6 +303,19 @@
       if (dt > 0.5 && dt < 30) v = d / dt;
     }
     last = { lat: c.latitude, lon: c.longitude, t: p.timestamp };
+    if (trip) {
+      if (!trip.anchor) trip.anchor = { lat: c.latitude, lon: c.longitude, t: p.timestamp };
+      else {
+        const step = metresBetween(trip.anchor, { lat: c.latitude, lon: c.longitude });
+        const gap = (p.timestamp - trip.anchor.t) / 1000;
+        // A few metres is jitter while you sit at a light. A jump after a long
+        // gap is a lost fix, not travel — re-anchor instead of inventing km.
+        if (step >= 4) {
+          if (!(step > 70 && gap > 60)) trip.metres += step;
+          trip.anchor = { lat: c.latitude, lon: c.longitude, t: p.timestamp };
+        }
+      }
+    }
     // Ignore GPS jitter when stopped.
     speed = v === null ? speed : v < 0.8 ? 0 : v;
     paint();
@@ -260,6 +338,29 @@
       say(`Heads up — your phone's at ${Math.round(battery.level * 100)} percent. Plug it in if you can.`);
     }
     if (battery && battery.charging) { batteryTold = false; alertLine(""); }
+
+    // Riding along: only with a destination, only at moments the phone can
+    // actually see, and once each. Quiet is the default in between.
+    if (trip && rideAlong) {
+      const mins = tripMins();
+      const rolling = speed !== null && speed * perMs >= 1;
+      const mark = mins >= 45 ? Math.floor(mins / 30) * 30 : mins >= 15 ? 15 : 0;
+      if (mark && !rideSaid["m" + mark] && trip.metres >= 300) {
+        rideSaid["m" + mark] = true;
+        say(`${mark} minutes into the drive to ${trip.place} — ${far()} covered. Maps still has the turns.`);
+      }
+      if (rolling && speed * perMs < 6) { if (!crawlSince) crawlSince = now; } else crawlSince = 0;
+      if (crawlSince && now - crawlSince > 90_000 && !rideSaid.crawl) {
+        rideSaid.crawl = true;
+        say("Looks like we're crawling. No rush — I'll stay quiet and keep an eye out.");
+      }
+      const halted = speed !== null && speed * perMs < 1;
+      if (halted && trip.metres >= 500) { if (!stoppedSince) stoppedSince = now; } else stoppedSince = 0;
+      if (stoppedSince && now - stoppedSince > 180_000 && !rideSaid.arrive) {
+        rideSaid.arrive = true;
+        say(`We've been stopped a few minutes — is this ${trip.place}? Say “we're here” and I'll end Drive mode.`);
+      }
+    }
     // Your own speed warning (off unless set), after 8 seconds over it.
     const limit = Number(store.get("warnAbove", 0));
     const over = limit > 0 && speed !== null && speed * perMs > limit;
@@ -308,6 +409,10 @@
     lock = null;
     speed = null;
     alertLine("");
+    trip = null;
+    crawlSince = 0;
+    stoppedSince = 0;
+    for (const k of Object.keys(rideSaid)) delete rideSaid[k];
     if (!fromEnd) { /* the call carries on — only drive mode ends */ }
   }
 
@@ -393,6 +498,15 @@
     autoOffer(on) { store.set("autoOff", !on); if (on) watchForDriving(); },
     get autoOfferOn() { return !store.get("autoOff", false); },
     get fun() { return fun; },
+    /** Location fixes arrive here while Drive mode watches them. */
+    track: onPosition,
+    /** The trip being ridden along: destination, distance covered, minutes. */
+    get trip() { return trip; },
+    /** One of the 5 s checks (the timer calls this; tests do too). */
+    tick: check,
+    /** Talk on the way: check-ins, a word in traffic, an arrival nudge. */
+    rideAlong(on) { rideAlong = Boolean(on); store.set("ride", rideAlong); paint(); return rideAlong; },
+    get rideAlongOn() { return rideAlong; },
     /** Warn above this speed in the local unit (0 = never). */
     warnAbove(v) { store.set("warnAbove", Math.max(0, Number(v) || 0)); },
     unit,
@@ -401,6 +515,11 @@
     const b = $("go-drive");
     if (b) b.onclick = () => { start(); say("Drive mode's on. Where to?"); };
     const w = $("drive-warn");
+    const r = $("drive-ride");
+    if (r) {
+      r.checked = rideAlong;
+      r.onchange = () => { rideAlong = r.checked; store.set("ride", rideAlong); };
+    }
     if (w) {
       w.value = String(store.get("warnAbove", 0) || "");
       w.placeholder = `Off (${unit})`;
