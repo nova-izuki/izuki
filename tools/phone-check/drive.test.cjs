@@ -15,6 +15,8 @@ global.location = { assign() {} };
 // The map services, stubbed: this checks what Izuki says with and without a
 // real answer, not the network.
 let mode = 'ok';
+// Route answers held back by hand, to test two destinations racing.
+let slowRoutes = null;
 const asked = [];
 global.fetch = async (url) => {
   const u = String(url);
@@ -23,9 +25,14 @@ global.fetch = async (url) => {
   if (/photon\.komoot\.io|geocoding-api\.open-meteo\.com/.test(u)) {
     if (mode === 'noplace') return { ok: true, json: async () => ({ features: [] }) };
     if (mode === 'fuzzy') return { ok: true, json: async () => ({ features: [{ properties: { name: 'Nowhere Special Place', city: 'Yuma', country: 'United States' }, geometry: { type: 'Point', coordinates: [-114.53, 32.66] } }] }) };
-    return { ok: true, json: async () => ({ features: [{ properties: { name: 'Walmart Supercentre', city: 'Toronto', country: 'Canada' }, geometry: { type: 'Point', coordinates: [-79.2, 43.79] } }] }) };
+    // Echo the name back, so a lookup answers the place that was asked for.
+    const q = decodeURIComponent((u.match(/[?&]q=([^&]+)/) || [])[1] || 'walmart').replace(/\+/g, ' ');
+    return { ok: true, json: async () => ({ features: [{ properties: { name: q, city: 'Toronto', country: 'Canada' }, geometry: { type: 'Point', coordinates: [-79.2, 43.79] } }] }) };
   }
   if (/router\.project-osrm\.org/.test(u)) {
+    if (slowRoutes) {
+      return new Promise((resolve) => slowRoutes.push((route) => resolve({ ok: true, json: async () => ({ code: 'Ok', routes: [route] }) })));
+    }
     if (mode === 'noroute') return { ok: true, json: async () => ({ code: 'NoRoute' }) };
     const route = mode === 'near' ? { distance: 280, duration: 61 } : { distance: 6236.3, duration: 698.2 };
     return { ok: true, json: async () => ({ code: 'Ok', routes: [route] }) };
@@ -114,6 +121,22 @@ const fix = (lat, lon, speed, at) => ({ coords: { latitude: lat, longitude: lon,
   say('how long is left');
   say('how far is it');
   ok(asked.filter((u) => /osrm/.test(u)).length === routerCalls, 'left: a fresh route is reused, not re-fetched');
+
+  // a second destination named while the first route is still out
+  mode = 'ok';
+  slowRoutes = [];
+  say('take me to walmart');
+  await settle();
+  say('take me to costco');
+  await settle();
+  ok(slowRoutes.length === 2, 'left: each destination gets its own route request');
+  slowRoutes.shift()({ distance: 6236.3, duration: 698.2 });
+  await settle();
+  ok(D.trip.place === 'costco' && D.left === null, 'left: the older route is not applied to the newer trip');
+  slowRoutes.shift()({ distance: 999, duration: 300 });
+  await settle();
+  ok(D.left && Math.abs(D.left.metres - 999) < 1, 'left: the newer trip keeps its own route');
+  slowRoutes = null;
 
   // a place the map does not have
   mode = 'noplace';
