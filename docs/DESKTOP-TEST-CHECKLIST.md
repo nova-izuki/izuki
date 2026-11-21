@@ -114,3 +114,11 @@ Install the 1.0.217 APK (Settings → Phone → App updates). Android control an
 4. "Hey Nova, what's the weather?" over another app: the answer is in Gemini's voice (or the phone's voice after a few seconds); the orb moves with it. Settings → Izuki's voice → pick a voice → Hear it.
 5. "Swipe to the next photo in my gallery", "long-press the first photo", "double-tap to zoom": the agent does them. On a screen with a Delete button it asks you to tap it yourself.
 6. Home → On your phone: each row shows On, Off or Set up; each opens its guide; "Try" runs a real example. Settings: long explanations show two lines and "How it works".
+
+## 1.0.221: one icon everywhere, Drive mode rides along
+
+1. After updating, the taskbar, Start menu, tray and installer show the glass orb (not the hand). Pin it to the taskbar: still sharp.
+2. Android: the launcher icon is the orb on navy (round and square launchers); izukinova.ai in Chrome shows the orb in the tab.
+3. Drive mode → "take me to <a nearby place>": the trip line shows distance and minutes left; "how long is left?" answers with them; parked for a while near the place, it notices you've arrived. "Take me home" with no saved home: it says it doesn't know where home is.
+4. Phone agent: "move the first app icon next to the second" (drag) and "scroll to Battery" in Settings.
+5. Settings → Your orb → Orb colour: the floating orb over other apps takes the colour in every state.
