@@ -12,6 +12,8 @@ const SITE = "https://izukinova.ai";
 const live = process.argv.includes("--live");
 const problems = [];
 const bad = (what) => problems.push(what);
+// "noindex" or "none" (Google reads "none" as noindex, nofollow).
+const excludes = (directives) => /(?:^|[\s,:])(?:noindex|none)(?:$|[\s,])/i.test(directives);
 
 // Public pages: the sitemap's, plus the 404 page.
 const sitemap = fs.readFileSync(path.join(docs, "sitemap.xml"), "utf8");
@@ -32,7 +34,7 @@ for (const url of pageUrls) {
   for (const tag of html.match(/<meta\b[^>]*>/gi) || []) {
     const name = tag.match(/\bname=["']([^"']+)["']/i)?.[1] || "";
     const content = tag.match(/\bcontent=["']([^"']*)["']/i)?.[1] || "";
-    if (/^(?:robots|googlebot)$/i.test(name) && /noindex/i.test(content)) bad(`${where}: says noindex (${name})`);
+    if (/^(?:robots|googlebot)$/i.test(name) && excludes(content)) bad(`${where}: says ${content} (${name})`);
   }
   const canon = html.match(/<link[^>]+rel=["']canonical["'][^>]+href=["']([^"']+)/i)?.[1];
   if (canon !== url) bad(`${where}: canonical is ${canon || "missing"}, expected ${url}`);
@@ -41,8 +43,14 @@ for (const url of pageUrls) {
   // Local links and images must exist.
   for (const m of html.matchAll(/\s(?:href|src)=["']([^"'#?]+)(?:[#?][^"']*)?["']/gi)) {
     const ref = m[1];
-    if (/^(?:https?:|mailto:|tel:|data:|javascript:|\/\/)/i.test(ref) || ref.includes("${")) continue;
-    const target = ref.startsWith("/") ? path.join(docs, ref) : path.resolve(path.dirname(file), ref);
+    if (/^(?:mailto:|tel:|data:|javascript:)/i.test(ref) || ref.includes("${")) continue;
+    // Links to izukinova.ai itself (full or protocol-relative) are checked too; other sites aren't.
+    let target;
+    if (/^(?:https?:)?\/\//i.test(ref)) {
+      const u = new URL(ref, url);
+      if (u.origin !== SITE) continue;
+      target = path.join(docs, decodeURI(u.pathname));
+    } else target = ref.startsWith("/") ? path.join(docs, ref) : path.resolve(path.dirname(file), ref);
     const exists = fs.existsSync(target) && (!fs.statSync(target).isDirectory() || fs.existsSync(path.join(target, "index.html")));
     if (!exists) bad(`${where}: broken local link ${ref}`);
   }
@@ -59,7 +67,7 @@ if (!robots.includes(`Sitemap: ${SITE}/sitemap.xml`)) bad("robots.txt doesn't na
       const r = await fetch(url, { redirect: "follow" }).catch((e) => ({ status: String(e.message) }));
       if (r.status !== 200) bad(`live ${url}: ${r.status}`);
       const tag = r.headers?.get?.("x-robots-tag");
-      if (tag && /noindex/i.test(tag)) bad(`live ${url}: X-Robots-Tag ${tag}`);
+      if (tag && excludes(tag)) bad(`live ${url}: X-Robots-Tag ${tag}`);
     }
   }
   console.log(`${pageUrls.length} pages, ${imageUrls.length} sitemap images${live ? ", fetched live" : ""}.`);
