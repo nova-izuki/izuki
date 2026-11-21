@@ -629,13 +629,13 @@
 
     <section>
       <h3>Drive mode</h3>
-      <p class="note">Tap <b>Drive</b> at the top (or say “drive mode”): Izuki becomes your co-pilot, hands-free. “Take me to…” starts Google Maps' turn-by-turn; “find gas near me”, “play music”, “text that I'm on my way” are done at once. It speaks up after two hours at the wheel and when your battery runs low. 🎉 Fun mode makes it a cheeky road-trip buddy.</p>
+      <p class="note">Tap <b>Drive</b> at the top (or say “drive mode”): Izuki becomes your co-pilot, hands-free. “Take me to…” starts Google Maps' turn-by-turn; “find gas near me”, “play music”, “text that I'm on my way” are done at once, and “how long is left” gets the real distance and drive time for the place you named. It speaks up after two hours at the wheel and when your battery runs low. 🎉 Fun mode makes it a cheeky road-trip buddy.</p>
       <div class="field" style="margin-top:8px">
         <label for="drive-warn">Warn me above this speed (optional)</label>
         <input id="drive-warn" type="number" inputmode="numeric" min="0" max="250" step="5">
       </div>
-      <label class="swatch" style="margin-top:10px"><input type="checkbox" id="drive-ride" checked> Ride with me — a check-in on a long leg, a word in traffic, and a nudge when a long stop looks like arrival</label>
-      <p class="note">Your speed and the trip line come from your phone's location, while Drive mode is on only — the destination is just the name you said. Nothing is saved or sent anywhere.</p>
+      <label class="swatch" style="margin-top:10px"><input type="checkbox" id="drive-ride" checked> Ride with me — a check-in on a long leg, a word in traffic, what's left when you ask, and a nudge when a long stop looks like arrival</label>
+      <p class="note">Your speed and the trip line come from your phone's location, while Drive mode is on only. To say what's left, Izuki looks the place you named up on OpenStreetMap and asks its free router for the remaining distance and drive time — the road's usual time, not live traffic — sending only that place name and where you are; nothing is stored.</p>
     </section>
 
     <section id="native-health" hidden>
