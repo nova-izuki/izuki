@@ -237,18 +237,22 @@
 
   /** Ask again — unless it just answered, and never two at once. */
   function plan(force) {
-    if (!trip || !trip.dest) return Promise.resolve(null);
+    // The trip this answer belongs to: a new destination named while the old
+    // request is still out must never inherit the old trip's numbers.
+    const t = trip;
+    if (!t || !t.dest) return Promise.resolve(null);
     if (planning) return planning;
-    if (!force && trip.route && Date.now() - trip.route.at < 90_000) return Promise.resolve(trip.route);
-    if (!last) return Promise.resolve(trip.route || null);
-    planning = routeLeft(trip).then((r) => {
-      planning = null;
-      if (!trip) return null;
-      if (r) trip.route = r;
+    if (!force && t.route && Date.now() - t.route.at < 90_000) return Promise.resolve(t.route);
+    if (!last) return Promise.resolve(t.route || null);
+    const asked = routeLeft(t).then((r) => {
+      if (planning === asked) planning = null;
+      if (trip !== t) return null;
+      if (r) t.route = r;
       paint();
-      return trip.route || null;
+      return t.route || null;
     });
-    return planning;
+    planning = asked;
+    return asked;
   }
 
   /** Remaining distance, in the units you think in. */
