@@ -2,8 +2,8 @@
 //
 // It rides on the hands-free call (IzukiCore) and adds what a driver needs at
 // a glance: your speed, the time and battery, and big buttons. Google Maps
-// does the maps — "take me to Walmart" starts its turn-by-turn — so there's
-// nothing to keep up to date here. Things a driver says often are done at
+// does the turns — "take me to Walmart" starts its turn-by-turn — and Izuki
+// looks up what's left on its own. Things a driver says often are done at
 // once with no AI ("find gas near me", "play music", "how fast am I going",
 // "text that I'm on my way"); anything else goes to Izuki as usual, told to
 // keep it short and never ask you to look or type.
@@ -14,9 +14,13 @@
 // Once it knows where you're going it rides along, like a car's own co-pilot:
 // it measures the trip itself from location fixes — distance covered, time at
 // the wheel — and speaks at real moments (a check-in on a long leg, a word in
-// a crawl, a nudge when a long stop looks like arrival). It never claims to
-// know your route or your ETA. Maps owns those; a guess would be worse than
-// silence.
+// a crawl, a nudge when a long stop looks like arrival).
+//
+// It can also say what's left. The place you named is looked up on OpenStreetMap
+// and routed from your current fix to that point, so the trip line and your
+// questions carry a real remaining distance and drive time — the road's usual
+// time, never live traffic. When the lookup or the router can't answer, it says
+// exactly that instead of guessing. Maps still owns the turns.
 // Fun mode makes it a cheeky road-trip buddy — jokes, roasts, trivia, games.
 (() => {
   const $ = (id) => document.getElementById(id);
@@ -139,14 +143,159 @@
   function tripLine() {
     if (!trip) return "";
     const mins = tripMins();
-    return `To ${trip.place} · ${far()} · ${mins < 1 ? "just set off" : `${mins} min`}`;
+    const bits = [`To ${trip.place}`];
+    if (trip.found === "no" && !trip.route) bits.push(trip.why === "address" ? "no saved address" : "place not found");
+    // With the router's answer, what's left matters more than what's covered —
+    // the time at the wheel is already in the corner.
+    if (trip.route) bits.push(`${leftText(trip.route.metres)} left`, `about ${timeText(trip.route.secs)}`);
+    else bits.push(`${far()} covered`, mins < 1 ? "just set off" : `${mins} min`);
+    return bits.join(" · ");
   }
+
   function beginTrip(place) {
     // The last fix becomes the starting anchor, so the first stretch counts.
-    trip = { place, at: Date.now(), metres: 0, anchor: last ? { lat: last.lat, lon: last.lon, t: last.t } : null };
+    trip = { place, at: Date.now(), metres: 0, anchor: last ? { lat: last.lat, lon: last.lon, t: last.t } : null, dest: null, route: null, found: "asking", why: "" };
+    // "Take me home" has no address to look up. Saying so beats routing to a
+    // random place that happens to be called Home.
+    if (/^(?:home|work|the office|my office)$/i.test(place)) { trip.found = "no"; trip.why = "address"; }
     crawlSince = 0;
     stoppedSince = 0;
+    planning = null;
     for (const k of Object.keys(rideSaid)) delete rideSaid[k];
+    void findPlace(place);
+  }
+
+  // ------------------------------------------------------------ what's left
+  // The place you named becomes a point on the map, and the drive is routed
+  // from your current fix to it. That is what lets the trip line and your
+  // questions carry a real remaining distance and time.
+  //
+  // Free, keyless OpenStreetMap services, called straight from the browser:
+  // Photon for the lookup (Open-Meteo's gazetteer if that has nothing) and OSRM
+  // for the route. One request at a time, and not again for 90 seconds. Either
+  // can fail, and then the answer is "I can't tell you" — never a guess.
+  const ROUTER = "https://router.project-osrm.org/route/v1/driving/";
+  const LOOKUPS = [
+    (q) => `https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=1&lang=en${last ? `&lat=${last.lat}&lon=${last.lon}` : ""}`,
+    (q) => `https://geocoding-api.open-meteo.com/v1/search?count=1&language=en&name=${encodeURIComponent(q)}`,
+  ];
+  let planning = null;
+
+  function getJSON(url, ms = 7000) {
+    const Ctl = typeof AbortController === "function" ? AbortController : null;
+    const stop = Ctl ? new Ctl() : null;
+    const timer = stop ? setTimeout(() => stop.abort(), ms) : 0;
+    return Promise.resolve(fetch(url, { signal: stop ? stop.signal : undefined, headers: { Accept: "application/json" }, cache: "no-store" }))
+      .then((r) => (r && r.ok ? r.json() : Promise.reject(new Error("http " + (r && r.status)))))
+      .finally(() => { if (timer) clearTimeout(timer); });
+  }
+
+  /** Photon is fuzzy: it will find something, anywhere. Does your word appear? */
+  function soundsRight(place, hit) {
+    const words = String(place).toLowerCase().match(/[a-z0-9]{3,}/g) || [];
+    const hay = [hit.name, hit.street, hit.city, hit.state, hit.admin1, hit.postcode, hit.country].filter(Boolean).join(" ").toLowerCase();
+    return words.length > 0 && words.some((w) => hay.includes(w));
+  }
+
+  /** The place, as a point — or an honest "not found". */
+  async function findPlace(place) {
+    const t = trip;
+    if (!t || t.place !== place || t.why === "address") return;
+    for (const ask of LOOKUPS) {
+      try {
+        const d = await getJSON(ask(place));
+        const f = d && d.features && d.features[0];
+        const c = f && f.geometry && f.geometry.coordinates;
+        const g = d && d.results && d.results[0];
+        // A fuzzy hit that shares no word with what you said is a different
+        // place — refusing it is better than routing you somewhere random.
+        const hit = Array.isArray(c) && c.length === 2 && soundsRight(place, f.properties || {})
+          ? { lat: c[1], lon: c[0] }
+          : g && Number.isFinite(g.latitude) && soundsRight(place, g) ? { lat: g.latitude, lon: g.longitude } : null;
+        if (hit) {
+          if (trip !== t) return;            // a newer destination won
+          t.dest = hit;
+          t.found = "yes";
+          await plan(true);
+          return;
+        }
+      } catch { /* try the next source, then give up honestly */ }
+    }
+    if (trip === t) { t.found = "no"; paint(); }
+  }
+
+  /** What the router says is left from here — null when it won't say. */
+  async function routeLeft(t) {
+    if (!t || !t.dest || !last) return null;
+    try {
+      const d = await getJSON(`${ROUTER}${last.lon},${last.lat};${t.dest.lon},${t.dest.lat}?overview=false&steps=false`);
+      const r = d && d.code === "Ok" && d.routes && d.routes[0];
+      if (!r || !Number.isFinite(r.distance) || !Number.isFinite(r.duration)) return null;
+      return { metres: r.distance, secs: r.duration, at: Date.now() };
+    } catch { return null; }
+  }
+
+  /** Ask again — unless it just answered, and never two at once. */
+  function plan(force) {
+    if (!trip || !trip.dest) return Promise.resolve(null);
+    if (planning) return planning;
+    if (!force && trip.route && Date.now() - trip.route.at < 90_000) return Promise.resolve(trip.route);
+    if (!last) return Promise.resolve(trip.route || null);
+    planning = routeLeft(trip).then((r) => {
+      planning = null;
+      if (!trip) return null;
+      if (r) trip.route = r;
+      paint();
+      return trip.route || null;
+    });
+    return planning;
+  }
+
+  /** Remaining distance, in the units you think in. */
+  function leftText(m) {
+    if (!Number.isFinite(m) || m < 0) return "";
+    if (metric) return m < 1000 ? `${Math.max(10, Math.round(m / 10) * 10)} m` : `${(m / 1000).toFixed(m < 9950 ? 1 : 0)} km`;
+    const mi = m / 1609.34;
+    return mi < 0.19 ? `${Math.max(50, Math.round(m / 0.3048 / 50) * 50)} ft` : `${mi.toFixed(mi < 9.95 ? 1 : 0)} mi`;
+  }
+  /** A drive time, rounded the way a person says it. */
+  function timeText(s) {
+    const n = Math.max(1, Math.round(s / 60));
+    if (n < 60) return `${n} min`;
+    const h = Math.floor(n / 60), rest = n % 60;
+    return rest ? `${h} h ${rest} min` : `${h} h`;
+  }
+  /** Why there's no answer, in words that don't pretend. */
+  const noPlaceSay = () => (trip.why === "address"
+    ? `I don't have a saved ${trip.place} address, so I can't tell you what's left — Google Maps still has the turns.`
+    : `I couldn't find ${trip.place} on the map, so I can't tell you what's left — Google Maps still has the turns.`);
+  /** The route's own numbers, spoken. */
+  function leftSay() {
+    const r = trip && trip.route;
+    if (!r) return "";
+    const head = r.metres < 40
+      ? `You're at ${trip.place} — about ${leftText(r.metres)} to the pin.`
+      : `About ${timeText(r.secs)} and ${leftText(r.metres)} to ${trip.place}.`;
+    // The router plans a normal drive, not today's traffic. Say so once.
+    if (!rideSaid.traffic) { rideSaid.traffic = true; return `${head} That's the road's usual time, not live traffic.`; }
+    return head;
+  }
+  /** "How much longer?" — the router's answer, or an honest no. */
+  function wayAhead() {
+    if (!trip) return { say: "No destination yet — say “take me to…” and I'll ride along." };
+    if (trip.route && Date.now() - trip.route.at < 120_000) return { say: leftSay() };
+    if (trip.found === "no") return { say: noPlaceSay() };
+    return {
+      say: "One sec — checking what's left.",
+      // The route arrives after that sentence, so it's the next thing said.
+      then: () => {
+        void plan(true).then((r) => {
+          const good = r && Date.now() - r.at < 300_000;
+          say(good ? leftSay()
+            : `I can't reach the route service right now, so what's left is only what I've measured — ${far()} covered so far. Google Maps has the turns and the arrival time.`);
+        });
+      },
+    };
   }
 
   // ------------------------------------------------------------ speaking
@@ -269,7 +418,15 @@
     // The drive itself: answered with what the phone really measured.
     if (/^(?:how'?s|how is) (?:the )?(?:drive|ride|trip)(?: going)?$|^how far (?:have we|have i)(?: gone| come| driven)$|^how long have (?:we|i) been driving$/i.test(said)) {
       if (!trip) return { say: "No destination yet — say “take me to…” and I'll ride along." };
-      return { say: `${trip.place}: ${far()} covered in ${tripMins()} minutes. Maps has the turns and the arrival time — I've got the company.` };
+      const r = trip.route;
+      return { say: `${trip.place}: ${far()} covered in ${tripMins()} minutes${r ? `, ${leftText(r.metres)} left, about ${timeText(r.secs)}` : ""}.` };
+    }
+    // How long is left: the router's own answer, or an honest no.
+    if (/^how (?:much )?(?:long(?:er)?|further|far(?:ther)?)(?: (?:is|to go|left|now|more))?(?: (?:is )?(?:it|left|to go|away))?$/i.test(said)
+      || /^how (?:much )?(?:long|far) (?:until|till) (?:we|i|you) (?:get|are|arrive)(?: there)?$/i.test(said)
+      || /^when (?:will|are) (?:we|i|you) (?:be )?(?:there|arrive|get there|getting there)$/i.test(said)
+      || /^(?:what'?s|whats|what is) (?:the |my )?(?:eta|arrival time|time of arrival)$|^(?:eta|time left|remaining time|time to go)$/i.test(said)) {
+      return wayAhead();
     }
     if (/^where (?:are we|am i) going$|^what'?s the destination$/i.test(said)) {
       return { say: trip ? `${trip.place}.` : "Nothing yet — say “take me to…” and I'll take you." };
@@ -285,7 +442,7 @@
   /** What the brain is told while you drive. */
   function system() {
     if (!active) return "";
-    const base = "The user is DRIVING right now. Answer in one or two short spoken sentences. Never ask them to look at the screen, read, type or tap; never suggest anything that takes their eyes off the road. Izuki does not know their route, remaining distance or ETA — never invent them; if asked, say it only knows how far you've come and how long you've been driving. For directions, places, music or texts, Izuki opens Google Maps, the music app or Messages itself — so if they want one, tell them to say \"take me to…\", \"find … near me\", \"play …\" or \"text that I'm on my way\".";
+    const base = "The user is DRIVING right now. Answer in one or two short spoken sentences. Never ask them to look at the screen, read, type or tap; never suggest anything that takes their eyes off the road. You do not have the drive's numbers yourself, and you must never invent a route, a remaining distance, an arrival time, traffic or delays. Izuki does measure the trip and asks OpenStreetMap's router for the real distance and time left — so if they ask how long is left, tell them to say the words “how long is left” and Izuki answers with those numbers. The turns stay with Google Maps. — never invent them; if asked, say it only knows how far you've come and how long you've been driving. For directions, places, music or texts, Izuki opens Google Maps, the music app or Messages itself — so if they want one, tell them to say \"take me to…\", \"find … near me\", \"play …\" or \"text that I'm on my way\".";
     const party = "FUN MODE is on: you're their road-trip co-pilot — playful, cheeky and bold. Quick jokes, playful roasts, hot takes, trivia, would-you-rather and road-trip games when they're up for it. Banter like a close friend in the passenger seat; nothing hateful, and nothing that pulls their attention from driving.";
     return fun ? base + "\n" + party : base;
   }
@@ -325,6 +482,9 @@
     paint();
     flush();
     const now = Date.now();
+    // What's left, from the router: refreshed as you drive, one request at a
+    // time, and never more often than every 90 seconds.
+    if (trip && trip.dest && last && (!trip.route || now - trip.route.at > 90_000)) void plan(false);
     // A long stretch at the wheel: every two hours.
     if (now - started >= 2 * 3600_000 && now - breakAt >= 2 * 3600_000) {
       breakAt = now;
@@ -354,13 +514,23 @@
         rideSaid.crawl = true;
         say("Looks like we're crawling. No rush — I'll stay quiet and keep an eye out.");
       }
+      // Nearly there, from the router's own distance: said once, and only if
+      // it really is close.
+      if (trip.route && trip.route.metres <= 400 && !rideSaid.near) {
+        rideSaid.near = true;
+        say(`Almost there — ${leftText(trip.route.metres)} to ${trip.place}.`);
+      }
+      const atPin = Boolean(trip.route) && trip.route.metres <= 300;
       const halted = speed !== null && speed * perMs < 1;
-      if (halted && trip.metres >= 500) { if (!stoppedSince) stoppedSince = now; } else stoppedSince = 0;
+      if (halted && (trip.metres >= 500 || atPin)) { if (!stoppedSince) stoppedSince = now; } else stoppedSince = 0;
       if (stoppedSince && now - stoppedSince > 180_000 && !rideSaid.arrive) {
         rideSaid.arrive = true;
-        say(`We've been stopped a few minutes — is this ${trip.place}? Say “we're here” and I'll end Drive mode.`);
+        say(atPin
+          ? `We've been stopped a few minutes and ${trip.place} should be right here — say “we're here” and I'll end Drive mode.`
+          : `We've been stopped a few minutes — is this ${trip.place}? Say “we're here” and I'll end Drive mode.`);
       }
     }
+
     // Your own speed warning (off unless set), after 8 seconds over it.
     const limit = Number(store.get("warnAbove", 0));
     const over = limit > 0 && speed !== null && speed * perMs > limit;
@@ -410,6 +580,7 @@
     speed = null;
     alertLine("");
     trip = null;
+    planning = null;
     crawlSince = 0;
     stoppedSince = 0;
     for (const k of Object.keys(rideSaid)) delete rideSaid[k];
@@ -502,6 +673,12 @@
     track: onPosition,
     /** The trip being ridden along: destination, distance covered, minutes. */
     get trip() { return trip; },
+    /** What's left, when the router has answered: metres and seconds. */
+    get left() { return trip && trip.route ? { metres: trip.route.metres, secs: trip.route.secs, at: trip.route.at } : null; },
+    /** The trip line exactly as it is shown under the speed. */
+    get line() { return tripLine(); },
+    /** Ask the router again now (Drive mode's own check does this too). */
+    routeNow: () => plan(true),
     /** One of the 5 s checks (the timer calls this; tests do too). */
     tick: check,
     /** Talk on the way: check-ins, a word in traffic, an arrival nudge. */
