@@ -30,7 +30,8 @@ const scope = new URL(web.scope || "./", manifestUrl);
 const start = new URL(twa.startUrl, `https://${domain}/`);
 ok(start.pathname.startsWith(scope.pathname), `start ${start.pathname} is inside the scope ${scope.pathname}`);
 ok(start.searchParams.has("vr"), "the start address opens Izuki in VR");
-ok(new URL(twa.fullScopeUrl).pathname === scope.pathname, "fullScopeUrl is the web app's scope");
+const fullScope = new URL(twa.fullScopeUrl);
+ok(fullScope.origin === scope.origin && fullScope.pathname === scope.pathname, "fullScopeUrl is the web app's scope, on the same site");
 
 // Its icons are the site's own files.
 for (const key of ["iconUrl", "maskableIconUrl"]) {
