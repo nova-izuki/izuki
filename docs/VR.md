@@ -22,7 +22,8 @@ install.
 | **Calling Izuki** | "Hey Nova" any time in the room (it listens hands-free from going in, and answers only when called by name, or a follow-up within 30 s), the orb (trigger or pinch), A/X, or the Talk button. "Stop listening" stops it. |
 | **What's on my screen?** | With the PC on the big screen, Izuki reads that screen (its picture, not the camera) and circles what matters. Something to do ("open Spotify", "click Send", "type…") is done on the PC while you watch, under the PC's own approval rules. Other Quest apps can't be seen or controlled: Meta lets only its own assistant do that. |
 | **Photos and folders** | "Show my photos" opens a gallery of the PC's Pictures (and Up to Desktop, Documents, Downloads, Music, Videos; read-only, the PC's own limits); point at a photo to see it big, then "what's in this photo?". The Quest's own photos aren't reachable from a website. |
-| **Style** | Six looks (Nova, Aurora, Sunset, Ocean, Galaxy, Pearl): the orb's colours and, without passthrough, the sky. The Style button or "change your look". |
+| **Style** | Five calm looks (Nova, Midnight, Aurora, Dawn, Pearl): the orb's colours and, without passthrough, the sky. The Style button or "change your look". |
+| **First visit** | The orb blooms into view with one ring of light, then its words and buttons fade in (no motion with reduced motion). Three suggestions float above it ("What can you do?" or "What's this?", "Show my photos", "Change your look"): tap one and Izuki does it; they leave after the first conversation. "What can you do?" is a short spoken tour that names only what works on that headset now. |
 | **Voice** | Gemini's natural voice; when its small free allowance rests, Orpheus on Groq (the Groq key that hears you); the room says why when neither can speak. |
 | **3D preview** | On a normal screen (or with `?vr`), the same room driven by the mouse. |
 

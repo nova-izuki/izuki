@@ -254,6 +254,14 @@ export async function start({ mode, session, api, tint }) {
 
   const disposables = [];
   const track = (o) => { disposables.push(o); return o; };
+  /** What fades in after the orb blooms (the words, the buttons, the suggestions). */
+  const fadeIn = [];
+  // The one authored moment: the orb blooms into being with a single ring of
+  // light, then its words and buttons fade in. Reduced motion: no bloom.
+  let born = 0;
+  const calm = (() => { try { return matchMedia("(prefers-reduced-motion: reduce)").matches; } catch { return false; } })();
+  const easeOut = (x) => 1 - Math.pow(1 - Math.min(1, Math.max(0, x)), 4);
+  let faded = false;
 
   // ---- the palette: the room's look (THEMES); the first, IZUKI NOVA's own,
   // leans to the person's orb colour when they picked one ----------------------
@@ -302,12 +310,17 @@ export async function start({ mode, session, api, tint }) {
   halo.renderOrder = 1;
   const ringMat = track(new MeshBasicMaterial({ color: 0x5eead4, transparent: true, opacity: 0, blending: AdditiveBlending, depthWrite: false }));
   const ring = new Mesh(track(new TorusGeometry(0.118, 0.003, 8, 120, Math.PI * 1.4)), ringMat);
-  rig.add(halo, orb, ring);
+  // The entrance's own ring: whole and hairline thin, it opens once and is gone.
+  const bloomMat = track(new MeshBasicMaterial({ color: 0x5eead4, transparent: true, opacity: 0, blending: AdditiveBlending, depthWrite: false }));
+  const bloom = new Mesh(track(new TorusGeometry(0.1, 0.0016, 8, 160)), bloomMat);
+  bloom.visible = false;
+  rig.add(halo, orb, ring, bloom);
 
   const caption = card(0.56, 0.19);
   caption.mesh.position.set(0, -0.2, 0.01);
   rig.add(caption.mesh);
   track(caption.tex); track(caption.mesh.material); track(caption.mesh.geometry);
+  fadeIn.push(caption.mesh.material);
 
   const view = {
     state: "", you: "", reply: "", stage: "", mic: 0, energy: 0, think: 0, hovered: false,
@@ -371,6 +384,7 @@ export async function start({ mode, session, api, tint }) {
   function button(iconName, label, onTap) {
     const c = card(0.088, 0.112, 2400);
     track(c.tex); track(c.mesh.material); track(c.mesh.geometry);
+    fadeIn.push(c.mesh.material);
     // hot: pointed at; on: what it opens is open (Photos, My PC).
     const b = { c, icon: iconName, label, hot: false, on: false, shown: true };
     b.draw = () => {
@@ -606,7 +620,47 @@ export async function start({ mode, session, api, tint }) {
   endB.shown = false;
   lookB.shown = false;
   layoutButtons();
-  void api.hasCamera().then((yes) => { lookB.shown = !!yes; layoutButtons(); });
+
+  // ---- "try saying": three suggestions above the orb on a first visit ----------
+  // Tap one and Izuki does it; they leave after the first conversation.
+  const chips = [];
+  function chip(iconName, words, phrase) {
+    const c = card(0.205, 0.054, 2400);
+    track(c.tex); track(c.mesh.material); track(c.mesh.geometry);
+    if (!faded) fadeIn.push(c.mesh.material);
+    const k = { c, hot: false };
+    k.draw = () => {
+      const { ctx, w, h } = c;
+      glass(ctx, w, h, (h - 6) / 2, { hot: k.hot });
+      icon(ctx, iconName, 58, h / 2, 50, TEAL, 7);
+      ctx.font = `500 37px ${FONT}`;
+      write(ctx, ellipsize(ctx, words, w - 124), 98, h / 2 + 13, 37, INK, 500);
+      c.update();
+    };
+    k.draw();
+    ui(c.mesh, { tap: () => { hideChips(); api.ask(phrase); }, hover: (on) => { k.hot = on; k.draw(); } });
+    rig.add(c.mesh);
+    chips.push(k);
+    return k;
+  }
+  let firstVisit = false;
+  try { firstVisit = localStorage.getItem("izuki.vr.tried") !== "1"; } catch {}
+  function hideChips() {
+    firstVisit = false;
+    for (const k of chips) k.c.mesh.visible = false;
+    try { localStorage.setItem("izuki.vr.tried", "1"); } catch {}
+  }
+  function layoutChips() {
+    chips.forEach((k, i) => { k.c.mesh.position.set((i - (chips.length - 1) / 2) * 0.218, 0.17, 0.01); }); syncButtons();
+  }
+  void api.hasCamera().then((yes) => {
+    lookB.shown = !!yes;
+    layoutButtons();
+    chip(yes ? "eye" : "mic", yes ? "“What's this?”" : "“What can you do?”", yes ? "What's this?" : "What can you do?");
+    chip("photos", "“Show my photos”", "Show my photos");
+    chip("style", "“Change your look”", "Change your look");
+    layoutChips();
+  });
 
   // ---- what Izuki looked at -----------------------------------------------------
   const lookUi = { group: new Group(), photo: null, text: card(0.5, 0.15), img: null, url: "", want: "", closed: "", seq: 0, marks: [], say: "", t0: 0, anim: false, close: card(0.05, 0.05) };
@@ -1144,7 +1198,21 @@ export async function start({ mode, session, api, tint }) {
     faceHead(rig);
     rig.visible = true;
     placed = true;
+    born = performance.now();
     pinned.forEach(placeNote);
+  }
+  // (born, calm, easeOut and faded are declared with fadeIn, near the top.)
+  function entrance(now) {
+    if (!born || faded) return;
+    const e = calm ? 1 : easeOut((now - born) / 1100);
+    const panels = calm ? 1 : easeOut((now - born - 350) / 600);
+    orb.scale.multiplyScalar(0.3 + 0.7 * e);
+    haloMat.opacity += (1 - e) * 0.45;
+    const r = calm ? 1 : Math.min(1, (now - born) / 1500);
+    bloom.visible = r < 1;
+    if (r < 1) { bloomMat.opacity = 0.8 * (1 - r) * (1 - r); bloom.scale.setScalar(0.9 + easeOut(r) * 1.6); }
+    for (const m of fadeIn) m.opacity = panels;
+    if (e >= 1 && panels >= 1 && r >= 1) faded = true;
   }
   let goal = null;
   function follow(dt) {
@@ -1202,6 +1270,9 @@ export async function start({ mode, session, api, tint }) {
     // What's open shows on its button.
     photosB.setOn(filesUi.open);
     pcB.setOn(pcUi.open);
+    // The suggestions wait for a brain (a key) and step aside while Izuki is busy.
+    const tips = firstVisit && st === "" && !calling && !!api.ready?.();
+    for (const k of chips) k.c.mesh.visible = tips;
   }
 
   // ---- the loop -----------------------------------------------------------------------
@@ -1216,6 +1287,7 @@ export async function start({ mode, session, api, tint }) {
     if (!placed && frames > 3) placeRig();
     if (placed) follow(dt);
     orbTick(dt, clock);
+    entrance(now);
 
     for (const p of pointers) {
       if (!aim(p)) continue;
@@ -1339,7 +1411,7 @@ export async function start({ mode, session, api, tint }) {
     line(who, t, opts) {
       const s = String(t || "");
       if (!s) return;
-      if (who === "me") { view.you = s; view.reply = ""; view.hint = ""; }
+      if (who === "me") { view.you = s; view.reply = ""; view.hint = ""; if (firstVisit) hideChips(); }
       else if (who === "izuki") { if (opts?.thinking) view.stage = s; else { view.reply = s; view.stage = ""; } }
       drawCaption();
     },

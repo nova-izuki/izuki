@@ -46,6 +46,7 @@ test("the new headset commands: photos, screen, style, sleep", () => {
     "look-style": ["change your look", "switch your colours", "new look"],
     space: ["change the room", "change the background"],
     sleep: ["stop listening", "go to sleep"],
+    help: ["What can you do?", "what can I say", "Hey Nova, what can you do here?", "how does this work", "help", "show me what you can do"],
   };
   for (const [kind, list] of Object.entries(cases)) for (const s of list) assert.equal(command(s)?.kind, kind, `"${s}" should be ${kind}`);
   assert.equal(command("show my photos").folder, "Pictures");
@@ -68,7 +69,7 @@ test("what goes to the PC (with its screen showing), and calling Izuki by name",
 test("everything else goes on to the brain as usual", () => {
   for (const s of ["what is this week's weather", "what's that song called", "open my PC's downloads", "on my PC open Spotify", "show my PC's battery",
     "what is the capital of France", "pin my tabs on the PC", "come here tomorrow at 5", "remind me to look at the oven", "look up the news",
-    "what does my calendar say", "how do I fix my wifi", "explain quantum physics", "close Spotify on my PC", "", "   "]) {
+    "what does my calendar say", "how do I fix my wifi", "what can you do about my wifi", "help me write an email", "explain quantum physics", "close Spotify on my PC", "", "   "]) {
     assert.equal(command(s), null, `"${s}" is not a headset command`);
   }
 });

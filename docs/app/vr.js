@@ -100,11 +100,15 @@
   // The room's look: the orb's colours and (without passthrough) the space around you.
   const STYLE = whole(String.raw`(?:change|switch|new)\s+(?:your|the)\s+(?:look|colou?rs?|style|orb)|(?:change|switch)\s+(?:the|my)\s+(?:room|space|background|scene|world)|(?:a\s+)?new\s+(?:look|room|space|background)`);
 
+  // "What can you do?": a short spoken tour of the room, no brain needed.
+  const HELP = whole(String.raw`what\s+(?:can|could)\s+(?:you|i)\s+(?:do|say|ask(?:\s+you)?)(?:\s+(?:here|in\s+here|in\s+vr|with\s+you|for\s+me))?|what\s+are\s+you\s+able\s+to\s+do|show\s+me\s+what\s+you\s+can\s+do|how\s+does\s+(?:this|it)\s+work|help\s+me\s+get\s+started|help`);
+
   /** A headset-only command in what was said, or null (then it goes to the brain). */
   function command(said) {
     const s = String(said || "").trim();
     if (!s) return null;
     if (EXIT.test(s)) return { kind: "exit" };
+    if (HELP.test(s)) return { kind: "help" };
     if (SLEEP.test(s)) return { kind: "sleep" };
     if (PC_HIDE.test(s)) return { kind: "pc-hide" };
     if (PC_SHOW.test(s)) return { kind: "pc" };
@@ -474,6 +478,19 @@
     remove(at) { store.set("notes", notes.list().filter((n) => n.at !== at)); },
   };
 
+  /** What Izuki can do in here, said in a few breaths; it names only what works on this headset now. */
+  async function tour() {
+    const eyes = await cam.has().catch(() => false);
+    return [
+      "Here's what I can do in here. Ask me anything, out loud: start with Hey Nova, or tap me first.",
+      eyes ? "Hold something up and ask what's this, and I'll look through your headset and point at it." : "",
+      pc.current()
+        ? "Say show my PC to bring your computer's screen into the room, or show my photos to walk through your pictures."
+        : "Pair this headset with your PC once, and I'll bring its screen and your photos right into the room.",
+      "Pin an answer to keep it on your wall, say come here to call me over, and say change your look whenever you like.",
+    ].filter(Boolean).join(" ");
+  }
+
   // ---- the hooks the app calls ----------------------------------------------
   let lastReply = "";
   /** Listening hands-free since going in (only what's said to Izuki is answered). */
@@ -529,6 +546,7 @@
           setTimeout(() => g.IzukiCore?.stopCall?.(), 1500);
           return done("Okay, I've stopped listening. Tap me when you need me.");
         }
+        if (c.kind === "help") return done(await tour());
         if (c.kind === "come") { vr.scene?.comeHere(); return done("Here I am."); }
         if (c.kind === "pin") {
           if (!lastReply) return done("There's nothing to pin yet. Ask me something first.");
@@ -647,6 +665,9 @@
     calling: () => !!g.IzukiCore?.calling?.(),
     speak: (t) => g.IzukiCore?.speak?.(t),
     hasCamera: () => cam.has(),
+    /** A suggestion tapped: asked as if said to Izuki (no name needed). */
+    ask: (t) => { armed = true; return g.IzukiCore?.ask?.(t); },
+    ready: () => !!g.IzukiCore?.ready?.(),
     // Through the app's own request, so the look lands in the conversation
     // (a follow-up like "and how do I clean it?" knows what "it" is).
     look: () => g.IzukiCore?.ask?.("What am I looking at?"),
