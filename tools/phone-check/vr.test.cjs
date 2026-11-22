@@ -113,7 +113,7 @@ test("a point on the PC panel becomes the same point on the PC", () => {
 function browser({ camera = false, see = async () => "{}", denied = false, pcs = [], playFails = false, xr = null, ua = "Mozilla/5.0 (X11; Linux x86_64; Quest 3) OculusBrowser/40.0", facing = "" } = {}) {
   const local = new Map([["izuki.remotePcs", JSON.stringify(pcs)]]);
   const calls = [];
-  let stopped = 0;
+  let stopped = 0, opens = 0;
   const scene = {
     shown: false,
     states: [],
@@ -130,7 +130,7 @@ function browser({ camera = false, see = async () => "{}", denied = false, pcs =
       userAgent: ua,
       mediaDevices: {
         enumerateDevices: async () => (camera ? [{ kind: "videoinput" }] : [{ kind: "audioinput" }]),
-        getUserMedia: async () => { if (denied) { const e = new Error("no"); e.name = "NotAllowedError"; throw e; } const track = { stop() { stopped++; }, getSettings: () => (facing ? { facingMode: facing } : {}) }; return { getTracks: () => [track], getVideoTracks: () => [track] }; },
+        getUserMedia: async () => { opens++; await new Promise((r) => setTimeout(r, 2)); if (denied) { const e = new Error("no"); e.name = "NotAllowedError"; throw e; } const track = { stop() { stopped++; }, getSettings: () => (facing ? { facingMode: facing } : {}) }; return { getTracks: () => [track], getVideoTracks: () => [track] }; },
       },
       xr,
     },
@@ -145,7 +145,7 @@ function browser({ camera = false, see = async () => "{}", denied = false, pcs =
   const vr = window.IzukiVr;
   vr.active = true;
   vr.scene = scene;
-  return { vr, calls, scene, stopped: () => stopped };
+  return { vr, calls, scene, stopped: () => stopped, opens: () => opens };
 }
 
 test("a camera that won't play is let go of at once", async () => {
@@ -163,6 +163,27 @@ test("leaving VR while the photo is taken: nothing is sent", async () => {
   const r = await pending;
   assert.match(r.say, /left VR/);
   assert.ok(!b.calls.some((c) => c[0] === "see"), "the photo never went to the AI");
+});
+
+test("two quick looks share one camera: never two streams", async () => {
+  const b = browser({ camera: true, see: async () => '{"say":"A mug."}' });
+  const [r1, r2] = await Promise.all([b.vr.gate("what's this?"), b.vr.gate("what is that")]);
+  assert.equal(r1.say, "A mug.");
+  assert.equal(r2.say, "A mug.");
+  assert.equal(b.opens(), 1, "the camera was opened once");
+});
+
+test("a second tap while the room loads doesn't start a second room", async () => {
+  let asked = 0;
+  const xr = { requestSession: async () => { asked++; return { end: async () => {} }; }, isSessionSupported: async () => true };
+  const b = browser({ xr });
+  b.vr.active = false;
+  b.vr.scene = null;
+  const first = b.vr.enter("immersive-vr").catch(() => "failed");
+  const second = await b.vr.enter("immersive-vr");
+  assert.equal(second, undefined);
+  assert.equal(await first, "failed");
+  assert.equal(asked, 1, "one session asked for");
 });
 
 test("on a PC (tethered headset or preview) the webcam is never used to look", async () => {
@@ -239,7 +260,9 @@ test("what's this? with a camera: one photo to the person's own AI, circles on i
   const r = await b.vr.gate("what's this?");
   assert.equal(r.done, true);
   assert.equal(r.say, "A kettle. The switch is at the back.");
-  const seen = b.calls.find((c) => c[0] === "see")[1];
+  const sees = b.calls.filter((c) => c[0] === "see");
+  assert.equal(sees.length, 1, "exactly one photo goes to the AI");
+  const seen = sees[0][1];
   assert.equal(seen.b64, "QUJD");
   assert.equal(seen.type, "image/jpeg");
   assert.match(seen.system, /VR headset/);

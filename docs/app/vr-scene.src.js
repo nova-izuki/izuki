@@ -569,7 +569,7 @@ export async function start({ mode, session, api, tint }) {
   }
 
   // ---- your PC, big -------------------------------------------------------------
-  const pcUi = { group: new Group(), open: false, live: false, gen: 0, err: "", doing: "", busy: false, screen: null, bar: card(1.6, 0.09), handle: card(0.32, 0.035), aspect: 9 / 16 };
+  const pcUi = { group: new Group(), open: false, live: false, gen: 0, err: "", clicks: Promise.resolve(), doing: "", busy: false, screen: null, bar: card(1.6, 0.09), handle: card(0.32, 0.035), aspect: 9 / 16 };
   pcUi.group.visible = false;
   scene.add(pcUi.group);
   track(pcUi.bar.tex); track(pcUi.handle.tex);
@@ -592,8 +592,16 @@ export async function start({ mode, session, api, tint }) {
       tap: (hit) => {
         if (!hit?.uv || !pcUi.live) return;
         const { nx, ny } = util.pcPoint(hit.uv.x, hit.uv.y);
+        const my = pcUi.gen;
         clickRing(hit.point);
-        void api.pc.send({ op: "point", nx, ny }).then((r) => { if (r?.ok !== false) return api.pc.send({ op: "click", button: "left" }); pcUi.err = r.error || ""; drawBar(); });
+        // One point-and-click at a time: a quick second tap never moves the
+        // pointer between the first tap's point and its click.
+        pcUi.clicks = pcUi.clicks.then(async () => {
+          if (!pcUi.open || my !== pcUi.gen) return;
+          const r = await api.pc.send({ op: "point", nx, ny });
+          if (r?.ok === false) { if (my === pcUi.gen) { pcUi.err = r.error || ""; drawBar(); } return; }
+          await api.pc.send({ op: "click", button: "left" });
+        }).catch(() => {});
       },
       scroll: (n) => { if (pcUi.live) void api.pc.send({ op: "scroll", dy: n }); },
     });
@@ -642,7 +650,16 @@ export async function start({ mode, session, api, tint }) {
     tap: (hit) => {
       const x = (hit?.uv?.x ?? 0) * pcUi.bar.w;
       if (x > pcUi.bar.w - 320) pcClose();
-      else if (pcUi.busy && x > pcUi.bar.w - 630) void api.pc.send({ op: "stop" }).then(() => { pcUi.busy = false; drawBar(); });
+      else if (pcUi.busy && x > pcUi.bar.w - 630) {
+        const my = pcUi.gen;
+        // Stop stays offered until the PC confirms it stopped.
+        void api.pc.send({ op: "stop" }).then((r) => {
+          if (!pcUi.open || my !== pcUi.gen) return;
+          if (r?.ok === false) pcUi.err = r.error || "Your PC didn't confirm it stopped.";
+          else { pcUi.busy = false; pcUi.err = ""; }
+          drawBar();
+        });
+      }
     },
     drag: () => pcUi.group,
   });
@@ -719,8 +736,21 @@ export async function start({ mode, session, api, tint }) {
 
   // ---- pinned answers -------------------------------------------------------------
   const pinned = [];
+  function dropCard(item) {
+    unui(item.c.mesh); unui(item.x.mesh);
+    scene.remove(item.group);
+    for (const k of [item.c, item.x]) { k.tex.dispose(); k.mesh.geometry.dispose(); k.mesh.material.dispose(); }
+    const i = pinned.indexOf(item);
+    if (i >= 0) pinned.splice(i, 1);
+  }
   function pin(text, at, restoring = false) {
-    if (!restoring) { const list = api.notes.add(text); at = list[list.length - 1]?.at ?? Date.now(); }
+    if (!restoring) {
+      const list = api.notes.add(text);
+      at = list[list.length - 1]?.at ?? Date.now();
+      // Only the newest eight are kept: the card of one that dropped out goes too.
+      const kept = new Set(list.map((n) => n.at));
+      for (const old of [...pinned]) if (!kept.has(old.at)) dropCard(old);
+    }
     const group = new Group();
     const c = card(0.3, 0.19);
     const x = card(0.04, 0.04);
@@ -749,15 +779,7 @@ export async function start({ mode, session, api, tint }) {
     const item = { group, c, x, at, text, slot };
     pinned.push(item);
     ui(c.mesh, { tap: () => api.speak(text), drag: () => group });
-    ui(x.mesh, {
-      tap: () => {
-        unui(c.mesh); unui(x.mesh);
-        scene.remove(group);
-        for (const k of [c, x]) { k.tex.dispose(); k.mesh.geometry.dispose(); k.mesh.material.dispose(); }
-        pinned.splice(pinned.indexOf(item), 1);
-        api.notes.remove(at);
-      },
-    });
+    ui(x.mesh, { tap: () => { dropCard(item); api.notes.remove(at); } });
     if (placed) placeNote(item);
     else group.visible = false;
   }

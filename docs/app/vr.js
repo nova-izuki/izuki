@@ -233,8 +233,13 @@
         return !!list?.some((d) => d.kind === "videoinput");
       } catch { return false; }
     },
-    async open() {
-      if (this.stream) return;
+    /** Two quick looks share one opening: never two camera streams at once. */
+    opening: null,
+    open() {
+      if (this.stream) return Promise.resolve();
+      return (this.opening ||= this.start().finally(() => { this.opening = null; }));
+    },
+    async start() {
       const my = this.gen;
       const md = nav.mediaDevices;
       let stream;
@@ -467,8 +472,14 @@
    * or "flat" (a 3D preview on a normal screen). The session is asked for
    * first, straight from the tap: browsers only allow it right after one.
    */
+  let entering = false;
   async function enter(mode) {
-    if (vr.active) return;
+    // A second tap while the room loads does nothing (never two rooms at once).
+    if (vr.active || entering) return;
+    entering = true;
+    try { await goIn(mode); } finally { entering = false; }
+  }
+  async function goIn(mode) {
     const xr = nav.xr;
     let sessionP = null;
     if (mode !== "flat") {
@@ -491,6 +502,7 @@
       vr.scene = await mod.start({ mode, session, api: sceneApi, tint: tint() });
     } catch (e) {
       vr.active = false;
+      try { g.IzukiCore?.preferRecorder?.(false); } catch {}
       try { await session?.end(); } catch {}
       throw e;
     }
@@ -566,8 +578,13 @@
     const paired = pc.current();
     const checks = mk("ul", "vr-checks");
     const check = (ok, text) => { const li = mk("li", ok ? "ok" : "", (ok ? "✓ " : "• ") + text); checks.appendChild(li); };
-    check(ready, ready ? "Your AI is set up" : "Add a free AI key first (Settings): I need it to hear you and answer");
+    check(ready, ready ? "Your AI is set up" : "Add a free AI key first (the two steps on the home screen): I need it to answer");
     check(mic, mic ? "Microphone allowed" : "I'll ask for the microphone before you go in");
+    // A headset's browser usually can't turn speech into words: a Gemini or Groq key does it.
+    if (ready) {
+      const hears = !!core?.canHear?.();
+      check(hears, hears ? "I can hear you (your Gemini or Groq key turns speech into words)" : "To talk to me in a headset, also add a free Gemini or Groq key in Settings; its browser can't turn speech into words. Look, your PC and pins work without it.");
+    }
     check(!!paired, paired ? "Your PC is paired: " + paired.name : "Your PC: open Remote once (outside VR) to pair it");
     panel.appendChild(checks);
 
