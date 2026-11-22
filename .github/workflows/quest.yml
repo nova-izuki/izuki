@@ -14,9 +14,11 @@ name: Build Izuki VR for Meta Quest
 on:
   push:
     branches: [main]
-    paths: ['quest/**', 'docs/.well-known/**', '.github/workflows/quest.yml']
+    # The app's files, and what tools/quest-check.cjs compares them with
+    # (the same list under pull_request).
+    paths: ['quest/**', 'docs/.well-known/**', '.github/workflows/quest.yml', 'tools/quest-check.cjs', 'docs/ANDROID-SIGNING.md', 'docs/CNAME', 'docs/app/manifest.webmanifest', 'docs/app/icon-*.png']
   pull_request:
-    paths: ['quest/**', 'docs/.well-known/**', '.github/workflows/quest.yml']
+    paths: ['quest/**', 'docs/.well-known/**', '.github/workflows/quest.yml', 'tools/quest-check.cjs', 'docs/ANDROID-SIGNING.md', 'docs/CNAME', 'docs/app/manifest.webmanifest', 'docs/app/icon-*.png']
   workflow_dispatch:
 
 permissions:
@@ -51,11 +53,14 @@ jobs:
           mkdir -p ~/.bubblewrap
           printf '{"jdkPath":"%s","androidSdkPath":"%s"}\n' "$JAVA_HOME" "$ANDROID_HOME" > ~/.bubblewrap/config.json
           bubblewrap --version
+      # The private key signs only reviewed code on main: a branch, a pull
+      # request or a manual run elsewhere builds TEST-ONLY with a throwaway key
+      # (and never sees the secret).
       - name: Signing key (decoded outside the checkout)
         id: key
         env:
-          KEY_B64: ${{ secrets.IZUKI_PREVIEW_KEYSTORE_B64 }}
-          KEY_PASSWORD: ${{ secrets.IZUKI_PREVIEW_KEYSTORE_PASSWORD }}
+          KEY_B64: ${{ github.ref == 'refs/heads/main' && secrets.IZUKI_PREVIEW_KEYSTORE_B64 || '' }}
+          KEY_PASSWORD: ${{ github.ref == 'refs/heads/main' && secrets.IZUKI_PREVIEW_KEYSTORE_PASSWORD || '' }}
         run: |
           ks="$RUNNER_TEMP/izuki-quest.p12"
           if [ -n "$KEY_B64" ] && [ -n "$KEY_PASSWORD" ]; then
