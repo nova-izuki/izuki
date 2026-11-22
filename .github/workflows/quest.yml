@@ -129,6 +129,13 @@ jobs:
           STORE_PASSWORD: ${{ github.ref == 'refs/heads/main' && secrets.IZUKI_QUEST_STORE_KEYSTORE_PASSWORD || '' }}
         run: |
           if [ -z "$STORE_B64" ] || [ -z "$STORE_PASSWORD" ]; then echo "No store key in GitHub yet (tools/quest-store-key.ps1)."; exit 0; fi
+          # Windows PowerShell can add a byte-order mark and a line break when it
+          # pipes text into gh: keep only what can belong. The key is base64; the
+          # password is letters and digits by construction (tools/quest-store-key.ps1).
+          STORE_B64=$(printf '%s' "$STORE_B64" | tr -cd 'A-Za-z0-9+/=')
+          STORE_PASSWORD=$(printf '%s' "$STORE_PASSWORD" | tr -cd 'A-Za-z0-9')
+          export STORE_PASSWORD
+          echo "::add-mask::$STORE_PASSWORD"
           ks="$RUNNER_TEMP/izuki-quest-store.p12"
           printf '%s' "$STORE_B64" | base64 -d > "$ks"
           alias=$(keytool -list -keystore "$ks" -storetype PKCS12 -storepass:env STORE_PASSWORD | sed -n 's/^\([^,]*\),.*PrivateKeyEntry.*/\1/p' | head -1)

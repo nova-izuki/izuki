@@ -51,9 +51,19 @@ $sha = [Security.Cryptography.SHA256]::Create().ComputeHash($x509.RawData)
 $fp = ($sha | ForEach-Object { $_.ToString("X2") }) -join ":"
 [IO.File]::WriteAllText((Join-Path $dir "fingerprint.txt"), $fp)
 
-[Convert]::ToBase64String([IO.File]::ReadAllBytes($p12)) | gh secret set IZUKI_QUEST_STORE_KEYSTORE_B64 -R nova-izuki/izuki
-if ($LASTEXITCODE -ne 0) { throw "Couldn't add the key to GitHub (is gh signed in?)." }
-$pw | gh secret set IZUKI_QUEST_STORE_KEYSTORE_PASSWORD -R nova-izuki/izuki
-if ($LASTEXITCODE -ne 0) { throw "Couldn't add the password to GitHub." }
+# Through a file, not a pipe: Windows PowerShell pipes text into gh with a
+# byte-order mark and a line break, and the secret would carry them.
+function Set-GhSecret($name, $value) {
+  $tmp = Join-Path $dir (".secret-" + [Guid]::NewGuid().ToString("N") + ".tmp")
+  try {
+    [IO.File]::WriteAllText($tmp, $value, (New-Object Text.UTF8Encoding $false))
+    cmd /c "gh secret set $name -R nova-izuki/izuki < `"$tmp`""
+    if ($LASTEXITCODE -ne 0) { throw "Couldn't set $name in GitHub (is gh signed in?)." }
+  } finally {
+    Remove-Item $tmp -Force -ErrorAction SilentlyContinue
+  }
+}
+Set-GhSecret "IZUKI_QUEST_STORE_KEYSTORE_B64" ([Convert]::ToBase64String([IO.File]::ReadAllBytes($p12)))
+Set-GhSecret "IZUKI_QUEST_STORE_KEYSTORE_PASSWORD" $pw
 Write-Host "GitHub has the store key now."
 Write-Host "Store key fingerprint (public, goes in assetlinks.json): $fp"
