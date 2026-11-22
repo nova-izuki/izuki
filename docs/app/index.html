@@ -890,6 +890,8 @@
   const bug = (message, extra) => { try { window.izukiBugs?.report(message, extra); } catch {} };
   /** Note what just happened, to go with a later report. */
   const note = (message) => { try { window.izukiBugs?.crumb(message, "voice"); } catch {} };
+  // A standing fact for the copy ("why didn't it search?"), not a report.
+  const fact = (name, value) => { try { window.izukiBugs?.fact(name, value); } catch {} };
 
   // ------------------------------------------------------------ storage
   const store = {
@@ -1854,6 +1856,7 @@
           noToolsUntil = Date.now() + 3600000;
           store.set("noToolsUntil", noToolsUntil);
           if (turnMeta) { turnMeta.search.offered = false; turnMeta.search.why = "Web search: Google refused it for this answer."; }
+          fact("search", "Gemini refused the tools (400)");
           return gemini(contents, onText, model, true, system);
         }
       }
@@ -1863,6 +1866,7 @@
         noToolsUntil = Date.now() + 3600000;
         store.set("noToolsUntil", noToolsUntil);
         if (turnMeta) { turnMeta.search.offered = false; turnMeta.search.why = "Web search: today's search allowance is used up."; }
+        fact("search", "search allowance used up (429)");
         return gemini(contents, onText, model, true, system);
       }
       if ((res.status === 429 || res.status === 503) && model === MODEL) {
@@ -3992,7 +3996,7 @@
     if (!voiceOn && !turnCtx) {
       stream?.cancel();
       liveSaid(t);
-      offerHear(null, t.replace(/[*_#`]/g, ""));
+      offerHear(null, t.replace(/[*_#`]/g, ""), "muted");
       return;
     }
     const s = stream || voiceStream({ siri });
@@ -4203,12 +4207,13 @@
   }
 
   /** The phone won't play sound before a tap: the answer, out loud, in one tap — or talk back. */
-  function offerHear(url, words) {
+  /** why: "muted" when the person turned the voice off (not a failure). */
+  function offerHear(url, words, why = "") {
     clearVoiceRecovery();
     pendingVoice = { url, words };
     note("voice needs a play tap");
     // In a headset the page's buttons can't be seen: the room says why it's quiet.
-    toViews("quiet", quietWhy());
+    toViews("quiet", why === "muted" ? "Izuki's sound is muted, so I'm showing my words. Unmute it in the app to hear me." : quietWhy());
     const last = [...log.querySelectorAll(".msg.izuki")].pop();
     const row = el("div", "chip-row voice-recovery");
     const hear = el("button", "chip primary", "🔊 Tap to hear it");

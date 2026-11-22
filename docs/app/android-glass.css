@@ -1295,20 +1295,19 @@ html[data-os] .app > header .tools > .call-btn {
 }
 /* Home and New carry their word beside the icon only where it fits. In a PC's
    or a headset's browser the word was drawn inside the 54-64 px oval and spilled
-   out of it. The word now shows only when the row is wide enough for it (about
-   83 px a button), and then the oval grows to hold it; still one row. */
-.app > header .tools { container-type: inline-size; }
+   out of it. Now the word shows only on screens at least 600 px wide (the app
+   column then gives each of the five buttons ~100 px), in an oval that takes
+   its whole column; still one row. Android keeps its icon-only row. */
 .app > header .tools > .icon-btn.compact-action span { display: none; }
-@container (min-width: 440px) {
-  html .app > header .tools > .icon-btn.compact-action,
-  html[data-os] .app > header .tools > .icon-btn.compact-action {
+@media (min-width: 600px) {
+  html:not([data-os="android"]) .app > header .tools > .icon-btn.compact-action {
     width: 100%;
     max-width: 100%;
     padding-inline: 10px;
     gap: 6px;
     white-space: nowrap;
   }
-  .app > header .tools > .icon-btn.compact-action span { display: inline; }
+  html:not([data-os="android"]) .app > header .tools > .icon-btn.compact-action span { display: inline; font-size: inherit; }
 }
 /* Readiness steps stay small next to their row (the panel's list size is bigger). */
 html[data-os="android"] .panel .health-steps li,

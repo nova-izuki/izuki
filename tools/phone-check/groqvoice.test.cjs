@@ -150,7 +150,8 @@ test("Gemini first; Orpheus only when Gemini gives nothing", async () => {
 
 test("the page uses it, and a headset is told why it's quiet", () => {
   assert.match(html, /url: natural\(\) \? naturalVoice\(w\) : Promise\.resolve\(null\)/);
-  assert.match(html, /function offerHear\([^)]*\) \{[\s\S]{0,300}toViews\("quiet", quietWhy\(\)\)/);
+  assert.match(html, /function offerHear\([^)]*\) \{[\s\S]{0,400}toViews\("quiet", why === "muted" \? [^:]+: quietWhy\(\)\)/);
+  assert.match(html, /offerHear\(null, t\.replace\([^)]*\), "muted"\)/, "a muted reply isn't reported as a failure");
   const p = page({ groqKey: "" });
   p.ctx.voiceResting = () => ({ kind: "rate" });
   assert.match(p.quietWhy(), /Add a free Groq key/);

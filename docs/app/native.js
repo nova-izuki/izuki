@@ -126,7 +126,13 @@
      */
     async glow(state = "", lease = 30000) {
       if (!control()?.glow) return false;
-      try { return !!(await control().glow({ state: String(state || ""), lease: Math.round(Number(lease) || 30000) }))?.shown; } catch { return false; }
+      try {
+        return !!(await control().glow({ state: String(state || ""), lease: Math.round(Number(lease) || 30000) }))?.shown;
+      } catch (e) {
+        // The edges didn't light: say so, so "it stopped glowing" has a reason.
+        try { window.izukiBugs?.fact("edge glow", (e && e.message) || "failed"); } catch {}
+        return false;
+      }
     },
     /** The hearing language for native listening and the voice turn ("" = the phone's). */
     /** One colour for the orb that floats over other apps (Android draws it natively). */

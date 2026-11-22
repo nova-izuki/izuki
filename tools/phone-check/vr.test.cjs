@@ -352,6 +352,14 @@ test("\"Hey Nova\" in the room: only what's said to Izuki is answered", async ()
   assert.deepEqual(plain(await b.vr.gate("what's the weather")), { said: "what's the weather" }, "after a tap (not hands-free) anything counts");
 });
 
+test("\"stop listening\" works hands-free even without the name", async () => {
+  const b = browser();
+  b.vr.handsFree(true);
+  const r = await b.vr.gate("stop listening");
+  assert.ok(r && r.done, "not ignored as room talk");
+  assert.match(r.say, /stopped listening/);
+});
+
 test("change your look; stop listening", async () => {
   const b = browser();
   assert.equal((await b.vr.gate("change your look")).say, "This is Aurora.");

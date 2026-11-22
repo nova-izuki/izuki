@@ -982,6 +982,8 @@ export async function start({ mode, session, api, tint }) {
       let bmp = null;
       try { bmp = await api.thumb(filesUi.path, it); } finally { if (my === filesUi.gen) filesUi.pending.delete(key); }
       if (my !== filesUi.gen || !filesUi.open) { bmp?.close?.(); return; }
+      // Another load got there first: keep that one, free this one.
+      if (filesUi.thumbs.has(key)) { bmp?.close?.(); continue; }
       filesUi.thumbs.set(key, bmp || null);
       if (bmp) drawFiles();
     }

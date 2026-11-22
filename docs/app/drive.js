@@ -162,9 +162,30 @@
     const r = trip && trip.route;
     return r ? `${timeText(r.secs)} · ${leftText(r.metres)} to ${trip.place}` : "";
   }
+  // The page already keeps a local list of what went wrong (shared/bugs.js).
+  // These are the places drive mode used to fail in silence: now each one says
+  // so, on this phone, for whoever has to fix it.
+  function noteFact(name, value) {
+    try { window.izukiBugs?.fact(name, value); } catch { /* notes are optional */ }
+  }
+  function noteProblem(what, extra) {
+    try { window.izukiBugs?.report(what, extra); } catch { /* notes are optional */ }
+  }
+
   function showAmbient(force) {
     const native = window.IzukiNative;
     if (!native || typeof native.orb !== "function") return;
+    // Whether Android took the line at all is the first thing to know when the
+    // orb "didn't show anything".
+    const push = (state, text, lease) => {
+      try {
+        const p = native.orb(state, text, lease);
+        noteFact("orb", text ? "trip line sent" : "resting");
+        if (p && typeof p.then === "function") p.catch(() => noteFact("orb", "Android refused the orb"));
+      } catch (e) {
+        noteFact("orb", "no orb bridge" + (e && e.message ? ": " + e.message : ""));
+      }
+    };
     // In the app the trip line under the speed already says this.
     const line = active && document.visibilityState !== "visible" ? ambientLine() : "";
     const now = Date.now();
@@ -172,7 +193,7 @@
       if (!ambient) return;
       ambient = ""; ambientAt = 0;
       // Hand the orb back the way Maps left it.
-      void native.orb("rest", overMaps ? "Maps is driving — tap to talk" : "", 0);
+      push("rest", overMaps ? "Maps is driving — tap to talk" : "", 0);
       return;
     }
     // The orb's lease runs out in two minutes and its words go with it, so the
@@ -181,7 +202,7 @@
     // the wheel.
     if (!force && line === ambient && now - ambientAt < 50_000) return;
     ambient = line; ambientAt = now;
-    void native.orb("trip", line, 120_000);
+    push("trip", line, 120_000);
   }
 
   // A drive outlives the screen. Leaving for Google Maps is normal; Android
@@ -276,7 +297,11 @@
           await plan(true);
           return;
         }
-      } catch { /* try the next source, then give up honestly */ }
+      } catch (e) {
+        // Both gazetteers failing is why "I couldn't find it" happens; the
+        // reason is worth keeping.
+        noteFact("place lookup", (e && e.message) || "failed");
+      }
     }
     if (trip === t) { t.found = "no"; paint(); saveTrip(); }
   }
@@ -289,7 +314,10 @@
       const r = d && d.code === "Ok" && d.routes && d.routes[0];
       if (!r || !Number.isFinite(r.distance) || !Number.isFinite(r.duration)) return null;
       return { metres: r.distance, secs: r.duration, at: Date.now() };
-    } catch { return null; }
+    } catch (e) {
+      noteFact("route", (e && e.message) || "failed");
+      return null;
+    }
   }
 
   /** Ask again — unless it just answered, and never two at once. */
@@ -587,6 +615,26 @@
         rideSaid["m" + mark] = true;
         say(`${mark} minutes into the drive to ${trip.place} — ${far()} covered. Maps still has the turns.`);
       }
+      // What's left really moved: the road opened up, or it closed. Say the
+      // new number instead of waiting to be asked — once per real drop, never
+      // twice within three minutes, only while actually moving, and never on
+      // the approach where "almost there" is the line.
+      if (trip.route && !rideSaid.near) {
+        const secs = trip.route.secs;
+        if (rideSaid.leftSecs === undefined) rideSaid.leftSecs = secs;
+        else if (secs > rideSaid.leftSecs) rideSaid.leftSecs = secs;
+        else if (
+          rideSaid.leftSecs - secs >= 180 &&
+          now - (rideSaid.leftAt || 0) >= 180_000 &&
+          rolling &&
+          speed * perMs >= 5 &&
+          trip.route.metres > 800
+        ) {
+          rideSaid.leftSecs = secs;
+          rideSaid.leftAt = now;
+          say(`Now about ${timeText(secs)} and ${leftText(trip.route.metres)} to ${trip.place}.`);
+        }
+      }
       if (rolling && speed * perMs < 6) { if (!crawlSince) crawlSince = now; } else crawlSince = 0;
       if (crawlSince && now - crawlSince > 90_000 && !rideSaid.crawl) {
         rideSaid.crawl = true;
@@ -631,6 +679,17 @@
     showAmbient(true);
   });
 
+  // Why there's no fix, said once per reason rather than on every failed read.
+  let geoWhy = "";
+  function onGeoError(err) {
+    const code = err && typeof err.code === "number" ? err.code : 0;
+    const why = code === 1 ? "denied" : code === 2 ? "unavailable" : code === 3 ? "timed out" : "failed";
+    noteFact("location", why);
+    if (geoWhy === why) return;
+    geoWhy = why;
+    noteProblem("Drive mode: location " + why + (err && err.message ? " — " + err.message : ""));
+  }
+
   // ------------------------------------------------------------ on / off
   function start() {
     if (active) return;
@@ -643,7 +702,15 @@
     const c = core();
     if (c && !c.calling()) c.startCall();
     void keepAwake();
-    try { watch = navigator.geolocation?.watchPosition(onPosition, () => undefined, { enableHighAccuracy: true, maximumAge: 1000, timeout: 15000 }); } catch { watch = null; }
+    void navigator.permissions?.query?.({ name: "geolocation" })
+      .then((p) => noteFact("location permission", p && p.state))
+      .catch(() => undefined);
+    try {
+      watch = navigator.geolocation?.watchPosition(onPosition, onGeoError, { enableHighAccuracy: true, maximumAge: 1000, timeout: 15000 });
+    } catch (e) {
+      watch = null;
+      noteProblem("Drive mode: no location watch — " + ((e && e.message) || e));
+    }
     void navigator.getBattery?.().then((b) => { battery = b; paint(); }).catch(() => undefined);
     clearInterval(timer);
     timer = setInterval(check, 5000);

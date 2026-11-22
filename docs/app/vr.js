@@ -499,7 +499,9 @@
       // "Hey Nova" in the room: the call listens all the time, but only what's
       // said to Izuki counts (its name, a tap first, or a follow-up just after it spoke).
       const n = named(s, g.IzukiCore?.name?.());
-      if (heyNova && !armed && Date.now() - spokeAt > FOLLOW_ON_MS) {
+      // "Stop listening" always works, name or not.
+      const bare = !n.called && command(s)?.kind === "sleep";
+      if (heyNova && !armed && !bare && Date.now() - spokeAt > FOLLOW_ON_MS) {
         if (!n.called) return null;
         if (!n.rest) return { done: true, said: s, say: "Mhm?" };
       }
