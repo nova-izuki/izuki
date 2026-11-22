@@ -44,6 +44,10 @@ jobs:
       - name: Meta's Bubblewrap, told where Java and the Android SDK are
         run: |
           npm install --global @meta-quest/bubblewrap-cli@1.24.1
+          # Bubblewrap wants the SDK laid out the way it downloads it: a bin/
+          # folder at the top. The runner's SDK keeps it in cmdline-tools/latest/.
+          [ -e "$ANDROID_HOME/bin" ] || ln -s "$ANDROID_HOME/cmdline-tools/latest/bin" "$ANDROID_HOME/bin"
+          ls "$ANDROID_HOME/bin/sdkmanager" "$ANDROID_HOME/build-tools/34.0.0/zipalign"
           mkdir -p ~/.bubblewrap
           printf '{"jdkPath":"%s","androidSdkPath":"%s"}\n' "$JAVA_HOME" "$ANDROID_HOME" > ~/.bubblewrap/config.json
           bubblewrap --version
