@@ -538,17 +538,18 @@
       try { return (await control()?.navigate({ to: String(to || "").trim(), orb: orbOverApps })) || null; } catch { return null; }
     },
     /**
-     * The floating glass orb over other apps: listen, think, talk, rest or
-     * idle. Listen/think/talk are leases (`lease` ms, default 20 s): send them
-     * again while they stay true, or the orb falls back to resting.
+     * The floating glass orb over other apps: listen, think, talk, rest, trip
+     * or idle. Listen/think/talk are leases (`lease` ms, default 20 s): send
+     * them again while they stay true, or the orb falls back to resting. "trip"
+     * is a drive line that stays until the page changes it or its lease ends.
      */
     async orb(state = "idle", text = "", lease) {
       if (!control() || platform() === "web") return false;
       const mode = String(state || "idle");
-      // "Keep the glass orb over other apps" decides whether a resting orb
-      // stays up. Listening, working and talking always show it: that is
-      // Izuki doing something for the person, over whatever is open.
-      if (!orbOverApps && mode === "rest") return false;
+      // "Keep the glass orb over other apps" decides whether a resting orb or
+      // a drive line stays up. Listening, working and talking always show it:
+      // that is Izuki doing something for the person, over whatever is open.
+      if (!orbOverApps && (mode === "rest" || mode === "trip")) return false;
       const args = { state: mode, text: String(text || "") };
       if (Number.isFinite(lease)) args.lease = Math.max(0, Math.round(lease));
       try { await control().orb(args); return true; } catch { return false; }
