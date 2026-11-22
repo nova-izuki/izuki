@@ -515,8 +515,19 @@ export async function start({ mode, session, api, tint }) {
     if (!pr) return;
     if (!pr.grabOnly) { try { pr.u.up?.(performance.now() - pr.t0, completed && !pr.moved); } catch (e) { console.warn("vr up", e); } }
     if (pr.moved) { pr.u.dropped?.(); return; }
-    // A pinch right on something that didn't move it: a tap there.
-    if (pr.direct) { if (completed) { try { pr.u.tap?.(null, p); } catch (e) { console.warn("vr tap", e); } } return; }
+    // A pinch right on something that didn't move it: a tap on the spot it touched.
+    if (pr.direct) {
+      if (!completed) return;
+      let hit = null;
+      const prm = pr.obj.geometry?.parameters;
+      if (prm?.width && prm?.height) {
+        grabPoint(p, grabAt);
+        const local = pr.obj.worldToLocal(grabAt.clone());
+        hit = { uv: { x: Math.max(0, Math.min(1, local.x / prm.width + 0.5)), y: Math.max(0, Math.min(1, local.y / prm.height + 0.5)) }, point: grabAt.clone() };
+      }
+      try { pr.u.tap?.(hit, p); } catch (e) { console.warn("vr tap", e); }
+      return;
+    }
     if (pr.grabOnly || !completed) return;
     // A tap counts only where it started: slide off a button to cancel it.
     if (!p.hit || p.hit.object !== pr.obj) return;
@@ -1597,12 +1608,16 @@ export async function start({ mode, session, api, tint }) {
       holoUi.links.push({ line, a: null, b: null });
     } else if (spec.kind === "chart") {
       const top = Math.max(...nodes.map((x) => Math.abs(x.it.value) || 0), 1e-9);
+      // All above zero: bars rise from a low line. Some below: the line sits in the middle.
+      const mixed = nodes.some((x) => x.it.value < 0);
+      const zero = mixed ? -0.02 : -0.26, span = mixed ? 0.24 : 0.46;
       nodes.forEach((x, k) => {
-        const hgt = Math.max(0.01, 0.46 * (Math.abs(x.it.value) || 0) / top);
+        const v = Number.isFinite(x.it.value) ? x.it.value : 0;
+        const hgt = Math.max(0.01, span * Math.abs(v) / top), down = v < 0;
         x.body.scale.set(0.075, hgt, 0.075);
-        x.base.set(spread(k, Math.min(1.05, 0.22 * n)), -0.26 + hgt / 2, 0);
-        x.glow.position.set(0, hgt / 2, 0);
-        x.label.mesh.position.set(0, -hgt / 2 - 0.06, 0.05);
+        x.base.set(spread(k, Math.min(1.05, 0.22 * n)), zero + (down ? -hgt / 2 : hgt / 2), 0);
+        x.glow.position.set(0, down ? -hgt / 2 : hgt / 2, 0);
+        x.label.mesh.position.set(0, down ? hgt / 2 + 0.06 : -hgt / 2 - 0.06, 0.05);
       });
     }
     // Lines between parts: the ones the AI named; a map joins all to the middle; steps run in order.

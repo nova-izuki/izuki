@@ -91,7 +91,7 @@
   // instead (unless you say "in here" or "in the browser").
   const ONLINE = String.raw`(?:\s+(?:online|on\s+(?:the\s+)?(?:web|internet|google)|(?:in|on)\s+(?:the\s+|your\s+)?browser|in\s+here))?`;
   const WEB = whole([
-    String.raw`(?:search|look)\s+(?:on\s+)?(?:the\s+)?(?:web|internet|online|google)\s+(?:for|up)\s+(.+?)`,
+    String.raw`(?:search|look)\s+(?:on\s+)?(?:the\s+)?(?:web|internet|online|google)\s+(?:for|up)\s+(.+?)` + ONLINE,
     String.raw`(?:search\s+for|search|google|look\s+up)\s+(.+?)` + ONLINE,
     String.raw`look\s+(.+?)\s+up` + ONLINE,
   ].join("|"));
@@ -223,7 +223,7 @@
     String.raw`show\s+me\s+(?:how\s+.{2,80}\s+works?|what\s+.{2,80}\s+looks?\s+like|the\s+(?:solar\s+system|planets|structure|parts|layers|history|timeline|stages|life\s+cycle|water\s+cycle)\b)`,
   ].join("|") + String.raw`)`, "i");
   // "...this", "...that", "...it": something in front of you (a look), not a hologram.
-  const ABOUT_HERE = /\b(?:this|that|these|those)\b|\bit\s*[.!?]*$/i;
+  const ABOUT_HERE = /\b(?:this|that|these|those|it)\s*[.!?]*$|\bhow\s+(?:this|that|it)\s+works?\b|\b(?:this|that|these|those)\s+(?:thing|one|stuff|here)\b/i;
   const HOLO_NEXT = whole(String.raw`next(?:\s+(?:step|one|part))?|go\s+on|continue|keep\s+going|and\s+then|what'?s\s+next`);
   const HOLO_BACK = whole(String.raw`(?:go\s+)?back|previous(?:\s+(?:step|one))?|last\s+step`);
   const HOLO_AGAIN = whole(String.raw`(?:say\s+(?:that|it)\s+)?again|repeat(?:\s+(?:that|it))?|one\s+more\s+time`);
@@ -283,12 +283,14 @@
     let d;
     try { d = JSON.parse(t.slice(a, b + 1)); } catch { return null; }
     if (!d || typeof d !== "object" || !Array.isArray(d.items)) return null;
-    const words = (v, n) => String(v ?? "").replace(/[`*_#>{}[\]]+/g, " ").replace(/\s+/g, " ").trim().slice(0, n);
-    const raw = d.items.filter((x) => x && typeof x === "object" && words(x.label, 40)).slice(0, 8);
+    const words = (v, n) => (typeof v === "string" || typeof v === "number" ? String(v) : "").replace(/[`*_#>{}[\]]+/g, " ").replace(/\s+/g, " ").trim().slice(0, n);
+    // Parts with no name are dropped; every reference still means the part the AI meant.
+    const kept = [], at = new Map();
+    d.items.forEach((x, k) => { if (kept.length < 8 && x && typeof x === "object" && words(x.label, 40)) { at.set(k, kept.length); kept.push(x); } });
+    const raw = kept;
     if (raw.length < 2) return null;
-    const n = raw.length;
     const kind = HOLO_KINDS.includes(d.kind) ? d.kind : "map";
-    const index = (v) => { const k = Number(v); return Number.isInteger(k) && k >= 0 && k < n ? k : -1; };
+    const index = (v) => { const k = Number(v); return Number.isInteger(k) && at.has(k) ? at.get(k) : -1; };
     const items = raw.map((x, i) => {
       const value = Number(x.value);
       return {
@@ -638,24 +640,28 @@
   }
 
   // ---- holograms ---------------------------------------------------------------
-  let holoNow = null, holoAt = -1;
+  let holoNow = null, holoAt = -1, holoGen = 0;
   /** Your AI designs it, the room builds it; resolves to what Izuki says first. */
   async function holo(ask) {
     const core = g.IzukiCore;
     if (!core?.think || !core.ready?.()) return "Add a free AI key in Settings first, then I can build it for you.";
     const visit = epoch;
+    // Closed meanwhile, or another asked for: this answer is no longer wanted.
+    const my = ++holoGen;
+    const current = () => vr.active && visit === epoch && my === holoGen;
     vr.scene?.holoBuilding?.(String(ask).replace(new RegExp(LEAD, "i"), "").slice(0, 60));
     vr.scene?.orb("thinking");
     let reply = "";
     try {
       reply = await core.think(ask, HOLO_SYSTEM);
     } catch (e) {
-      if (vr.active && visit === epoch) vr.scene?.holoClose?.();
+      if (!current()) return "";
+      vr.scene?.holoClose?.();
       return "I couldn't build that just now: " + String(e?.message || e).slice(0, 120);
     } finally {
-      if (vr.active && visit === epoch) vr.scene?.orb(appState);
+      if (vr.active && visit === epoch && my === holoGen) vr.scene?.orb(appState);
     }
-    if (!vr.active || visit !== epoch) return "";
+    if (!current()) return "";
     const h = parseHolo(reply);
     if (!h) {
       vr.scene?.holoClose?.();
@@ -711,7 +717,9 @@
       const n = named(s, g.IzukiCore?.name?.());
       // "Stop listening" always works, name or not.
       const bare = !n.called && command(s)?.kind === "sleep";
-      if (heyNova && !armed && !bare && Date.now() - spokeAt > FOLLOW_ON_MS) {
+      const ctl = !n.called ? command(s) : null;
+      const live = !!ctl && ((/^holo-/.test(ctl.kind) && !!vr.scene?.holoShown?.()) || ctl.kind === "timer-stop" || ctl.kind === "breathe-stop" || ctl.kind === "web-hide");
+      if (heyNova && !armed && !bare && !live && Date.now() - spokeAt > FOLLOW_ON_MS) {
         if (!n.called && !(store.get("vr.anyQuestion", true) !== false && forIzuki(s))) return null;
         if (!n.rest) return { done: true, said: s, say: "Mhm?" };
       }
@@ -906,7 +914,7 @@
       vr.scene?.line("izuki", say);
       g.IzukiCore?.speak?.(say);
     },
-    holoClosed() { holoNow = null; holoAt = -1; },
+    holoClosed() { holoNow = null; holoAt = -1; holoGen++; },
     exited() {
       holoNow = null; holoAt = -1;
       epoch++;
@@ -1079,7 +1087,7 @@
     let micNow = mic;
     // A headset can't show a permission prompt inside the room: the camera is
     // asked for out here, once, on headsets that can share it.
-    let camNow = !support.ar || store.get("camAsked", false);
+    let camNow = !support.ar || store.get("camAsked", false), asking = false;
     // A headset needs the AI (and the microphone) before going in; the 3D
     // preview on a normal screen can be looked around without either.
     const label = () => (mode === "flat" ? "Open the 3D preview" : !ready ? "Set up my free key first" : !micNow ? "Allow the microphone" : !camNow ? "Allow the camera (for “what's this?”)" : mode === "immersive-ar" ? "Go into my room" : "Enter VR");
@@ -1104,14 +1112,21 @@
         return;
       }
       if (!camNow) {
-        camNow = true;
-        store.set("camAsked", true);
+        if (asking) return;
+        asking = true;
+        main.disabled = true;
         try {
           const s = await nav.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" } } });
           s.getTracks().forEach((t) => t.stop());
           say("Camera allowed. I only use it when you ask “what's this?”.");
         } catch { say("No camera, that's fine: everything else works. You can allow it later in the browser's site settings."); }
-        main.textContent = label();
+        finally {
+          camNow = true;
+          store.set("camAsked", true);
+          asking = false;
+          main.disabled = false;
+          main.textContent = label();
+        }
         return;
       }
       go(mode);

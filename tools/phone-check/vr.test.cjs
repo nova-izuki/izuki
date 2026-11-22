@@ -554,6 +554,8 @@ test("teach me in 3D: what builds a hologram, and what stays a look or a questio
     "Hey Nova, can you teach me about black holes", "simulate a volcano erupting", "map out the causes of World War 1"]) {
     assert.equal(command(s)?.kind, "holo", `"${s}" builds a hologram`);
   }
+  assert.equal(command("teach me about plants that live in deserts")?.kind, "holo", "a relative \"that\" isn't something in front of you");
+  assert.equal(command("search the web for cats in the browser").q, "cats");
   for (const s of ["show me how this works", "teach me about this", "explain quantum physics", "what is the capital of France", "show my photos", "show me what you can do"]) {
     assert.notEqual(command(s)?.kind, "holo", `"${s}" isn't a hologram`);
   }
@@ -571,6 +573,13 @@ test("a hologram from the AI: checked and trimmed, never code, no loops", () => 
   assert.equal(h.items[2].orbit, 1, "the Moon circles the Earth");
   assert.deepEqual(plain(h.items[3].link), [1], "links only to real, other parts");
   assert.deepEqual(plain(h.steps[0].focus), [0]);
+  // A part with no name is dropped, and references still mean the same parts.
+  const gap = parseHolo('{"kind":"model","items":[{"label":"Sun"},{"label":""},{"label":"Earth","orbit":0},{"label":"Moon","orbit":2,"link":[1,0]}],"steps":[{"say":"Moon","focus":[3,1]}]}');
+  assert.deepEqual(plain(gap.items.map((x) => x.label)), ["Sun", "Earth", "Moon"]);
+  assert.equal(gap.items[2].orbit, 1, "the Moon still circles the Earth");
+  assert.deepEqual(plain(gap.items[2].link), [0], "a link to the dropped part goes, not to another");
+  assert.deepEqual(plain(gap.steps[0].focus), [2]);
+  assert.equal(parseHolo('{"items":[{"label":{"x":1}},{"label":"A"},{"label":"B"}]}').items.length, 2, "a name that isn't text isn't a part");
   const loop = parseHolo('{"kind":"model","items":[{"label":"A","orbit":1},{"label":"B","orbit":0}]}');
   assert.equal(loop.items[0].orbit, -1, "only an earlier part can be circled: no loops");
   assert.equal(loop.items[1].orbit, 0);
@@ -620,8 +629,27 @@ test("teach me in 3D: the AI's design is built, next walks the lesson; elsewhere
   assert.match((await b.vr.gate("next")).say, /last step/);
   assert.equal((await b.vr.gate("go back")).say, "Blood comes back from the body.");
   assert.equal((await b.vr.gate("say that again")).say, "Blood comes back from the body.");
+  // Hands-free, long after Izuki spoke: a lesson's "next" still needs no name.
+  b.vr.handsFree(true);
+  b.vr.line("izuki", "Blood comes back from the body.");
+  await new Promise((r) => setTimeout(r, 5));
+  assert.equal((await b.vr.gate("next")).say, "It's pushed to the lungs.");
+  b.vr.handsFree(false);
   await b.vr.gate("close the hologram");
   assert.ok(b.calls.some((c) => c[0] === "holoClose"));
+});
+
+test("a hologram closed (or replaced) while it's designed never comes back", async () => {
+  let release;
+  const slow = new Promise((r) => { release = r; });
+  const b = browser({ think: () => slow.then(() => JSON.stringify({ title: "Old", kind: "map", say: "Old one.", items: [{ label: "A" }, { label: "B" }] })) });
+  const pending = b.vr.gate("show me the solar system");
+  await new Promise((r) => setTimeout(r, 5));
+  b.vr.api().holoClosed();
+  release();
+  const r = await pending;
+  assert.ok(!b.calls.some((c) => c[0] === "holoShow"), "the closed one isn't built");
+  assert.notEqual(r.say, "Old one. Point at any part to hear more.");
 });
 
 test("a hologram the AI couldn't design: its words are said (never code), and nothing is left up", async () => {

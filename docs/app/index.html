@@ -4468,9 +4468,11 @@
    * above a normal voice, however noisy the start was.
    */
   function speechEnds() {
-    let floor = -1, spoke = 0, quiet = 0;
+    let floor = Infinity, spoke = 0, quiet = 0;
     return (v, took) => {
-      if (floor < 0) floor = v;
+      // The first quarter of a second only learns the room: its quietest
+      // moment (the gaps between words, when someone talks straight away).
+      if (took <= 240) { floor = Math.min(floor, v); return ""; }
       const bar = Math.min(0.06, Math.max(0.012, floor * 2.2));
       if (v > bar) {
         spoke += 80; quiet = 0;
