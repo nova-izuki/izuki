@@ -261,7 +261,9 @@ test("izukinova.ai/vr opens the VR card", () => {
 test("vr-scene.js is built from vr-scene.src.js (run node tools/build-vr.cjs)", () => {
   const { options } = require(path.join(root, "tools/build-vr.cjs"));
   const built = require("esbuild").buildSync({ ...options(), write: false, logLevel: "silent" }).outputFiles[0].text;
-  assert.equal(read("docs/app/vr-scene.js"), built);
+  // Line endings aside (a Windows checkout may turn them into CRLF).
+  const lf = (s) => s.replace(/\r\n/g, "\n");
+  assert.equal(lf(read("docs/app/vr-scene.js")), lf(built));
   assert.match(built, /Permission is hereby granted, free of charge/, "three.js's MIT notice is in the bundle");
 });
 
