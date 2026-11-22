@@ -25,7 +25,7 @@ function harness(callPage = false) {
     setTimeout: (fn, ms) => { timers.set(++timerId, {fn, ms}); return timerId; },
     clearTimeout: id => timers.delete(id), clearInterval() {},
     store: { get: (_, value) => value }, document: { addEventListener() {}, querySelectorAll: () => [] },
-    note() {}, bug() {}, liveSaid() {}, setOrb() {}, setMode() {}, watchBarge() {},
+    note() {}, bug() {}, liveSaid() {}, toViews() {}, setOrb() {}, setMode() {}, watchBarge() {},
     $: () => ({ replaceChildren() {}, getBoundingClientRect: () => ({ top: 0 }), clientHeight: 0, scrollTop: 0 }),
     el: () => ({ textContent: '', getClientRects: () => [] }), performance, setInterval: () => 0, talking: true, readAloud: true, key: '',
     muted: false, bargeOn: false, recoveries, console, turnCtx: null,
