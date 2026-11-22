@@ -20,7 +20,7 @@
 // On a normal screen ("flat") the same room is a 3D preview you drive with
 // the mouse: click to tap, drag to look around, the wheel scrolls the PC.
 import {
-  AdditiveBlending, BackSide, BufferGeometry, CanvasTexture, CircleGeometry, Color, Float32BufferAttribute,
+  AdditiveBlending, BackSide, BoxGeometry, BufferGeometry, CanvasTexture, CircleGeometry, Color, Float32BufferAttribute,
   Group, Line, LineBasicMaterial, Mesh, MeshBasicMaterial, PerspectiveCamera, PlaneGeometry, Points, PointsMaterial,
   Quaternion, Raycaster, RingGeometry, Scene, ShaderMaterial, SphereGeometry, Sprite, SpriteMaterial, SRGBColorSpace,
   TorusGeometry, Vector2, Vector3, WebGLRenderer,
@@ -206,6 +206,13 @@ const ICONS = {
   back(x) { x.beginPath(); x.moveTo(58, 30); x.lineTo(38, 50); x.lineTo(58, 70); x.stroke(); },
   next(x) { x.beginPath(); x.moveTo(42, 30); x.lineTo(62, 50); x.lineTo(42, 70); x.stroke(); },
   up(x) { x.beginPath(); x.moveTo(30, 56); x.lineTo(50, 36); x.lineTo(70, 56); x.moveTo(50, 36); x.lineTo(50, 74); x.stroke(); },
+  search(x) { x.beginPath(); x.arc(44, 44, 20, 0, Math.PI * 2); x.stroke(); x.beginPath(); x.moveTo(59, 59); x.lineTo(76, 76); x.stroke(); },
+  pause(x) { x.beginPath(); x.moveTo(40, 32); x.lineTo(40, 68); x.moveTo(60, 32); x.lineTo(60, 68); x.stroke(); },
+  // A small cube in three lines: something built in 3D.
+  holo(x) {
+    x.beginPath(); x.moveTo(50, 22); x.lineTo(76, 36); x.lineTo(76, 64); x.lineTo(50, 78); x.lineTo(24, 64); x.lineTo(24, 36); x.closePath(); x.stroke();
+    x.beginPath(); x.moveTo(24, 36); x.lineTo(50, 50); x.lineTo(76, 36); x.moveTo(50, 50); x.lineTo(50, 78); x.stroke();
+  },
 };
 /** A small round control on its own card: graphite, a hairline ring, one icon. */
 function roundButton(c, name) {
@@ -457,15 +464,59 @@ export async function start({ mode, session, api, tint }) {
     if (!p.hit) return;
     const u = p.hit.object.userData.ui;
     const drag = u.drag ? u.drag() : null;
-    p.press = { u, obj: p.hit.object, hit: p.hit, drag, grabOnly, dist: p.hit.distance, start: p.hit.point.clone(), offset: drag ? drag.position.clone().sub(p.hit.point) : null, moved: false };
+    p.press = { u, obj: p.hit.object, hit: p.hit, drag, grabOnly, dist: p.hit.distance, start: p.hit.point.clone(), offset: drag ? drag.position.clone().sub(p.hit.point) : null, moved: false, t0: performance.now() };
     buzz(p, 0.35, 20);
+    if (!grabOnly) { try { u.down?.(p); } catch (e) { console.warn("vr down", e); } }
+  }
+  // ---- your hand on things --------------------------------------------------------
+  // Reach out and pinch (or squeeze a controller's grip) right at the orb, a
+  // card or a panel, and it comes with your hand; let go and it stays. From
+  // further away the ray does the same.
+  const grabAt = new Vector3(), grabTmp = new Vector3(), grabBox = new Vector3();
+  function grabPoint(p, out) {
+    const hand = p.source?.hand ? renderer.xr.getHand(p.index) : null;
+    const tip = hand?.joints?.["index-finger-tip"], thumb = hand?.joints?.["thumb-tip"];
+    if (tip && thumb) { tip.getWorldPosition(out); thumb.getWorldPosition(grabTmp); return out.add(grabTmp).multiplyScalar(0.5); }
+    return p.ctrl.getWorldPosition(out);
+  }
+  function grabNear(p) {
+    if (flat || !p.source) return false;
+    grabPoint(p, grabAt);
+    let best = null, bestD = Infinity;
+    for (const m of targets) {
+      const u = m.userData.ui;
+      if (!(u.drag || u.grab) || !shown(m)) continue;
+      const g = m.geometry;
+      if (!g.boundingBox) g.computeBoundingBox();
+      // The pinch, in the thing's own space: inside its box, or just off its face.
+      m.updateWorldMatrix(true, false);
+      grabBox.copy(grabAt);
+      m.worldToLocal(grabBox);
+      const b = g.boundingBox, sc = m.getWorldScale(grabTmp);
+      const reach = (m === orb ? 0.07 : 0.03) / Math.max(1e-3, sc.x);
+      const dx = Math.max(b.min.x - grabBox.x, 0, grabBox.x - b.max.x);
+      const dy = Math.max(b.min.y - grabBox.y, 0, grabBox.y - b.max.y);
+      const dz = Math.max(b.min.z - grabBox.z, 0, grabBox.z - b.max.z);
+      if (dx > reach || dy > reach || dz > reach + 0.05 / Math.max(1e-3, sc.x)) continue;
+      const d = Math.hypot(dx, dy, dz);
+      if (d < bestD) { bestD = d; best = { m, u }; }
+    }
+    if (!best) return false;
+    const obj = (best.u.drag || best.u.grab)();
+    if (!obj) return false;
+    p.press = { u: best.u, obj: best.m, hit: null, drag: obj, direct: true, grabOnly: false, offset: obj.position.clone().sub(grabAt), start: grabAt.clone(), moved: false, t0: performance.now() };
+    buzz(p, 0.5, 28);
+    return true;
   }
   /** completed: the press really finished (a headset can cancel one, e.g. when tracking drops). */
   function release(p, completed = true) {
     const pr = p.press;
     p.press = null;
     if (!pr) return;
+    if (!pr.grabOnly) { try { pr.u.up?.(performance.now() - pr.t0, completed && !pr.moved); } catch (e) { console.warn("vr up", e); } }
     if (pr.moved) { pr.u.dropped?.(); return; }
+    // A pinch right on something that didn't move it: a tap there.
+    if (pr.direct) { if (completed) { try { pr.u.tap?.(null, p); } catch (e) { console.warn("vr tap", e); } } return; }
     if (pr.grabOnly || !completed) return;
     // A tap counts only where it started: slide off a button to cancel it.
     if (!p.hit || p.hit.object !== pr.obj) return;
@@ -483,24 +534,22 @@ export async function start({ mode, session, api, tint }) {
       const ctrl = renderer.xr.getController(i);
       scene.add(ctrl);
       const p = pointer("xr", ctrl);
+      p.index = i;
       on(ctrl, "connected", (e) => { p.source = e.data; p.line.visible = true; });
       on(ctrl, "disconnected", () => { p.source = null; p.line.visible = false; p.dot.visible = false; p.press = null; });
       // Aim again at each event: the hit from the last frame may be stale.
-      on(ctrl, "selectstart", () => { p.selected = false; aim(p); press(p); });
+      on(ctrl, "selectstart", () => { p.selected = false; if (grabNear(p)) return; aim(p); press(p); });
       on(ctrl, "select", () => { p.selected = true; });
       on(ctrl, "selectend", () => { aim(p); release(p, p.selected); p.selected = false; });
-      on(ctrl, "squeezestart", () => { aim(p); press(p, true); });
+      on(ctrl, "squeezestart", () => { if (grabNear(p)) return; aim(p); press(p, true); });
       on(ctrl, "squeezeend", () => release(p, false));
     }
+    // Hands are always in the scene (where they pinch places a grab); in a
+    // virtual space, where they'd be invisible, their joints show as dots.
+    for (let i = 0; i < 2; i++) scene.add(renderer.xr.getHand(i));
     if (!passthrough) {
-      // In a virtual space your hands would be invisible: show their joints.
       const jointGeo = track(new SphereGeometry(0.006, 8, 6));
       const jointMat = track(new MeshBasicMaterial({ color: 0xcdeffd, transparent: true, opacity: 0.85 }));
-      for (let i = 0; i < 2; i++) {
-        const hand = renderer.xr.getHand(i);
-        scene.add(hand);
-        hand.userData.dots = true;
-      }
       handDots = { jointGeo, jointMat };
     }
   }
@@ -592,6 +641,21 @@ export async function start({ mode, session, api, tint }) {
     return true;
   }
 
+  /** Hold-to-talk, shared by the Talk button and A/X. who: what's held. */
+  function holdDown(who) {
+    who.holdAt = performance.now();
+    who.holdListening = view.state === "listening";
+    // Not listening yet: start now, so you can talk while you hold.
+    if (!who.holdListening) api.tapOrb();
+  }
+  function holdUp(who, ms) {
+    const was = who.holdListening;
+    who.holdListening = false;
+    // A tap while it listened finishes; a hold of more than a moment sends
+    // what you said when you let go. A short tap that started it keeps listening.
+    if (was || ms > 600) api.tapOrb();
+  }
+
   // ---- the orb's own controls ---------------------------------------------------
   ui(orb, {
     tap: () => api.tapOrb(),
@@ -601,8 +665,12 @@ export async function start({ mode, session, api, tint }) {
   });
   ui(caption.mesh, { drag: () => rig, dropped: () => { rig.userData.placed = true; } });
 
-  const talkB = button("mic", "Talk", () => api.tapOrb());
-  const endB = button("end", "End call", () => api.hangUp());
+  const talkB = button("mic", "Talk", null);
+  // Talk: a tap starts listening (or finishes, or cuts Izuki off); held, it's
+  // hold-to-talk, like a walkie-talkie: it listens while held, sends on letting go.
+  Object.assign(talkB.c.mesh.userData.ui, { tap: null, down: () => holdDown(talkB), up: (ms, ok) => { if (ok) holdUp(talkB, ms); } });
+  // Pause: the microphone off (no "Hey Nova") until you tap Talk again.
+  const endB = button("pause", "Pause", () => api.hangUp());
   const lookB = button("eye", "Look", () => { showLookWaiting(); api.look(); });
   const togglePc = () => { if (pcUi.open) pcClose(); else void pcOpen().then((why) => { if (why) api.speak(why); }); };
   const pinLast = () => { const t = api.lastReply(); if (t) pin(t); else api.speak("There's nothing to pin yet. Ask me something first."); };
@@ -917,7 +985,7 @@ export async function start({ mode, session, api, tint }) {
   }
   function pcClose() {
     pcUi.open = false; pcUi.gen++; pcUi.group.visible = false;
-    if (rig.userData.placed === "pc") { if (filesUi?.open) rig.userData.placed = "files"; else comeHere(); }
+    if (rig.userData.placed === "pc") { if (filesUi?.open) rig.userData.placed = "files"; else if (webUi?.open) rig.userData.placed = "web"; else if (holoUi?.open) rig.userData.placed = "holo"; else comeHere(); }
   }
   /** The orb steps aside to your left (for the PC's screen or the gallery), unless you placed it yourself. */
   function stepAside(why) {
@@ -1123,7 +1191,568 @@ export async function start({ mode, session, api, tint }) {
     filesUi.gen++;
     filesUi.group.visible = false;
     dropThumbs();
-    if (rig.userData.placed === "files") { if (pcUi.open) rig.userData.placed = "pc"; else comeHere(); }
+    if (rig.userData.placed === "files") { if (pcUi.open) rig.userData.placed = "pc"; else if (webUi.open) rig.userData.placed = "web"; else if (holoUi.open) rig.userData.placed = "holo"; else comeHere(); }
+  }
+
+  // ---- the room's browser -----------------------------------------------------------
+  // A real Google search, no PC needed. Izuki types what you asked into the bar
+  // (the orb beside it, like a hand on the keys); the results are the pages
+  // Google's search really returned; a tap reads one to you here. A website
+  // itself can't be drawn inside VR, so your AI reads the page and the panel
+  // shows its words.
+  const WEB_W = 1.0, WEB_TOP = 0.1, WEB_BODY = 0.62, WEB_ROWS = 5;
+  const webUi = { group: new Group(), head: card(WEB_W, WEB_TOP), body: card(WEB_W, WEB_BODY), handle: card(0.3, 0.035), open: false, gen: 0, q: "", typed: "", mode: "", results: [], page: null, title: "", paras: [], first: 0, more: false, err: "", btns: [], rows: [] };
+  webUi.group.visible = false;
+  scene.add(webUi.group);
+  webUi.group.add(webUi.head.mesh, webUi.body.mesh, webUi.handle.mesh);
+  webUi.head.mesh.position.set(0, WEB_BODY / 2 + 0.008 + WEB_TOP / 2, 0);
+  webUi.handle.mesh.position.set(0, WEB_BODY / 2 + 0.016 + WEB_TOP + 0.02, 0);
+  track(webUi.head.tex); track(webUi.body.tex); track(webUi.handle.tex);
+  {
+    const { ctx, w, h } = webUi.handle;
+    rr(ctx, 4, 4, w - 8, h - 8, (h - 8) / 2);
+    ctx.fillStyle = "rgba(255,255,255,0.34)"; ctx.fill();
+    webUi.handle.update();
+  }
+  ui(webUi.handle.mesh, { drag: () => webUi.group });
+  const reading = () => webUi.mode === "reading" || webUi.mode === "page-loading" || webUi.mode === "page-error";
+  /** The bar: what's searched (typed by Izuki), or the page being read; then Back and Close. */
+  function drawWebHead() {
+    const { ctx, w, h } = webUi.head;
+    glass(ctx, w, h, 48);
+    const cy = h / 2, d = h * 0.6;
+    webUi.btns = [];
+    let bx = w - 36;
+    const control = (name, act) => {
+      const cx = bx - d / 2;
+      ctx.beginPath(); ctx.arc(cx, cy, d / 2, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(255,255,255,0.06)"; ctx.fill();
+      ctx.lineWidth = 3; ctx.strokeStyle = "rgba(255,255,255,0.16)"; ctx.stroke();
+      icon(ctx, name, cx, cy, d * 0.62, INK, 7);
+      webUi.btns.push({ x0: bx - d, x1: bx, act });
+      bx -= d + 18;
+    };
+    control("close", () => webClose());
+    if (reading()) control("back", () => { webUi.gen++; webUi.mode = "results"; drawWeb(); });
+    const x0 = 30, bw = bx - 12 - x0, bh = h * 0.66;
+    rr(ctx, x0, cy - bh / 2, bw, bh, bh / 2);
+    ctx.fillStyle = "rgba(255,255,255,0.06)"; ctx.fill();
+    ctx.lineWidth = 3; ctx.strokeStyle = webUi.mode === "typing" || webUi.mode === "searching" ? "rgba(94,234,212,0.75)" : "rgba(255,255,255,0.16)"; ctx.stroke();
+    icon(ctx, "search", x0 + bh * 0.58, cy, bh * 0.6, INK2, 7);
+    const words = reading() ? (webUi.page?.site || "") : webUi.typed;
+    ctx.font = `500 40px ${FONT}`;
+    const fit = ellipsize(ctx, words || "Search Google", bw - bh * 1.4 - 24);
+    const tx = x0 + bh * 1.1;
+    write(ctx, fit, tx, cy + 14, 40, words ? INK : INK2, 500);
+    if (webUi.mode === "typing") {
+      ctx.font = `500 40px ${FONT}`;
+      ctx.fillStyle = TEAL;
+      ctx.fillRect(tx + (words ? ctx.measureText(fit).width : 0) + 6, cy - 22, 4, 44);
+    }
+    webUi.head.update();
+  }
+  function drawWebBody() {
+    const { ctx, w, h } = webUi.body;
+    glass(ctx, w, h, 48);
+    webUi.rows = [];
+    const pad = 56;
+    const message = (t, color = INK2) => {
+      ctx.font = `500 44px ${FONT}`;
+      const lines = util.wrapLines(t, w * 0.76, (s) => ctx.measureText(s).width);
+      lines.forEach((l, i) => write(ctx, l, w / 2, h * 0.5 + (i - (lines.length - 1) / 2) * 62, 44, color, 500, "center"));
+    };
+    const m = webUi.mode;
+    if (m === "") message("Say “search the web for…” and anything you want to know. I'll look it up right here.");
+    else if (m === "typing") message("");
+    else if (m === "searching") message("Searching Google…");
+    else if (m === "error" || m === "page-error") message(webUi.err, WARN);
+    else if (m === "page-loading") message("Reading " + (webUi.page?.site || "the page") + "…");
+    else if (m === "results") {
+      if (!webUi.results.length) message("Google didn't return any pages for that. Try other words.");
+      const rowH = (h - 40) / WEB_ROWS;
+      webUi.results.slice(0, WEB_ROWS).forEach((r, i) => {
+        const y0 = 20 + i * rowH;
+        if (i) { ctx.fillStyle = "rgba(255,255,255,0.08)"; ctx.fillRect(pad, y0, w - pad * 2, 2); }
+        ctx.font = `600 40px ${DISPLAY}`;
+        write(ctx, ellipsize(ctx, r.site, w - pad * 2), pad, y0 + 66, 40, TEAL, 600, "left", DISPLAY);
+        ctx.font = `500 34px ${FONT}`;
+        const lines = util.wrapLines(r.snippet || "Tap to read this page.", w - pad * 2, (s) => ctx.measureText(s).width).slice(0, 2);
+        if (lines.length === 2 && (r.snippet || "").length > 0) {
+          const all = util.wrapLines(r.snippet, w - pad * 2, (s) => ctx.measureText(s).width);
+          if (all.length > 2) lines[1] = ellipsize(ctx, lines[1] + " …", w - pad * 2);
+        }
+        lines.forEach((l, k) => write(ctx, l, pad, y0 + 122 + k * 46, 34, INK2, 500));
+        webUi.rows.push({ y0, y1: y0 + rowH, r });
+      });
+    } else if (m === "reading") {
+      ctx.font = `600 46px ${DISPLAY}`;
+      const title = util.wrapLines(webUi.title, w - pad * 2, (s) => ctx.measureText(s).width).slice(0, 2);
+      let y = 30;
+      for (const l of title) write(ctx, l, pad, (y += 60), 46, INK, 600, "left", DISPLAY);
+      y += 30;
+      ctx.font = `500 36px ${FONT}`;
+      const room = h - 70;
+      webUi.more = false;
+      for (let i = webUi.first; i < webUi.paras.length; i++) {
+        const lines = util.wrapLines(webUi.paras[i], w - pad * 2, (s) => ctx.measureText(s).width);
+        if (y + lines.length * 50 > room && i > webUi.first) { webUi.more = true; break; }
+        for (const l of lines) { if ((y += 50) > room) { webUi.more = true; break; } write(ctx, l, pad, y, 36, INK, 500); }
+        y += 20;
+      }
+      const where = `${webUi.first + 1} / ${webUi.paras.length}` + (webUi.more ? "  ·  thumbstick or tap for more" : "");
+      write(ctx, where, w - pad, h - 28, 26, INK2, 500, "right");
+    }
+    webUi.body.update();
+  }
+  function drawWeb() { drawWebHead(); drawWebBody(); }
+  ui(webUi.head.mesh, {
+    tap: (hit) => {
+      if (!hit?.uv) return;
+      const x = hit.uv.x * webUi.head.w;
+      webUi.btns.find((b) => x >= b.x0 && x <= b.x1)?.act();
+    },
+    grab: () => webUi.group,
+  });
+  ui(webUi.body.mesh, {
+    tap: (hit) => {
+      if (!hit?.uv) return;
+      const y = (1 - hit.uv.y) * webUi.body.h;
+      if (webUi.mode === "results") {
+        const row = webUi.rows.find((r) => y >= r.y0 && y < r.y1);
+        if (row) void webOpen(row.r);
+      } else if (webUi.mode === "reading") webScroll(1);
+    },
+    scroll: (n) => webScroll(n),
+    grab: () => webUi.group,
+  });
+  function webScroll(n) {
+    if (webUi.mode !== "reading") return;
+    const next = Math.max(0, Math.min(webUi.paras.length - 1, webUi.first + Math.sign(n)));
+    if (next === webUi.first || (n > 0 && !webUi.more)) return;
+    webUi.first = next;
+    drawWebBody();
+  }
+  /** The orb beside the bar while it types (it steps back out of the way after). */
+  const besideBar = new Vector3();
+  function orbToBar() {
+    if (rig.userData.placed === true) return;
+    webUi.group.updateWorldMatrix(true, false);
+    besideBar.set(-WEB_W / 2 - 0.36, WEB_BODY / 2 - 0.02, 0.06);
+    webUi.group.localToWorld(besideBar);
+    goal = { x: besideBar.x, y: besideBar.y, z: besideBar.z };
+    rig.userData.placed = "web";
+  }
+  function webShow() {
+    if (!webUi.open) {
+      // In front of you (to the right when your PC's screen or the photos have the middle).
+      const a = headYaw - (pcUi.open || filesUi.open ? 0.85 : 0.08), d = 1.2;
+      webUi.group.position.set(headPos.x - Math.sin(a) * d, headPos.y - 0.02, headPos.z - Math.cos(a) * d);
+      faceHead(webUi.group);
+    }
+    webUi.open = true;
+    webUi.group.visible = true;
+  }
+  function typeOut(q, my) {
+    if (calm) { webUi.typed = q; drawWebHead(); return Promise.resolve(); }
+    return new Promise((done) => {
+      let i = 0;
+      const step = () => {
+        if (my !== webUi.gen || !webUi.open) return done();
+        i = Math.min(q.length, i + (q.length > 36 ? 2 : 1));
+        webUi.typed = q.slice(0, i);
+        drawWebHead();
+        if (i >= q.length) return setTimeout(done, 220);
+        setTimeout(step, 45 + Math.random() * 35);
+      };
+      step();
+    });
+  }
+  /** Search Google in the room's browser; resolves to what Izuki says. */
+  async function webSearch(q) {
+    q = String(q || "").trim();
+    webShow();
+    const my = ++webUi.gen;
+    Object.assign(webUi, { q, typed: "", results: [], page: null, err: "", mode: q ? "typing" : "" });
+    drawWeb();
+    if (!q) return "What should I search for? Say search the web for, and what you want to know.";
+    orbToBar();
+    await typeOut(q, my);
+    if (my !== webUi.gen || !webUi.open) return "";
+    webUi.mode = "searching";
+    drawWeb();
+    let r;
+    try { r = await api.search(q); } catch (e) { r = { error: String(e?.message || e) }; }
+    if (my !== webUi.gen || !webUi.open) return "";
+    if (!r || r.error) {
+      Object.assign(webUi, { mode: "error", err: r?.error || "The search didn't work." });
+      drawWeb();
+      return webUi.err;
+    }
+    Object.assign(webUi, { mode: "results", results: Array.isArray(r.results) ? r.results : [] });
+    drawWeb();
+    return r.answer || (webUi.results.length ? "Here's what Google found. Point at one and I'll read it to you." : "Google didn't find anything for that.");
+  }
+  /** Read one result here: its words on the panel, the start read out loud. */
+  async function webOpen(r) {
+    const my = ++webUi.gen;
+    Object.assign(webUi, { mode: "page-loading", page: r, paras: [], first: 0, title: "", err: "" });
+    drawWeb();
+    let p;
+    try { p = await api.read(r, webUi.q); } catch (e) { p = { error: String(e?.message || e) }; }
+    if (my !== webUi.gen || !webUi.open) return;
+    if (!p || p.error) {
+      Object.assign(webUi, { mode: "page-error", err: p?.error || "I couldn't read that page." });
+      drawWeb();
+      return;
+    }
+    Object.assign(webUi, { mode: "reading", title: p.title || r.site, paras: Array.isArray(p.paras) && p.paras.length ? p.paras : ["That page gave me nothing to read."] });
+    drawWeb();
+    api.speak?.(webUi.paras[0]);
+  }
+  function webClose() {
+    webUi.open = false;
+    webUi.gen++;
+    webUi.group.visible = false;
+    if (rig.userData.placed === "web") { if (pcUi.open) { rig.userData.placed = false; stepAside("pc"); } else if (holoUi.open) { rig.userData.placed = false; stepAside("holo"); } else comeHere(); }
+  }
+
+  // ---- holograms: Izuki teaching in 3D ------------------------------------------------
+  // Ask for something to be shown, mapped or taught ("teach me how the heart
+  // works", "show me the solar system", "visualise the French revolution") and
+  // your AI designs a small hologram that Izuki builds beside you while it
+  // explains: a model (things in space, one circling another), a map of ideas,
+  // steps, a timeline or a chart. In a lesson, "next" walks through it, each
+  // step lighting up its parts. Point at any part to hear more about it. It
+  // floats in your real room (passthrough) or the calm space alike.
+  const HOLO_COLORS = { teal: 0x5eead4, sky: 0x7dd3fc, violet: 0xc4b5fd, rose: 0xfda4af, amber: 0xfcd34d, lime: 0xbef264, white: 0xe9eef7 };
+  const holoHex = (c) => "#" + (HOLO_COLORS[c] ?? HOLO_COLORS.teal).toString(16).padStart(6, "0");
+  const holoUi = { group: new Group(), stage: new Group(), open: false, spec: null, nodes: [], links: [], bar: card(0.86, 0.1), t0: 0, focus: null, step: -1, building: null, btns: [] };
+  holoUi.group.visible = false;
+  holoUi.group.add(holoUi.stage, holoUi.bar.mesh);
+  holoUi.bar.mesh.position.set(0, -0.42, 0.02);
+  scene.add(holoUi.group);
+  track(holoUi.bar.tex);
+  const holoGlow = track(glowTexture());
+  const holoSphere = track(new SphereGeometry(1, 32, 24));
+  const holoBox = track(new BoxGeometry(1, 1, 1));
+  /** Everything a hologram made for itself goes when it does. */
+  function holoClear() {
+    for (const n of holoUi.nodes) {
+      for (const m of [n.mat, n.glow.material, n.label.mesh.material]) m.dispose();
+      n.label.tex.dispose(); n.label.mesh.geometry.dispose();
+      n.ring?.geometry.dispose(); n.ring?.material.dispose();
+      unui(n.body); unui(n.label.mesh);
+    }
+    for (const l of holoUi.links) { l.line.geometry.dispose(); l.line.material.dispose(); }
+    if (holoUi.building) { holoUi.building.geometry.dispose(); holoUi.building.material.dispose(); }
+    holoUi.stage.clear();
+    holoUi.nodes = []; holoUi.links = []; holoUi.building = null;
+  }
+  function placeHolo() {
+    // In front of you, a little further than the orb; to the right when your PC's screen has the middle.
+    const a = headYaw - (pcUi.open ? 0.9 : 0), d = 1.35;
+    holoUi.group.position.set(headPos.x - Math.sin(a) * d, headPos.y + 0.02, headPos.z - Math.cos(a) * d);
+    faceHead(holoUi.group);
+  }
+  function drawHoloBar(status) {
+    const { ctx, w, h } = holoUi.bar;
+    glass(ctx, w, h, 48);
+    const cy = h / 2, d = h * 0.6;
+    holoUi.btns = [];
+    let bx = w - 36;
+    const control = (name, act) => {
+      const cx = bx - d / 2;
+      ctx.beginPath(); ctx.arc(cx, cy, d / 2, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(255,255,255,0.06)"; ctx.fill();
+      ctx.lineWidth = 3; ctx.strokeStyle = "rgba(255,255,255,0.16)"; ctx.stroke();
+      icon(ctx, name, cx, cy, d * 0.62, INK, 7);
+      holoUi.btns.push({ x0: bx - d, x1: bx, act });
+      bx -= d + 18;
+    };
+    control("close", () => holoClose());
+    const spec = holoUi.spec, steps = spec?.steps?.length || 0;
+    if (spec && steps) {
+      if (holoUi.step < steps - 1) control("next", () => api.holoStep?.(1));
+      if (holoUi.step > 0) control("back", () => api.holoStep?.(-1));
+    }
+    icon(ctx, "holo", 30 + d / 2, cy, d * 0.7, TEAL, 6);
+    const tx = 30 + d + 16;
+    ctx.font = `600 38px ${DISPLAY}`;
+    ctx.font = `600 44px ${DISPLAY}`;
+    write(ctx, ellipsize(ctx, status || spec?.title || "", bx - tx - 190), tx, cy + 15, 44, INK, 600, "left", DISPLAY);
+    if (spec && steps) {
+      const what = holoUi.step < 0 ? `${steps} steps · say next` : `Step ${holoUi.step + 1} of ${steps}`;
+      write(ctx, what, bx - 8, cy + 12, 32, INK2, 500, "right");
+    }
+    holoUi.bar.update();
+  }
+  ui(holoUi.bar.mesh, {
+    tap: (hit) => {
+      if (!hit?.uv) return;
+      const x = hit.uv.x * holoUi.bar.w;
+      holoUi.btns.find((b) => x >= b.x0 && x <= b.x1)?.act();
+    },
+    drag: () => holoUi.group,
+  });
+  /** While your AI designs it: a slow ring where it will appear. */
+  function holoBuilding(what) {
+    holoClear();
+    holoUi.spec = null; holoUi.step = -1; holoUi.focus = null;
+    if (!holoUi.open) placeHolo();
+    holoUi.open = true;
+    holoUi.group.visible = true;
+    const ring = new Mesh(new TorusGeometry(0.16, 0.0025, 8, 96), new MeshBasicMaterial({ color: HOLO_COLORS.teal, transparent: true, opacity: 0.7, depthWrite: false }));
+    holoUi.stage.add(ring);
+    holoUi.building = ring;
+    drawHoloBar("Building " + (what ? "“" + String(what).slice(0, 48) + "”" : "a hologram") + "…");
+    stepAside("holo");
+  }
+  /** A part of the hologram: a glowing body, its light, and a label card. */
+  function holoNode(it, i, kind, spec) {
+    const color = HOLO_COLORS[it.color] ?? HOLO_COLORS.teal;
+    const g = new Group();
+    const mat = new MeshBasicMaterial({ color, transparent: true, opacity: 0.82, depthWrite: kind === "chart" });
+    let body, r;
+    if (kind === "chart") {
+      body = new Mesh(holoBox, mat);
+      r = 0.04;
+    } else {
+      r = kind === "model" ? 0.022 + it.size * 0.016 : kind === "map" && i === 0 ? 0.055 : 0.03;
+      body = new Mesh(holoSphere, mat);
+      body.scale.setScalar(r);
+    }
+    const glow = new Sprite(new SpriteMaterial({ map: holoGlow, color, transparent: true, opacity: 0.5, blending: AdditiveBlending, depthWrite: false }));
+    glow.scale.setScalar(r * (kind === "chart" ? 3 : 5.5));
+    const big = kind === "steps" || (kind === "map" && i === 0);
+    const tag = kind === "model";
+    const label = card(tag ? 0.15 : big ? 0.26 : 0.24, tag ? 0.05 : big ? 0.13 : 0.085);
+    {
+      const { ctx, w, h } = label;
+      glass(ctx, w, h, 30, { fill0: "rgba(16,19,27,0.82)", fill1: "rgba(10,12,18,0.86)" });
+      let y = tag ? -2 : 16;
+      const head = tag ? "" : kind === "timeline" && it.when ? it.when : kind === "steps" ? String(i + 1) : kind === "chart" && Number.isFinite(it.value) ? String(it.value) + (spec.unit ? " " + spec.unit : "") : "";
+      if (head) { write(ctx, head, 26, (y += 34), 30, holoHex(it.color), 700, "left", DISPLAY); y += 4; }
+      ctx.font = `600 36px ${DISPLAY}`;
+      write(ctx, ellipsize(ctx, it.label, w - 52), 26, (y += 40), 36, INK, 600, "left", DISPLAY);
+      if (it.note && !tag) {
+        ctx.font = `500 26px ${FONT}`;
+        const lines = util.wrapLines(it.note, w - 52, (s) => ctx.measureText(s).width).slice(0, big ? 3 : 1);
+        for (const l of lines) write(ctx, l, 26, (y += 34), 26, INK2, 500);
+      }
+      label.update();
+    }
+    label.mesh.material.opacity = 1;
+    g.add(body, glow, label.mesh);
+    const n = { it, i, g, body, mat, glow, label, r, kind, base: new Vector3(), angle: 0, speed: 0, orbitR: 0, parent: null, shown: 0, emph: 1 };
+    const more = () => api.ask?.(`Tell me more about ${it.label}` + (spec.title ? `, in ${spec.title}` : "") + ".");
+    ui(body, { tap: more, hover: (on) => { n.hot = on; } });
+    ui(label.mesh, { tap: more, hover: (on) => { n.hot = on; } });
+    return n;
+  }
+  /** Where each part goes, by kind (positions in the hologram's own space; +z is towards you). */
+  function holoLayout(spec, nodes) {
+    const n = nodes.length;
+    const spread = (k, width) => (n > 1 ? (k / (n - 1) - 0.5) * width : 0);
+    if (spec.kind === "model") {
+      const roots = nodes.filter((x) => x.it.orbit < 0);
+      roots.forEach((x, k) => { x.base.set(roots.length > 1 ? (k / (roots.length - 1) - 0.5) * Math.min(0.95, 0.32 * roots.length) : 0, 0.02, 0); });
+      const kids = new Map();
+      for (const x of nodes) if (x.it.orbit >= 0) {
+        const p = nodes[x.it.orbit];
+        const order = (kids.get(p) || 0);
+        kids.set(p, order + 1);
+        x.parent = p;
+        x.orbitR = p.r + x.r + 0.07 + order * 0.075;
+        x.angle = order * 2.1 + 0.6;
+        x.speed = 0.45 / (1 + order * 0.55);
+        const pts = [];
+        for (let a = 0; a <= 64; a++) { const t = (a / 64) * Math.PI * 2; pts.push(Math.cos(t) * x.orbitR, Math.sin(t) * x.orbitR * 0.22, Math.sin(t) * x.orbitR * 0.85); }
+        x.ring = new Line(new BufferGeometry().setAttribute("position", new Float32BufferAttribute(pts, 3)), new LineBasicMaterial({ color: HOLO_COLORS[p.it.color] ?? HOLO_COLORS.teal, transparent: true, opacity: 0.28, depthWrite: false }));
+        holoUi.stage.add(x.ring);
+      }
+      for (const x of nodes) x.label.mesh.position.set(0, -(x.r + 0.06), 0.01);
+    } else if (spec.kind === "map") {
+      nodes[0].base.set(0, 0.02, 0);
+      nodes[0].label.mesh.position.set(0, -0.14, 0.01);
+      const rest = nodes.slice(1);
+      rest.forEach((x, k) => {
+        const t = -Math.PI / 2 + ((k + 0.5) / rest.length) * Math.PI * 2;
+        x.base.set(Math.cos(t) * 0.46, Math.sin(t) * 0.27 + 0.02, 0.03 + (k % 2) * 0.05);
+        x.label.mesh.position.set(0, -0.075, 0.01);
+      });
+    } else if (spec.kind === "steps") {
+      nodes.forEach((x, k) => {
+        const px = spread(k, Math.min(1.1, 0.28 * n));
+        x.base.set(px, 0.13, 0.16 * (1 - (px / 0.6) ** 2));
+        x.label.mesh.position.set(0, -0.12, 0.01);
+      });
+    } else if (spec.kind === "timeline") {
+      nodes.forEach((x, k) => {
+        x.base.set(spread(k, Math.min(1.15, 0.27 * n)), 0, 0);
+        x.label.mesh.position.set(0, k % 2 ? -0.1 : 0.1, 0.01);
+      });
+      const pts = [-0.62, 0, 0, 0.62, 0, 0];
+      const line = new Line(new BufferGeometry().setAttribute("position", new Float32BufferAttribute(pts, 3)), new LineBasicMaterial({ color: HOLO_COLORS.white, transparent: true, opacity: 0.35, depthWrite: false }));
+      holoUi.stage.add(line);
+      holoUi.links.push({ line, a: null, b: null });
+    } else if (spec.kind === "chart") {
+      const top = Math.max(...nodes.map((x) => Math.abs(x.it.value) || 0), 1e-9);
+      nodes.forEach((x, k) => {
+        const hgt = Math.max(0.01, 0.46 * (Math.abs(x.it.value) || 0) / top);
+        x.body.scale.set(0.075, hgt, 0.075);
+        x.base.set(spread(k, Math.min(1.05, 0.22 * n)), -0.26 + hgt / 2, 0);
+        x.glow.position.set(0, hgt / 2, 0);
+        x.label.mesh.position.set(0, -hgt / 2 - 0.06, 0.05);
+      });
+    }
+    // Lines between parts: the ones the AI named; a map joins all to the middle; steps run in order.
+    const pairs = [];
+    for (const x of nodes) for (const j of x.it.link) if (nodes[j] && j !== x.i) pairs.push([x, nodes[j]]);
+    if (spec.kind === "map" && !pairs.length) for (const x of nodes.slice(1)) pairs.push([nodes[0], x]);
+    if (spec.kind === "steps") for (let k = 1; k < n; k++) pairs.push([nodes[k - 1], nodes[k]]);
+    for (const [a, b] of pairs) {
+      const line = new Line(new BufferGeometry().setAttribute("position", new Float32BufferAttribute([0, 0, 0, 0, 0, 0], 3)), new LineBasicMaterial({ color: HOLO_COLORS.teal, transparent: true, opacity: 0, depthWrite: false }));
+      holoUi.stage.add(line);
+      holoUi.links.push({ line, a, b });
+    }
+  }
+  /** Build a hologram from a checked spec (vr.js parseHolo). */
+  function holoShow(spec) {
+    holoClear();
+    holoUi.spec = spec; holoUi.step = -1; holoUi.focus = null; holoUi.t0 = performance.now();
+    if (!holoUi.open) placeHolo();
+    holoUi.open = true;
+    holoUi.group.visible = true;
+    holoUi.nodes = spec.items.map((it, i) => holoNode(it, i, spec.kind, spec));
+    for (const n of holoUi.nodes) holoUi.stage.add(n.g);
+    holoLayout(spec, holoUi.nodes);
+    for (const n of holoUi.nodes) { n.g.position.copy(n.base); n.g.scale.setScalar(calm ? 1 : 0.001); }
+    drawHoloBar();
+    stepAside("holo");
+  }
+  /** A lesson's step: its parts light up, the rest dim. null: all lit. */
+  function holoFocus(list, step) {
+    holoUi.step = step ?? holoUi.step;
+    holoUi.focus = Array.isArray(list) && list.length ? new Set(list) : null;
+    drawHoloBar();
+  }
+  function holoClose() {
+    holoClear();
+    holoUi.open = false;
+    holoUi.spec = null;
+    holoUi.group.visible = false;
+    api.holoClosed?.();
+    if (rig.userData.placed === "holo") { if (pcUi.open) { rig.userData.placed = false; stepAside("pc"); } else comeHere(); }
+  }
+  // ---- a timer by the orb ----------------------------------------------------------------
+  const timerUi = { card: card(0.2, 0.09), until: 0, total: 0, words: "", shown: "", doneAt: 0 };
+  timerUi.card.mesh.visible = false;
+  timerUi.card.mesh.position.set(0.36, 0.1, 0.01);
+  rig.add(timerUi.card.mesh);
+  track(timerUi.card.tex);
+  function drawTimer(left) {
+    const { ctx, w, h } = timerUi.card;
+    const done = left <= 0;
+    glass(ctx, w, h, 40, done ? { hot: true } : {});
+    const s = Math.max(0, Math.ceil(left / 1000)), hh = Math.floor(s / 3600), mm = Math.floor((s % 3600) / 60), ss = s % 60;
+    const clock = done ? "Time's up" : (hh ? hh + ":" + String(mm).padStart(2, "0") : String(mm)) + ":" + String(ss).padStart(2, "0");
+    write(ctx, "Timer · " + timerUi.words, 34, 56, 26, INK2, 600, "left", DISPLAY, "0.02em");
+    write(ctx, clock, 34, h - 40, done ? 56 : 72, done ? TEAL : INK, 600, "left", DISPLAY);
+    // How much is left, as a hairline along the bottom.
+    const frac = timerUi.total ? Math.max(0, Math.min(1, left / timerUi.total)) : 0;
+    ctx.fillStyle = "rgba(255,255,255,0.1)"; ctx.fillRect(34, h - 22, w - 68, 4);
+    ctx.fillStyle = TEAL; ctx.fillRect(34, h - 22, (w - 68) * frac, 4);
+    icon(ctx, "close", w - 52, 52, 40, INK2, 7);
+    timerUi.card.update();
+  }
+  function timerStart(ms, words) {
+    Object.assign(timerUi, { until: performance.now() + ms, total: ms, words: words || "", shown: "", doneAt: 0 });
+    timerUi.card.mesh.visible = true;
+    drawTimer(ms);
+  }
+  function timerStop() {
+    const was = timerUi.until > 0;
+    timerUi.until = 0; timerUi.doneAt = 0;
+    timerUi.card.mesh.visible = false;
+    return was;
+  }
+  ui(timerUi.card.mesh, { tap: () => timerStop(), drag: () => rig, dropped: () => { rig.userData.placed = true; } });
+  function timerTick(now) {
+    if (!timerUi.until) return;
+    const left = timerUi.until - now;
+    if (left > 0) {
+      const key = String(Math.ceil(left / 1000));
+      if (key !== timerUi.shown) { timerUi.shown = key; drawTimer(left); }
+      return;
+    }
+    if (!timerUi.doneAt) {
+      timerUi.doneAt = now;
+      drawTimer(0);
+      notice("Time's up: your " + timerUi.words + " timer.", 12000);
+      api.speak?.("Time's up! Your " + timerUi.words + " timer is done.");
+    } else if (now - timerUi.doneAt > 15000) timerStop();
+  }
+
+  // ---- breathing with the orb ------------------------------------------------------------
+  // In for 4 seconds as the orb grows, hold for 4, out for 6 as it shrinks.
+  const BREATH = [["Breathe in…", 4000], ["Hold…", 4000], ["Breathe out…", 6000]];
+  const breath = { on: false, t0: 0, rounds: 0, phase: -1, grow: 0 };
+  function breathe(rounds = 4) {
+    Object.assign(breath, { on: true, t0: performance.now(), rounds, phase: -1 });
+  }
+  function breatheStop(said) {
+    if (!breath.on) return;
+    breath.on = false;
+    view.reply = said || "";
+    drawCaption();
+  }
+  function breathTick(now) {
+    if (!breath.on) { breath.grow += (0 - breath.grow) * 0.08; return; }
+    const cycle = 14000, t = now - breath.t0, round = Math.floor(t / cycle);
+    if (round >= breath.rounds) { breatheStop("Nicely done. How do you feel?"); api.speak?.("Nicely done. How do you feel?"); return; }
+    let at = t % cycle, phase = 0;
+    while (at > BREATH[phase][1]) { at -= BREATH[phase][1]; phase++; }
+    const k = at / BREATH[phase][1], ease = (x) => 0.5 - Math.cos(Math.PI * x) / 2;
+    breath.grow = phase === 0 ? ease(k) : phase === 1 ? 1 : 1 - ease(k);
+    const key = round * 3 + phase;
+    if (key !== breath.phase) { breath.phase = key; view.reply = BREATH[phase][0] + "  " + (round + 1) + " of " + breath.rounds; view.stage = ""; drawCaption(); }
+  }
+
+  const holoTmp = new Vector3();
+  function holoTick(dt, now) {
+    if (!holoUi.open) return;
+    if (holoUi.building) { holoUi.building.rotation.y += dt * 1.4; holoUi.building.rotation.x = 0.5; return; }
+    const age = now - holoUi.t0;
+    for (const n of holoUi.nodes) {
+      // In one by one, then the parts that circle another go round it.
+      const k = calm ? 1 : Math.max(0, Math.min(1, (age - n.i * 110) / 520));
+      n.shown = calm ? 1 : 1 - (1 - k) ** 3;
+      if (n.parent) {
+        if (!calm) n.angle += dt * n.speed;
+        holoTmp.set(Math.cos(n.angle) * n.orbitR, Math.sin(n.angle) * n.orbitR * 0.22, Math.sin(n.angle) * n.orbitR * 0.85);
+        n.g.position.copy(n.parent.g.position).add(holoTmp);
+        n.ring.position.copy(n.parent.g.position);
+      } else if (!calm) {
+        n.g.position.set(n.base.x, n.base.y + Math.sin(now / 1400 + n.i) * 0.004, n.base.z);
+      }
+      const want = holoUi.focus ? (holoUi.focus.has(n.i) ? 1.18 : 0.32) : n.hot ? 1.1 : 1;
+      n.emph += (want - n.emph) * Math.min(1, dt * 6);
+      const lit = Math.min(1, n.emph);
+      n.g.scale.setScalar(Math.max(0.001, n.shown * (n.emph > 1 ? n.emph : 1)));
+      n.mat.opacity = 0.82 * lit;
+      n.glow.material.opacity = 0.5 * lit * (n.hot ? 1.4 : 1);
+      n.label.mesh.material.opacity = Math.max(0.25, lit);
+    }
+    const linkIn = calm ? 1 : Math.max(0, Math.min(1, (age - holoUi.nodes.length * 110) / 500));
+    for (const l of holoUi.links) {
+      if (!l.a) continue;
+      const pos = l.line.geometry.attributes.position;
+      pos.setXYZ(0, l.a.g.position.x, l.a.g.position.y, l.a.g.position.z);
+      pos.setXYZ(1, l.b.g.position.x, l.b.g.position.y, l.b.g.position.z);
+      pos.needsUpdate = true;
+      const lit = holoUi.focus ? (holoUi.focus.has(l.a.i) && holoUi.focus.has(l.b.i) ? 0.7 : 0.12) : 0.45;
+      l.line.material.opacity = lit * linkIn;
+    }
   }
 
   /** A picture of the PC's screen as it shows now (for "what's on my screen?"), or null. */
@@ -1255,7 +1884,7 @@ export async function start({ mode, session, api, tint }) {
     orbMat.uniforms.uTime.value = t;
     orbMat.uniforms.uEnergy.value = view.energy;
     orbMat.uniforms.uThink.value = view.think;
-    const s = (1 + Math.sin(t * 1.7) * 0.012 + view.energy * 0.1) * (view.hovered ? 1.06 : 1);
+    const s = (1 + Math.sin(t * 1.7) * 0.012 + view.energy * 0.1) * (view.hovered ? 1.06 : 1) * (1 + breath.grow * 0.45);
     orb.scale.setScalar(s);
     // The orb's own light: quiet at rest, rising with a voice.
     haloMat.opacity = 0.1 + view.energy * 0.36;
@@ -1300,6 +1929,9 @@ export async function start({ mode, session, api, tint }) {
     if (placed) follow(dt);
     orbTick(dt, clock);
     entrance(now);
+    holoTick(dt, now);
+    timerTick(now);
+    breathTick(now);
 
     for (const p of pointers) {
       if (!aim(p)) continue;
@@ -1315,7 +1947,11 @@ export async function start({ mode, session, api, tint }) {
       if (hit) { p.dot.position.copy(hit.point).addScaledVector(p.dir, -0.003); p.dot.lookAt(p.origin); }
       if (p.line) p.line.scale.z = hit ? hit.distance : 1.2;
       const pr = p.press;
-      if (pr?.drag) {
+      if (pr?.direct) {
+        grabPoint(p, grabAt);
+        if (!pr.moved && grabAt.distanceTo(pr.start) > 0.012) pr.moved = true;
+        if (pr.moved) { pr.drag.position.copy(grabAt).add(pr.offset); faceHead(pr.drag); }
+      } else if (pr?.drag) {
         const pt = p.origin.clone().addScaledVector(p.dir, pr.dist);
         if (!pr.moved && pt.distanceTo(pr.start) > 0.03) pr.moved = true;
         if (pr.moved) { pr.drag.position.copy(pt).add(pr.offset); faceHead(pr.drag); }
@@ -1327,7 +1963,10 @@ export async function start({ mode, session, api, tint }) {
         if (Math.abs(y) > 0.45 && u?.scroll && now - p.scrollAt > 140) { u.scroll(Math.sign(y) * (Math.abs(y) > 0.85 ? 3 : 1)); p.scrollAt = now; }
         const was = gp.get(p) || [];
         const a = !!pad.buttons[4]?.pressed, b = !!pad.buttons[5]?.pressed;
-        if (a && !was[0]) api.tapOrb();
+        // A/X: a tap talks (or finishes); held, it's hold-to-talk: listening
+        // while you hold it, sent when you let go.
+        if (a && !was[0]) holdDown(p);
+        if (!a && was[0]) holdUp(p, now - (p.holdAt || now));
         if (b && !was[1]) comeHere();
         gp.set(p, [a, b]);
       }
@@ -1393,6 +2032,8 @@ export async function start({ mode, session, api, tint }) {
     stopped = true;
     pcClose();
     filesClose();
+    webClose();
+    holoClose();
     clearTimeout(noticeTimer);
     renderer.setAnimationLoop(null);
     if (!flat) { try { session.end(); } catch {} }
@@ -1441,6 +2082,18 @@ export async function start({ mode, session, api, tint }) {
     pcFrame,
     filesOpen,
     filesClose,
+    webSearch,
+    webClose,
+    webShown: () => webUi.open,
+    holoBuilding,
+    holoShow,
+    holoFocus,
+    holoClose,
+    holoShown: () => holoUi.open,
+    timerStart,
+    timerStop,
+    breathe,
+    breatheStop: () => breatheStop(""),
     nextTheme,
     notice,
     stop,

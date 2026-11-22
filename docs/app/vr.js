@@ -77,8 +77,27 @@
     const inside = new RegExp(String.raw`\b(?:hey|hi|ok|okay)\s+(?:${alt})\b[\s,.!?:-]*`, "i");
     if (lead.test(s)) return { called: true, rest: s.replace(lead, "").trim() };
     if (inside.test(s)) return { called: true, rest: s.replace(inside, " ").replace(/\s+/g, " ").trim() };
+    // Speech-to-text often mishears the name when it's shouted or said fast
+    // ("Hey Noah", "Hey Nava", "Hey Isuki"). Right after a greeting those count
+    // too; on their own they don't ("Noah is coming" isn't a call).
+    const loose = new RegExp(String.raw`^(?:hey|hi|hello|ok|okay|yo)[\s,]+(?:${MISHEARD})\b[\s,.!?:-]*`, "i");
+    if (loose.test(s)) return { called: true, rest: s.replace(loose, "").trim() };
     return { called: false, rest: s };
   }
+  const MISHEARD = String.raw`no(?:ah|vah|ver|vo|ba|wa)|nava|nover|know\s+va|no\s+va|novas|i[sz](?:u|oo)k(?:i|ee|y)|isaacy|is\s+uki|izzie`;
+
+  // The room's own browser (no PC needed): "search the web for…", "google…",
+  // "look … up". With your PC on the big screen, a search is done there
+  // instead (unless you say "in here" or "in the browser").
+  const ONLINE = String.raw`(?:\s+(?:online|on\s+(?:the\s+)?(?:web|internet|google)|(?:in|on)\s+(?:the\s+|your\s+)?browser|in\s+here))?`;
+  const WEB = whole([
+    String.raw`(?:search|look)\s+(?:on\s+)?(?:the\s+)?(?:web|internet|online|google)\s+(?:for|up)\s+(.+?)`,
+    String.raw`(?:search\s+for|search|google|look\s+up)\s+(.+?)` + ONLINE,
+    String.raw`look\s+(.+?)\s+up` + ONLINE,
+  ].join("|"));
+  const WEB_OPEN = whole(String.raw`(?:open|show|bring\s+up|pull\s+up)\s+(?:me\s+)?(?:the\s+|a\s+|your\s+)?(?:web\s+)?(?:browser|internet|google)`);
+  const WEB_HIDE = whole(String.raw`(?:close|hide|put\s+away)\s+(?:the\s+|your\s+)?(?:web\s+)?(?:browser|search(?:\s+results)?|results)`);
+  const HERE = /\b(?:in\s+here|in\s+(?:vr|the\s+room)|(?:in|on)\s+(?:the|your)\s+browser|online|on\s+the\s+(?:web|internet))\b/i;
   /** Is this for the PC? Something to do, or anything said "on my PC". */
   const onPc = (s) => DO.test(s) || /\b(?:on|in)\s+(?:my|the)\s+(?:pc|computer|laptop)\b/i.test(s);
   const SLEEP = whole(String.raw`(?:stop|quit)\s+listening|go\s+to\s+sleep|(?:you\s+can\s+)?stop\s+listening\s+now|don'?t\s+listen`);
@@ -119,6 +138,28 @@
     if (f) return { kind: "files", folder: FOLDER_OF[String(f[1]).toLowerCase()] || "" };
     if (PHOTO_ASK.test(s)) return { kind: "photo-ask" };
     if (SCREEN.test(s)) return { kind: "screen" };
+    if (WEB_HIDE.test(s)) return { kind: "web-hide" };
+    if (WEB_OPEN.test(s)) return { kind: "web", q: "", here: true };
+    const w = s.match(WEB);
+    if (w) {
+      const q = String(w[1] || w[2] || w[3] || "").replace(/^(?:for|about)\s+/i, "").trim();
+      // "look it up": nothing to search for yet, so the browser opens and asks.
+      return { kind: "web", q: /^(?:it|that|this|them)$/i.test(q) ? "" : q, here: HERE.test(s) };
+    }
+    // A lesson's controls (only while a hologram is up; the gate checks).
+    if (HOLO_HIDE.test(s)) return { kind: "holo-hide" };
+    if (HOLO_NEXT.test(s)) return { kind: "holo-next" };
+    if (HOLO_BACK.test(s)) return { kind: "holo-back" };
+    if (HOLO_AGAIN.test(s)) return { kind: "holo-again" };
+    if (HOLO.test(s) && !ABOUT_HERE.test(s)) return { kind: "holo", ask: s };
+    if (TIMER_STOP.test(s)) return { kind: "timer-stop" };
+    const tm = s.match(TIMER);
+    if (tm) {
+      const ms = timerMs(tm[1] || tm[3], tm[2] || tm[4]);
+      if (ms) return { kind: "timer", ms };
+    }
+    if (BREATHE_STOP.test(s)) return { kind: "breathe-stop" };
+    if (BREATHE.test(s)) return { kind: "breathe" };
     if (STYLE.test(s)) return { kind: /room|space|background|scene|world/i.test(s) ? "space" : "look-style" };
     if (LOOK_WHOLE.test(s) || LOOK_START.test(s)) return { kind: "look" };
     return null;
@@ -168,6 +209,107 @@
     say = say.replace(/\s+/g, " ").trim();
     if (!say) say = marks.length ? "Here, have a look." : "I couldn't make that out. Hold it a little closer, in good light, and ask again.";
     return { say, marks };
+  }
+
+  // ---- holograms: teaching in 3D -------------------------------------------
+  // "Teach me how the heart works", "show me the solar system", "visualise the
+  // French revolution": your AI designs a small hologram (as JSON) and the room
+  // builds it beside you while Izuki explains. "Next" walks through a lesson.
+  const HOLO = new RegExp(LEAD + "(?:" + [
+    String.raw`teach\s+me\b`,
+    String.raw`(?:show|explain|build|make|draw)\b.{0,80}\bin\s+3\s?d\b`,
+    String.raw`(?:visuali[sz]e|simulate|map\s+out|walk\s+me\s+through)\b`,
+    String.raw`(?:build|make|draw|show)\s+(?:me\s+)?(?:a\s+|an\s+)?(?:3\s?d\s+|holographic\s+)?(?:model|simulation|sim|hologram|diagram|mind\s?map|timeline|chart)\s+(?:of|for|about|showing)\b`,
+    String.raw`show\s+me\s+(?:how\s+.{2,80}\s+works?|what\s+.{2,80}\s+looks?\s+like|the\s+(?:solar\s+system|planets|structure|parts|layers|history|timeline|stages|life\s+cycle|water\s+cycle)\b)`,
+  ].join("|") + String.raw`)`, "i");
+  // "...this", "...that", "...it": something in front of you (a look), not a hologram.
+  const ABOUT_HERE = /\b(?:this|that|these|those)\b|\bit\s*[.!?]*$/i;
+  const HOLO_NEXT = whole(String.raw`next(?:\s+(?:step|one|part))?|go\s+on|continue|keep\s+going|and\s+then|what'?s\s+next`);
+  const HOLO_BACK = whole(String.raw`(?:go\s+)?back|previous(?:\s+(?:step|one))?|last\s+step`);
+  const HOLO_AGAIN = whole(String.raw`(?:say\s+(?:that|it)\s+)?again|repeat(?:\s+(?:that|it))?|one\s+more\s+time`);
+  const HOLO_HIDE = whole(String.raw`(?:close|hide|clear|put\s+away|remove)\s+(?:the\s+|that\s+|this\s+)?(?:hologram|model|simulation|sim|lesson|diagram|map|timeline|chart|3\s?d(?:\s+thing)?)|close\s+it|put\s+it\s+away`);
+  // Timers that float by the orb, and a breathing exercise the orb leads.
+  const NUMBER = { a: 1, an: 1, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12, fifteen: 15, twenty: 20, "twenty-five": 25, thirty: 30, forty: 40, "forty-five": 45, fifty: 50, sixty: 60, ninety: 90 };
+  const AMOUNT = String.raw`(\d+(?:\.\d+)?|half\s+an?|a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fifteen|twenty|twenty-five|thirty|forty|forty-five|fifty|sixty|ninety)`;
+  const UNIT = String.raw`(seconds?|secs?|minutes?|mins?|hours?|hrs?)`;
+  const TIMER = whole(String.raw`(?:set|start|make)?\s*(?:a\s+|an\s+|me\s+a\s+)?timer\s+(?:for\s+)?` + AMOUNT + String.raw`\s*` + UNIT + "|" + AMOUNT + String.raw`[\s-]*` + UNIT.replace("s?|secs?", "|sec").replace("s?|mins?", "|min").replace("s?|hrs?", "|hr") + String.raw`\s+timer`);
+  const TIMER_STOP = whole(String.raw`(?:stop|cancel|clear|end|turn\s+off|delete)\s+(?:the\s+|my\s+|that\s+)?timer`);
+  const BREATHE = whole(String.raw`(?:help\s+me\s+)?(?:relax|calm\s+down|breathe|de-?stress|unwind)|(?:start\s+|do\s+|let'?s\s+do\s+)?(?:a\s+|some\s+)?breathing(?:\s+(?:exercise|session))?|let'?s\s+breathe|i(?:'?m|\s+am|\s+feel)\s+(?:so\s+|really\s+|very\s+)?(?:stressed|anxious|overwhelmed)(?:\s+out)?`);
+  const BREATHE_STOP = whole(String.raw`(?:stop|end|enough)\s+(?:the\s+)?(?:breathing|exercise)(?:\s+exercise)?`);
+  /** "10 minutes" → milliseconds (a minute to a day), else 0. */
+  function timerMs(amount, unit) {
+    const a = String(amount || "").toLowerCase().trim();
+    const n = /^half/.test(a) ? 0.5 : Number.isFinite(Number(a)) ? Number(a) : NUMBER[a] || 0;
+    const u = String(unit || "").toLowerCase();
+    const ms = n * (/^h/.test(u) ? 3600000 : /^m/.test(u) ? 60000 : 1000);
+    return ms >= 5000 && ms <= 86400000 ? Math.round(ms) : 0;
+  }
+  /** A timer's length in words ("10 minutes", "1 hour 30 minutes"). */
+  function timerWords(ms) {
+    const s = Math.round(ms / 1000), h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+    const part = (n, w) => (n ? n + " " + w + (n === 1 ? "" : "s") : "");
+    return [part(h, "hour"), part(m, "minute"), part(sec, "second")].filter(Boolean).join(" ") || "a moment";
+  }
+  // In the room you don't need the name: a real question or a call for help is
+  // answered (a headset is mostly just you). Chat with someone else ("what do
+  // you want for dinner?") is left alone.
+  const ASKED = /\?\s*$|^(?:so|and|ok|okay|um+|uh+|hmm+)?[\s,]*(?:what|what's|whats|who|who's|when|where|where's|why|how|which|is\s+(?:it|there|this)|are\s+there|can\s+you|could\s+you|would\s+you|will\s+you|do\s+you\s+know|tell\s+me|show\s+me|teach\s+me|explain|help|search|google|look\s+up|open|remind|set\s+a\s+timer)\b|\b(?:help\s+me|i\s+need\s+(?:help|you|to\s+know)|i'?m\s+stuck|i\s+don'?t\s+(?:know|understand|get\s+(?:it|this|how)))\b/i;
+  const SOCIAL = /\b(?:you|ya|u)\b/i;
+  const REQUEST = /^(?:so|and|ok|okay|hey|please)?[\s,]*(?:can|could|would|will)\s+you\b|\bdo\s+you\s+know\b|\bhelp\s+me\b|\bshow\s+me\b|\btell\s+me\b|\bteach\s+me\b/i;
+  /** Said to Izuki without its name? A question, a request or a call for help. */
+  function forIzuki(s) {
+    const t = String(s || "").trim();
+    if (t.split(/\s+/).length < 3 || !ASKED.test(t)) return false;
+    // "What do you want for dinner?" is for a person; "can you help me…" is for Izuki.
+    return !SOCIAL.test(t) || REQUEST.test(t);
+  }
+  const HOLO_KINDS = ["model", "map", "steps", "timeline", "chart"];
+  const HOLO_PALETTE = ["teal", "sky", "violet", "rose", "amber", "lime", "white"];
+  const HOLO_SYSTEM = [
+    "You are Izuki, teaching inside a VR headset by building a small 3D hologram next to the person while you talk.",
+    'Reply with JSON only, no markdown: {"title": "...", "kind": "model|map|steps|timeline|chart", "say": "...", "unit": "", "items": [...], "steps": [...]}',
+    "kind: model = real things in space (planets round a star, an atom, the parts of an engine or a cell; use orbit to put one round another); map = one idea in the middle (item 0) and the ideas around it; steps = a process in order; timeline = events in time; chart = numbers to compare.",
+    'items: 3 to 8, each {"label": "1 to 3 words", "note": "up to 7 words", "size": 1-5, "color": "teal|sky|violet|rose|amber|lime|white", "orbit": index of the item it circles or -1, "link": [indexes it connects to], "when": "short date (timeline)", "value": number (chart)}.',
+    "say: what you say first, out loud: 2 to 3 short spoken sentences, plain words. title: up to 6 words. unit: the chart's unit, else empty.",
+    'steps: for a lesson or anything with stages, 2 to 5 steps, each {"say": "1 or 2 spoken sentences", "focus": [indexes of the items it is about]}; otherwise [].',
+    "Be accurate: sizes and numbers roughly to scale when they are real (if not to scale, say so). Never invent facts. If it's a quiz, test or exam question, teach the idea and never give the answer to fill in.",
+  ].join("\n");
+  /** A hologram from the AI's reply, checked and trimmed; null if there isn't a usable one. */
+  function parseHolo(reply) {
+    let t = String(reply || "").replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+    t = t.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "").trim();
+    const a = t.indexOf("{"), b = t.lastIndexOf("}");
+    if (a < 0 || b <= a) return null;
+    let d;
+    try { d = JSON.parse(t.slice(a, b + 1)); } catch { return null; }
+    if (!d || typeof d !== "object" || !Array.isArray(d.items)) return null;
+    const words = (v, n) => String(v ?? "").replace(/[`*_#>{}[\]]+/g, " ").replace(/\s+/g, " ").trim().slice(0, n);
+    const raw = d.items.filter((x) => x && typeof x === "object" && words(x.label, 40)).slice(0, 8);
+    if (raw.length < 2) return null;
+    const n = raw.length;
+    const kind = HOLO_KINDS.includes(d.kind) ? d.kind : "map";
+    const index = (v) => { const k = Number(v); return Number.isInteger(k) && k >= 0 && k < n ? k : -1; };
+    const items = raw.map((x, i) => {
+      const value = Number(x.value);
+      return {
+        label: words(x.label, 28),
+        note: words(x.note, 60),
+        size: Math.max(1, Math.min(5, Math.round(Number(x.size) || 2))),
+        color: HOLO_PALETTE.includes(x.color) ? x.color : HOLO_PALETTE[i % 6],
+        // Only round one that comes earlier: no loops, and a moon can circle a planet.
+        orbit: kind === "model" ? (index(x.orbit) >= 0 && index(x.orbit) < i ? index(x.orbit) : -1) : -1,
+        link: (Array.isArray(x.link) ? x.link : []).map(index).filter((k) => k >= 0 && k !== i).slice(0, 4),
+        when: words(x.when, 16),
+        value: Number.isFinite(value) ? value : NaN,
+      };
+    });
+    if (kind === "chart" && !items.some((x) => Number.isFinite(x.value))) return null;
+    const steps = (Array.isArray(d.steps) ? d.steps : []).map((s) => ({
+      say: words(s?.say, 300),
+      focus: (Array.isArray(s?.focus) ? s.focus : []).map(index).filter((k) => k >= 0).slice(0, 8),
+    })).filter((s) => s.say).slice(0, 5);
+    const say = words(d.say, 400) || "Here it is.";
+    return { title: words(d.title, 48) || items[0].label, kind, say, unit: words(d.unit, 12), items, steps };
   }
 
   // ---- text on 3D cards -----------------------------------------------------
@@ -236,7 +378,7 @@
     return { nx: c(u), ny: c(1 - v) };
   }
 
-  const util = { command, onPc, named, parseLook, wrapLines, fitLines, followTarget, pcPoint, angleGap, LOOK_SYSTEM, lookPrompt };
+  const util = { command, onPc, named, forIzuki, timerWords, parseLook, parseHolo, HOLO_SYSTEM, wrapLines, fitLines, followTarget, pcPoint, angleGap, LOOK_SYSTEM, lookPrompt };
   if (typeof module !== "undefined" && module.exports) { module.exports = util; return; }
 
   // ===========================================================================
@@ -488,8 +630,56 @@
       pc.current()
         ? "Say show my PC to bring your computer's screen into the room, or show my photos to walk through your pictures."
         : "Pair this headset with your PC once, and I'll bring its screen and your photos right into the room.",
-      "Pin an answer to keep it on your wall, say come here to call me over, and say change your look whenever you like.",
+      "You don't even need my name for a question: just ask.",
+      "Say search the web for anything and I'll look it up on a browser right here. Say teach me, or show me, and I'll build it in 3D around you while I explain.",
+      "Set a timer, or say help me relax and I'll breathe with you.",
+      "Hold Talk, or A, to talk while you hold it. Reach out and pinch me, or any card, to move it. Pin an answer to keep it, say come here to call me over, and change your look whenever you like.",
     ].filter(Boolean).join(" ");
+  }
+
+  // ---- holograms ---------------------------------------------------------------
+  let holoNow = null, holoAt = -1;
+  /** Your AI designs it, the room builds it; resolves to what Izuki says first. */
+  async function holo(ask) {
+    const core = g.IzukiCore;
+    if (!core?.think || !core.ready?.()) return "Add a free AI key in Settings first, then I can build it for you.";
+    const visit = epoch;
+    vr.scene?.holoBuilding?.(String(ask).replace(new RegExp(LEAD, "i"), "").slice(0, 60));
+    vr.scene?.orb("thinking");
+    let reply = "";
+    try {
+      reply = await core.think(ask, HOLO_SYSTEM);
+    } catch (e) {
+      if (vr.active && visit === epoch) vr.scene?.holoClose?.();
+      return "I couldn't build that just now: " + String(e?.message || e).slice(0, 120);
+    } finally {
+      if (vr.active && visit === epoch) vr.scene?.orb(appState);
+    }
+    if (!vr.active || visit !== epoch) return "";
+    const h = parseHolo(reply);
+    if (!h) {
+      vr.scene?.holoClose?.();
+      // Words instead of a design: say them (never the code).
+      const t = String(reply || "").replace(/<think>[\s\S]*?<\/think>/gi, "");
+      const said = (t.includes("{") ? "" : t).replace(/[`*_#>{}[\]]+/g, " ").replace(/\s+/g, " ").trim();
+      return said || "I couldn't build that one. Ask me in other words, and I'll try again.";
+    }
+    holoNow = h; holoAt = -1;
+    vr.scene?.holoShow?.(h);
+    return h.say + (h.steps.length ? " Say next when you're ready." : " Point at any part to hear more.");
+  }
+  /** A lesson's next (1), previous (-1) or the same step again (0): what to say. */
+  function holoStep(d) {
+    const h = holoNow;
+    if (!h) return "There's nothing up to walk through. Ask me to show or teach you something.";
+    if (!h.steps.length) return d === 0 ? h.say : "That's the whole picture. Point at any part to hear more, or ask me about it.";
+    if (d === 0) return holoAt < 0 ? h.say : h.steps[holoAt].say;
+    if (d > 0 && holoAt >= h.steps.length - 1) return "That was the last step. Ask me anything about it, or say close it.";
+    if (d < 0 && holoAt <= 0) { holoAt = -1; vr.scene?.holoFocus?.(null, -1); return h.say; }
+    holoAt += d;
+    const s = h.steps[holoAt];
+    vr.scene?.holoFocus?.(s.focus, holoAt);
+    return s.say;
   }
 
   // ---- the hooks the app calls ----------------------------------------------
@@ -522,12 +712,16 @@
       // "Stop listening" always works, name or not.
       const bare = !n.called && command(s)?.kind === "sleep";
       if (heyNova && !armed && !bare && Date.now() - spokeAt > FOLLOW_ON_MS) {
-        if (!n.called) return null;
+        if (!n.called && !(store.get("vr.anyQuestion", true) !== false && forIzuki(s))) return null;
         if (!n.rest) return { done: true, said: s, say: "Mhm?" };
       }
       armed = false;
       if (n.called && n.rest) s = n.rest;
-      const c = command(s);
+      let c = command(s);
+      // A lesson's "next", "back", "again" only mean that while a hologram is up.
+      if (c?.kind?.startsWith("holo-") && !vr.scene?.holoShown?.()) c = null;
+      // With your PC on the big screen, a search is done there (unless you say "in here").
+      if (c?.kind === "web" && c.q && !c.here && vr.scene?.pcShown?.()) c = null;
       const done = (say) => ({ done: true, said: s, say });
       // Your PC on the big screen: something to do is done there while you watch.
       if (!c && vr.scene?.pcShown?.() && onPc(s)) {
@@ -564,6 +758,17 @@
           return done((await vr.scene?.filesOpen(c.folder)) || (c.folder ? "Here's your " + c.folder + " folder. Point at a picture to see it big." : "Here are your folders."));
         }
         if (c.kind === "look-style" || c.kind === "space") return done(vr.scene?.nextTheme?.() || "There, a new look.");
+        if (c.kind === "web-hide") { vr.scene?.webClose?.(); return done("Okay, I closed the browser."); }
+        if (c.kind === "web") return done((await vr.scene?.webSearch?.(c.q)) || "Okay.");
+        if (c.kind === "holo") return done((await holo(c.ask)) || "Okay.");
+        if (c.kind === "holo-hide") { vr.scene?.holoClose?.(); return done("Okay, I put it away."); }
+        if (c.kind === "holo-next") return done(holoStep(1));
+        if (c.kind === "holo-back") return done(holoStep(-1));
+        if (c.kind === "holo-again") return done(holoStep(0));
+        if (c.kind === "timer") { vr.scene?.timerStart?.(c.ms, timerWords(c.ms)); return done("Timer set for " + timerWords(c.ms) + ". It's floating by me."); }
+        if (c.kind === "timer-stop") return done(vr.scene?.timerStop?.() ? "Okay, timer cancelled." : "There's no timer running.");
+        if (c.kind === "breathe") { vr.scene?.breathe?.(4); return done("Let's breathe together. Follow me: breathe in as I grow, hold, and breathe out slowly as I shrink."); }
+        if (c.kind === "breathe-stop") { vr.scene?.breatheStop?.(); return done("Okay, we'll stop there."); }
         if (c.kind === "photo-ask" || c.kind === "screen" || c.kind === "look") {
           const visit = epoch;
           const source = await lookSource(c.kind);
@@ -691,7 +896,19 @@
     isPicture,
     joinPath,
     lastReply: () => lastReply,
+    /** The room's browser: a Google search, and reading one result. */
+    search: async (q) => (g.IzukiCore?.search ? g.IzukiCore.search(q) : { error: "Searching isn't ready yet. Reload Izuki and try again." }),
+    read: async (page, q) => (g.IzukiCore?.read ? g.IzukiCore.read(page, q) : { error: "Reading pages isn't ready yet." }),
+    /** The hologram bar's next and back: said out loud like "next". */
+    holoStep(d) {
+      const say = holoStep(d);
+      lastReply = say;
+      vr.scene?.line("izuki", say);
+      g.IzukiCore?.speak?.(say);
+    },
+    holoClosed() { holoNow = null; holoAt = -1; },
     exited() {
+      holoNow = null; holoAt = -1;
       epoch++;
       photo = null;
       panelShows = "";
@@ -751,6 +968,10 @@
     if (mode !== "flat" && core?.ready?.() && core.canHear?.() && store.get("heyNova", true) !== false) {
       heyNova = true;
       try { core.startCall?.(); } catch {}
+    } else if (mode !== "flat") {
+      // This browser keeps its own settings: a key added on your phone or PC isn't here.
+      if (!core?.ready?.()) vr.scene.notice?.("This browser has no AI key yet, so I can't hear you. Leave the room, add a free Gemini or Groq key in Settings here, and come back.", 20000, true);
+      else if (!core.canHear?.()) vr.scene.notice?.("To hear “Hey Nova” in a headset I need a free Gemini or Groq key (Settings). Tap Talk meanwhile.", 20000, true);
     }
   }
 
@@ -839,6 +1060,7 @@
     const check = (ok, text) => { const li = mk("li", ok ? "ok" : "", (ok ? "✓ " : "• ") + text); checks.appendChild(li); };
     check(ready, ready ? "Your AI is set up" : "Add a free AI key first (the two steps on the home screen): I need it to answer");
     check(mic, mic ? "Microphone allowed" : "I'll ask for the microphone before you go in");
+    if (support.ar) check(store.get("camAsked", false), store.get("camAsked", false) ? "Camera asked (for “what's this?”)" : "I'll ask for the camera before you go in: the headset can't show the question inside the room");
     // A headset's browser usually can't turn speech into words: a Gemini or Groq key does it.
     if (ready) {
       const hears = !!core?.canHear?.();
@@ -855,9 +1077,12 @@
     main.type = "button";
     const mode = support.ar ? "immersive-ar" : support.vr ? "immersive-vr" : "flat";
     let micNow = mic;
+    // A headset can't show a permission prompt inside the room: the camera is
+    // asked for out here, once, on headsets that can share it.
+    let camNow = !support.ar || store.get("camAsked", false);
     // A headset needs the AI (and the microphone) before going in; the 3D
     // preview on a normal screen can be looked around without either.
-    const label = () => (mode === "flat" ? "Open the 3D preview" : !ready ? "Set up my free key first" : !micNow ? "Allow the microphone" : mode === "immersive-ar" ? "Go into my room" : "Enter VR");
+    const label = () => (mode === "flat" ? "Open the 3D preview" : !ready ? "Set up my free key first" : !micNow ? "Allow the microphone" : !camNow ? "Allow the camera (for “what's this?”)" : mode === "immersive-ar" ? "Go into my room" : "Enter VR");
     main.textContent = label();
     const go = (m) => {
       say("");
@@ -876,6 +1101,17 @@
           checks.children[1].textContent = "✓ Microphone allowed"; checks.children[1].className = "ok";
           main.textContent = label();
         } catch { say("Without the microphone I can't hear you. Allow it for this site in the browser's settings, then try again."); }
+        return;
+      }
+      if (!camNow) {
+        camNow = true;
+        store.set("camAsked", true);
+        try {
+          const s = await nav.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" } } });
+          s.getTracks().forEach((t) => t.stop());
+          say("Camera allowed. I only use it when you ask “what's this?”.");
+        } catch { say("No camera, that's fine: everything else works. You can allow it later in the browser's site settings."); }
+        main.textContent = label();
         return;
       }
       go(mode);

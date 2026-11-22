@@ -1917,6 +1917,17 @@
                 s.sources = groundingSources(g.groundingChunks, s.sources);
               }
               if (Array.isArray(g.groundingSupports) && g.groundingSupports.length) s.used = true;
+              // Which words of the answer each page backs: the line shown under
+              // that page in the headset's browser (Google's record, not the model's say-so).
+              if (Array.isArray(g.groundingSupports) && Array.isArray(g.groundingChunks)) {
+                for (const sp of g.groundingSupports) {
+                  const t = typeof sp?.segment?.text === "string" ? sp.segment.text.trim() : "";
+                  for (const i of Array.isArray(sp?.groundingChunkIndices) ? sp.groundingChunkIndices : []) {
+                    const u = g.groundingChunks[i]?.web?.uri;
+                    if (t && typeof u === "string" && !s.snips[u]) s.snips[u] = t;
+                  }
+                }
+              }
             }
             for (const p of v.candidates?.[0]?.content?.parts || []) if (p.text) out += p.text;
             onText?.(out);
@@ -2839,7 +2850,7 @@
   // keys, no prompts, no reasoning.
   let turnMeta = null;
   function newTurnMeta() {
-    turnMeta = { provider: "", model: "", fallback: false, local: false, screen: { device: "", detail: "" }, search: { offered: false, queries: [], found: 0, used: false, why: "", sources: [] } };
+    turnMeta = { provider: "", model: "", fallback: false, local: false, screen: { device: "", detail: "" }, search: { offered: false, queries: [], found: 0, used: false, why: "", sources: [], snips: {} } };
     return turnMeta;
   }
   /**
@@ -4445,6 +4456,36 @@
   }
   const recordType = () => ["audio/mp4", "audio/webm;codecs=opus", "audio/webm", "audio/ogg"].find((t) => window.MediaRecorder?.isTypeSupported?.(t)) || "";
 
+  // ---- when you start and stop talking ----
+  /**
+   * Fed the mic's loudness every 80 ms; answers "began" (you started
+   * talking), "done" (you finished a sentence), "nothing" (no words for
+   * 15 s) or "". The room's own level (the floor) follows only what isn't
+   * speech: down quickly, up slowly. It used to take the loudest moment of
+   * the first third of a second as the room, so talking right away (or
+   * Izuki's own voice still fading) made only shouting count, and every
+   * turn ended in "I didn't catch that". The bar for speech never goes
+   * above a normal voice, however noisy the start was.
+   */
+  function speechEnds() {
+    let floor = -1, spoke = 0, quiet = 0;
+    return (v, took) => {
+      if (floor < 0) floor = v;
+      const bar = Math.min(0.06, Math.max(0.012, floor * 2.2));
+      if (v > bar) {
+        spoke += 80; quiet = 0;
+        if (spoke === 240) return "began";
+      } else {
+        quiet += 80;
+        floor = v < floor ? floor * 0.8 + v * 0.2 : floor * 0.995 + v * 0.005;
+      }
+      if (spoke >= 240 && quiet >= 1100) return "done";
+      if (spoke < 240 && took > 15000) return "nothing";
+      return "";
+    };
+  }
+  // ---- end of when you start and stop talking ----
+
   async function record() {
     if (!talking || busy || manualPlayback) return;
     if (!canHear()) return stopTalking("To talk out loud here, add a free Gemini key in Settings — or type.");
@@ -4468,7 +4509,11 @@
       clearInterval(vad);
       if (recorder === rec) recorder = null;
       if (!talking || busy) return;
-      if (discard || !chunks.length) { liveHeard("I didn't catch that — say it again."); return listen(); }
+      // Nobody spoke: just keep listening (a hands-free call, in a headset
+      // above all, is mostly quiet; saying "I didn't catch that" every 15 s
+      // was wrong). Words that came out as nothing are worth saying.
+      if (discard) return listen();
+      if (!chunks.length) { liveHeard("I didn't catch that — say it again."); return listen(); }
       const blob = new Blob(chunks, { type: chunks[0].type || type || "audio/mp4" });
       if (blob.size < 2500) { liveHeard("I didn't hear words — try again."); return listen(); } // a tap or a cough, not words
       setOrb("thinking");
@@ -4480,7 +4525,8 @@
     setStatus("");
     // Hands-free: it notices when you start talking and when you've finished.
     const began = performance.now();
-    let floor = 0.006, spoke = 0, quiet = 0, blind = 0, flat = 0, rebuilt = false;
+    const ends = speechEnds();
+    let blind = 0, flat = 0, rebuilt = false;
     const vad = setInterval(() => {
       if (rec.state !== "recording") return clearInterval(vad);
       const took = performance.now() - began;
@@ -4498,16 +4544,10 @@
       if (flat >= 1500 && !rebuilt) { rebuilt = true; flat = 0; buildMeter(); return; }
       IzukiOrb.level(Math.min(1, v * 9));
       toViews("level", Math.min(1, v * 9));
-      if (took < 350) { floor = Math.max(floor, v); return; }
-      if (v > Math.max(0.015, floor * 2.2)) {
-        spoke += 80; quiet = 0;
-        if (spoke === 240) liveHeard("…");
-      } else {
-        quiet += 80;
-        floor = floor * 0.98 + v * 0.02;
-      }
-      if (spoke >= 240 && quiet >= 1100) rec.stop();             // you finished a sentence
-      else if (spoke < 240 && took > 15000) { discard = true; rec.stop(); } // quiet: start a fresh one
+      const now = ends(v, took);
+      if (now === "began") liveHeard("…");
+      else if (now === "done") rec.stop();                          // you finished a sentence
+      else if (now === "nothing") { discard = true; rec.stop(); }   // quiet: start a fresh one
     }, 80);
   }
 
@@ -4635,8 +4675,60 @@
     return true;
   }
 
+  // ---- the headset's browser: a real Google search, and reading a page ----
+  // Through Gemini's own Google Search and link reading (the same free key).
+  // The results are the pages Google's grounding returned, never links the
+  // model wrote itself; a page is read by Gemini and shown as plain text.
+  const WEB_SEARCH_SYSTEM = "You search the web for someone wearing a VR headset and tell them what you found, out loud: two to four short spoken sentences, the most useful thing first. Plain words: no markdown, no lists, no links. Say what the search found, not what you remember; if it found nothing useful, say so. Answer in the language they used.";
+  const WEB_READ_SYSTEM = "You read one web page for someone wearing a VR headset, who can't open it. Plain text only: no markdown, no bullet marks, no links. The first line is the page's title. Then what the page itself says, faithfully, as up to eight short paragraphs separated by blank lines: its main content, not your own knowledge, and nothing it doesn't say. If neither the page nor a search gives you its content, say so in one line.";
+  const plainWeb = (t) => String(t || "")
+    .replace(/\[([^\]]+)\]\((?:[^)]+)\)/g, "$1")
+    .replace(/https?:\/\/\S+/g, "")
+    .replace(/[*_`#>]+/g, "")
+    .replace(/[ \t]+\n/g, "\n")
+    .trim();
+  async function webSearch(q) {
+    q = String(q || "").replace(/\s+/g, " ").trim().slice(0, 200);
+    if (!q) return { error: "What should I search for?" };
+    if (!key) return { error: "Searching the web needs a free Gemini key. Add one in Settings, then ask again." };
+    const meta = newTurnMeta();
+    let said = "";
+    try {
+      // "search" is one of the web words, so Google Search is offered.
+      said = await gemini([{ role: "user", parts: [{ text: "Search the web for: " + q }] }], null, undefined, false, WEB_SEARCH_SYSTEM);
+    } catch (e) {
+      return { error: String(e?.message || "The search didn't work.") };
+    }
+    const s = meta.search;
+    if (!s.offered) return { error: s.why || "Web search isn't available right now." };
+    const results = s.sources.map((x) => ({ url: x.uri, site: x.title || "A page Google found", snippet: plainWeb(s.snips[x.uri] || "") }));
+    return { answer: plainWeb(said), results, queries: s.queries.slice() };
+  }
+  async function webRead(page, q) {
+    const url = String(page?.url || ""), site = String(page?.site || "the site").slice(0, 80);
+    if (!/^https?:\/\//i.test(url)) return { error: "That link can't be opened." };
+    if (!key) return { error: "Reading pages needs a free Gemini key. Add one in Settings, then ask again." };
+    newTurnMeta();
+    let text = "";
+    try {
+      const prompt = `Open this page and tell me what it says: ${url}\nIt's from ${site}` + (q ? `, found when searching for "${String(q).slice(0, 200)}"` : "") +
+        `. If the link won't open, search for the same thing on ${site} instead.`;
+      text = await gemini([{ role: "user", parts: [{ text: prompt }] }], null, undefined, false, WEB_READ_SYSTEM);
+    } catch (e) {
+      return { error: String(e?.message || "I couldn't read that page.") };
+    }
+    const parts = plainWeb(text).split(/\n\s*\n|\n/).map((x) => x.trim()).filter(Boolean);
+    if (!parts.length) return { error: "That page gave me nothing to read." };
+    const title = parts.length > 1 ? parts.shift().slice(0, 160) : site;
+    return { title, paras: parts.slice(0, 8).map((x) => x.slice(0, 700)) };
+  }
+
   window.IzukiCore = {
     ask: (t) => ask(String(t || "")),
+    /** The headset's browser: { answer, results: [{ url, site, snippet }] } or { error }. */
+    search: (q) => webSearch(q),
+    /** A result read for the headset: { title, paras } or { error }. */
+    read: (page, q) => webRead(page, q),
     think: (prompt, system) => think([{ role: "user", parts: [{ text: String(prompt) }] }], null, system),
     /** Look at a picture (the TV screen) and answer: any brain that sees pictures. */
     see: (prompt, b64, type = "image/jpeg", system) => think([{ role: "user", parts: [{ inline_data: { mime_type: type, data: String(b64) } }, { text: String(prompt) }] }], null,
