@@ -535,11 +535,25 @@
       list.appendChild(row);
       slot.appendChild(list);
       // izukinova.ai/vr opens the explainer once, after the AI is set up.
-      if (wanted && !openedOnce && opts.auto !== false) { openedOnce = true; openSheet(); }
+      // Opened from the Quest app's icon (?vr=app), it tries to go straight
+      // into the room (the icon tap may count as the tap browsers need), and
+      // shows the explainer if the headset says no.
+      if (wanted && !openedOnce && opts.auto !== false) {
+        openedOnce = true;
+        if (asApp && (support.ar || support.vr)) void straightIn().then((inside) => { if (!inside) openSheet(); });
+        else openSheet();
+      }
     };
     supportReady.then(fill, fill);
   }
   let openedOnce = false;
+  /** Started as the installed Quest app (quest/twa-manifest.json opens /app/?vr=app). */
+  const asApp = (() => { try { return new URLSearchParams(g.location.search).get("vr") === "app"; } catch { return false; } })();
+  async function straightIn() {
+    if (!g.IzukiCore?.ready?.() || !(await micAllowed())) return false;
+    try { await enter(support.ar ? "immersive-ar" : "immersive-vr"); } catch { return false; }
+    return vr.active;
+  }
 
   async function micAllowed() {
     if (store.get("micOk", false)) return true;

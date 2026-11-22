@@ -1,0 +1,97 @@
+name: Build Izuki VR for Meta Quest
+
+# Izuki VR as an app in a Quest's library. Meta's Bubblewrap wraps the live web
+# app (izukinova.ai/app/?vr=app) in a small Android package (a Trusted Web
+# Activity); quest/twa-manifest.json is its whole configuration. See docs/VR.md.
+#
+# Signed with the private preview key (IZUKI_PREVIEW_KEYSTORE_B64, see
+# docs/ANDROID-SIGNING.md). izukinova.ai/.well-known/assetlinks.json names that
+# key: that's what lets the app show the site as itself, without a URL bar.
+# Without the secret the package is still built (so the build stays proven),
+# but signed with a throwaway key and named TEST-ONLY: the site won't vouch
+# for it, so it isn't meant to be installed.
+
+on:
+  push:
+    branches: [main]
+    paths: ['quest/**', 'docs/.well-known/**', '.github/workflows/quest.yml']
+  pull_request:
+    paths: ['quest/**', 'docs/.well-known/**', '.github/workflows/quest.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quest-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quest:
+    name: Izuki VR for Meta Quest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: The app's settings and the site's vouching agree
+        run: node tools/quest-check.cjs
+      - name: Meta's Bubblewrap, told where Java and the Android SDK are
+        run: |
+          npm install --global @meta-quest/bubblewrap-cli@1.24.1
+          mkdir -p ~/.bubblewrap
+          printf '{"jdkPath":"%s","androidSdkPath":"%s"}\n' "$JAVA_HOME" "$ANDROID_HOME" > ~/.bubblewrap/config.json
+          bubblewrap --version
+      - name: Signing key (decoded outside the checkout)
+        id: key
+        env:
+          KEY_B64: ${{ secrets.IZUKI_PREVIEW_KEYSTORE_B64 }}
+          KEY_PASSWORD: ${{ secrets.IZUKI_PREVIEW_KEYSTORE_PASSWORD }}
+        run: |
+          ks="$RUNNER_TEMP/izuki-quest.p12"
+          if [ -n "$KEY_B64" ] && [ -n "$KEY_PASSWORD" ]; then
+            printf '%s' "$KEY_B64" | base64 -d > "$ks"
+            fp=$(keytool -list -v -keystore "$ks" -storetype PKCS12 -storepass:env KEY_PASSWORD -alias izuki | sed -n 's/^[[:space:]]*SHA256: //p' | tr -d '[:space:]')
+            if ! grep -q "\"$fp\"" docs/.well-known/assetlinks.json; then
+              echo "::error::The key in IZUKI_PREVIEW_KEYSTORE_B64 ($fp) isn't the one izukinova.ai/.well-known/assetlinks.json vouches for."
+              exit 1
+            fi
+            { echo "BUBBLEWRAP_KEYSTORE_PASSWORD=$KEY_PASSWORD"; echo "BUBBLEWRAP_KEY_PASSWORD=$KEY_PASSWORD"; } >> "$GITHUB_ENV"
+            echo "name=Izuki-VR-Quest.apk" >> "$GITHUB_OUTPUT"
+            echo "Signed with the private preview key ($fp)."
+          else
+            pw=$(openssl rand -hex 16)
+            echo "::add-mask::$pw"
+            keytool -genkeypair -storetype PKCS12 -keystore "$ks" -alias izuki -keyalg RSA -keysize 2048 -validity 30 \
+              -storepass "$pw" -keypass "$pw" -dname "CN=Izuki VR test build" >/dev/null
+            { echo "BUBBLEWRAP_KEYSTORE_PASSWORD=$pw"; echo "BUBBLEWRAP_KEY_PASSWORD=$pw"; } >> "$GITHUB_ENV"
+            echo "name=Izuki-VR-Quest-TEST-ONLY.apk" >> "$GITHUB_OUTPUT"
+            echo "::warning::No IZUKI_PREVIEW_KEYSTORE_B64 secret yet (docs/ANDROID-SIGNING.md): this build is TEST-ONLY, signed with a throwaway key the site doesn't vouch for."
+          fi
+      - name: Generate the Android project from quest/twa-manifest.json
+        working-directory: quest
+        run: |
+          bubblewrap update --skipVersionUpgrade
+          # The template still lists jcenter(), which no longer exists.
+          sed -i 's/jcenter()/mavenCentral()/g' build.gradle
+      - name: Build and sign
+        working-directory: quest
+        run: bubblewrap build --skipPwaValidation --signingKeyPath "$RUNNER_TEMP/izuki-quest.p12" --signingKeyAlias izuki
+      - name: Check the package
+        run: |
+          tools="$ANDROID_HOME/build-tools/34.0.0"
+          "$tools/apksigner" verify --print-certs quest/app-release-signed.apk
+          "$tools/aapt2" dump badging quest/app-release-signed.apk | grep -E "^package:|^application-label:|uses-permission|launchable-activity|sdkVersion|targetSdkVersion"
+          "$tools/aapt2" dump badging quest/app-release-signed.apk | grep -q "package: name='com.novaizuki.vr'"
+          cp quest/app-release-signed.apk "${{ steps.key.outputs.name }}"
+          rm -f "$RUNNER_TEMP/izuki-quest.p12"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: izuki-vr-quest
+          path: ${{ steps.key.outputs.name }}
+          if-no-files-found: error
