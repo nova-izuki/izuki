@@ -291,6 +291,10 @@ pub fn report(kind: &str, message: &str, level: &str) {
     // exists for the machine where sending is not set up (review 2 #8).
     #[cfg(feature = "devvision")]
     crate::observer::record("verification", format!("[bug] {kind}: {message}"));
+    // The local list for whoever fixes Izuki (docs/AGENT-NOTES.md). Written
+    // before the sending gate on purpose: it never leaves this PC, so it is
+    // just as useful with "Send error reports" off.
+    crate::agent_notes::note(kind, message, "");
     if !ENABLED.load(Ordering::SeqCst) || !can_send() {
         return;
     }
