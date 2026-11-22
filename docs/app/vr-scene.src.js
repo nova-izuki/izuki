@@ -921,8 +921,10 @@ export async function start({ mode, session, api, tint }) {
   function stepAside(why) {
     if (rig.userData.placed === true) return;
     if (!rig.userData.placed) {
-      const a = headYaw + 0.62;
-      goal = { x: headPos.x - Math.sin(a) * 0.7, y: headPos.y - 0.12, z: headPos.z - Math.cos(a) * 0.7 };
+      // 40° to your left and a little low: its words clear the PC panel's lower-left corner
+      // (the panel spans 27° each side at 1.55 m), and the orb stays in reach.
+      const a = headYaw + 0.7;
+      goal = { x: headPos.x - Math.sin(a) * 0.7, y: headPos.y - 0.17, z: headPos.z - Math.cos(a) * 0.7 };
     }
     rig.userData.placed = why;
   }
