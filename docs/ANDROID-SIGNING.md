@@ -61,7 +61,7 @@ APK Signature Scheme v3 lets the old key vouch for a new one (a "lineage").
 - Meta app ID: 1490038460856480 (not secret). Package `com.novaizuki.vr` (quest/twa-manifest.json).
 - Its own store key, separate from the preview key: made on the owner's PC by `tools/quest-store-key.ps1` (RSA 4096, 30 years), kept in the main checkout's git-ignored `.private/quest/` (back it up: every store update must be signed with it). Quest store key fingerprint: `40:FC:75:31:17:2A:DA:FF:E8:BF:94:B6:68:FD:7C:1D:B3:C4:DD:6C:56:EA:7B:26:B5:26:C5:F7:62:24:24:74`.
 - CI's copy is in the secrets `IZUKI_QUEST_STORE_KEYSTORE_B64` and `IZUKI_QUEST_STORE_KEYSTORE_PASSWORD`; `quest.yml` signs the store APK with it on `main` only, and refuses if `docs/.well-known/assetlinks.json` doesn't vouch for it.
-- The store APK's version code grows with every build (100 + the run number), as the store requires.
+- The store APK's version code is the minute it was built (counted from 2026-01-01): it grows with every build, re-runs of old runs included, as the store requires.
 
 ## Production (store) signing, when there is a store build
 

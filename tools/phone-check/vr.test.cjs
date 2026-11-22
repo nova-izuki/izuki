@@ -139,7 +139,7 @@ test("a point on the PC panel becomes the same point on the PC", () => {
 });
 
 // ---- the browser side, with a pretend headset -------------------------------
-function browser({ camera = false, see = async () => "{}", denied = false, pcs = [], playFails = false, xr = null, ua = "Mozilla/5.0 (X11; Linux x86_64; Quest 3) OculusBrowser/40.0", facing = "", pcAnswers = {} } = {}) {
+function browser({ camera = false, see = async () => "{}", denied = false, pcs = [], playFails = false, xr = null, ua = "Mozilla/5.0 (X11; Linux x86_64; Quest 3) OculusBrowser/40.0", facing = "", pcAnswers = {}, bitmap = async () => {} } = {}) {
   const local = new Map([["izuki.remotePcs", JSON.stringify(pcs)]]);
   const calls = [];
   let stopped = 0, opens = 0;
@@ -150,7 +150,8 @@ function browser({ camera = false, see = async () => "{}", denied = false, pcs =
     showLook(v) { calls.push(["showLook", v]); }, pin(t) { calls.push(["pin", t]); }, comeHere() { calls.push(["come"]); },
     pcOpen: async () => { calls.push(["pcOpen"]); return ""; }, pcClose() { calls.push(["pcClose"]); }, pcShown() { return scene.shown; }, stop() { calls.push(["stop"]); },
     pcFrame: () => (scene.shown ? { b64: "UENTQ1JFRU4=", url: "data:image/jpeg;base64,UENTQ1JFRU4=", w: 1280, h: 720 } : null),
-    lookShown: () => false,
+    lookOpen: false,
+    lookShown: () => scene.lookOpen,
     filesOpen: async (folder) => { calls.push(["filesOpen", folder]); return ""; }, filesClose() { calls.push(["filesClose"]); },
     nextTheme: () => "This is Aurora.", notice(t) { calls.push(["notice", t]); },
   };
@@ -160,7 +161,7 @@ function browser({ camera = false, see = async () => "{}", denied = false, pcs =
     const path = String(url).replace(/^https?:\/\/[^/]+\//, "").split("?")[0];
     const body = pcAnswers[path];
     if (body === undefined) return { ok: false, status: 404, headers: { get: () => "application/json" }, json: async () => ({}), text: async () => "" };
-    return { ok: true, status: 200, headers: { get: () => "application/json" }, json: async () => body, text: async () => JSON.stringify(body) };
+    return { ok: true, status: 200, headers: { get: () => "application/json" }, json: async () => body, text: async () => JSON.stringify(body), blob: async () => ({ size: 3 }) };
   };
   const el = (tag) => tag === "video"
     ? { play: async () => { if (playFails) { const e = new Error("no play"); e.name = "NotReadableError"; throw e; } }, videoWidth: 640, videoHeight: 480, muted: false, playsInline: false, srcObject: null }
@@ -181,6 +182,7 @@ function browser({ camera = false, see = async () => "{}", denied = false, pcs =
     window, document: { createElement: el, head: { appendChild() {} }, getElementById: () => null },
     localStorage: { getItem: (k) => (local.has(k) ? local.get(k) : null), setItem: (k, v) => local.set(k, String(v)), removeItem: (k) => local.delete(k) },
     setTimeout: (fn, ms) => setTimeout(fn, Math.min(ms, 5)), clearTimeout, URLSearchParams, console, Promise, Date, Math, JSON, fetch, AbortController,
+    createImageBitmap: async () => { await bitmap(); return { width: 40, height: 30, close() {} }; },
   };
   vm.runInNewContext(src, ctx);
   const vr = window.IzukiVr;
@@ -250,6 +252,46 @@ test("an answer that arrives after you left VR is dropped, and the orb is left a
   assert.match(r.say, /left VR/);
   assert.equal(b.calls.filter((c) => c[0] === "showLook").length, 1, "only the photo; no stale answer drawn");
   assert.deepEqual(plain(b.scene.states), ["listening", "thinking"], "the orb isn't touched after leaving");
+});
+
+test("an answer about a photo you've since swapped never covers the new photo", async () => {
+  const pc = { name: "My PC", link: "https://pc.example/", pass: "p" };
+  let b;
+  const ask = async (swapDuringLook) => {
+    b = browser({
+      pcs: [pc], pcAnswers: { "remote/files/get": {} },
+      see: async () => { if (swapDuringLook) await b.vr.api().openPhoto("C:\\Pics", { name: "beach.jpg", size: 10 }); return '{"say":"Two dogs on a sofa."}'; },
+    });
+    await b.vr.api().openPhoto("C:\\Pics", { name: "dogs.jpg", size: 10 });
+    b.scene.lookOpen = true;
+    return b.vr.gate("what's in this photo?");
+  };
+  // Still the same photo: the answer shows on it, as before.
+  let r = await ask(false);
+  assert.equal(r.say, "Two dogs on a sofa.");
+  assert.equal(b.calls.filter((c) => c[0] === "showLook").pop()[1].say, "Two dogs on a sofa.");
+  // Another photo picked while the AI looked: the old answer is set aside and the new photo stays.
+  r = await ask(true);
+  assert.match(r.say, /picked another photo/);
+  const last = b.calls.filter((c) => c[0] === "showLook").pop()[1];
+  assert.equal(last.picked, true, "the last thing drawn is the photo you picked");
+  assert.match(last.say, /beach\.jpg/);
+  // Picked just before asking, it lands while the AI looks at the earlier one: set aside too.
+  let hold = false, release;
+  const held = new Promise((r) => (release = r));
+  let next;
+  b = browser({
+    pcs: [pc], pcAnswers: { "remote/files/get": {} },
+    bitmap: async () => { if (hold) { hold = false; await held; } },
+    see: async () => { release(); await next; return '{"say":"Two dogs on a sofa."}'; },
+  });
+  await b.vr.api().openPhoto("C:\\Pics", { name: "dogs.jpg", size: 10 });
+  b.scene.lookOpen = true;
+  hold = true;
+  next = b.vr.api().openPhoto("C:\\Pics", { name: "beach.jpg", size: 10 });
+  r = await b.vr.gate("what's in this photo?");
+  assert.match(r.say, /picked another photo/);
+  assert.match(b.calls.filter((c) => c[0] === "showLook").pop()[1].say, /beach\.jpg/, "the photo on show is the one you picked last");
 });
 
 test("if the 3D room can't load, the headset session is ended, not left empty", async () => {

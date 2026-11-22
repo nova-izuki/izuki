@@ -1076,6 +1076,9 @@ export async function start({ mode, session, api, tint }) {
       const { w, h } = filesUi.card;
       const x = hit.uv.x * w, y = (1 - hit.uv.y) * h;
       if (y < h * HEAD) { filesUi.btns.find((b) => x >= b.x0 && x <= b.x1)?.act(); return; }
+      // While a folder is on its way the tiles still show the last one: a tap
+      // there would interrupt the folder you asked for (the header still works).
+      if (filesUi.loading) return;
       const i = pageItems().findIndex((_, k) => { const r = tileRect(k); return x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h; });
       const it = pageItems()[i];
       if (!it) return;
@@ -1101,11 +1104,14 @@ export async function start({ mode, session, api, tint }) {
     filesUi.open = true;
     filesUi.group.visible = true;
     if (!folder) return filesGo("", "Your folders");
-    // Closed, or you opened something else, while the list was on its way: it's dropped.
-    const my = filesUi.gen;
+    // Closed, or you opened something else, while the list was on its way: it's
+    // dropped. This open counts as the newest (an older named open can't win).
+    const my = ++filesUi.gen;
+    Object.assign(filesUi, { loading: true, err: "" });
+    drawFiles();
     const roots = await api.pc.roots();
     if (!filesUi.open || my !== filesUi.gen) return "";
-    if (roots.error) { filesUi.err = roots.error; drawFiles(); return roots.error; }
+    if (roots.error) { filesUi.loading = false; filesUi.err = roots.error; drawFiles(); return roots.error; }
     const r = roots.roots.find((x) => String(x.name).toLowerCase() === folder.toLowerCase());
     if (!r) { await filesGo("", "Your folders"); return "I couldn't find a " + folder + " folder on your PC, so here are all your folders."; }
     return filesGo(r.path, r.name);
@@ -1272,8 +1278,10 @@ export async function start({ mode, session, api, tint }) {
     // What's open shows on its button.
     photosB.setOn(filesUi.open);
     pcB.setOn(pcUi.open);
-    // The suggestions wait for a brain (a key) and step aside while Izuki is busy.
-    const tips = firstVisit && st === "" && !calling && !!api.ready?.();
+    // The suggestions wait for a brain (a key) and step aside while Izuki thinks
+    // or talks. A hands-free call listens all the time in the headset, so they
+    // show while it listens too; the first conversation sends them away.
+    const tips = firstVisit && (st === "" || st === "listening") && !!api.ready?.();
     for (const k of chips) k.c.mesh.visible = tips;
   }
 
@@ -1353,10 +1361,11 @@ export async function start({ mode, session, api, tint }) {
     spokenReady = true;
     overlay = document.createElement("div");
     overlay.setAttribute("role", "status");
-    Object.assign(overlay.style, { position: "fixed", top: "max(12px, env(safe-area-inset-top))", left: "50%", transform: "translateX(-50%)", zIndex: "2147483001", display: "flex", gap: "10px", alignItems: "center", padding: "8px 8px 8px 16px", borderRadius: "999px", background: "rgba(18,20,27,.9)", color: INK, font: `500 14px ${FONT}`, border: "1px solid rgba(255,255,255,.14)", maxWidth: "calc(100vw - 32px)" });
+    // One row when it fits; on a narrow screen the buttons wrap under the words.
+    Object.assign(overlay.style, { position: "fixed", top: "max(12px, env(safe-area-inset-top))", left: "50%", transform: "translateX(-50%)", zIndex: "2147483001", display: "flex", flexWrap: "wrap", justifyContent: "center", gap: "8px 10px", alignItems: "center", padding: "8px 8px 8px 16px", borderRadius: "24px", background: "rgba(18,20,27,.9)", color: INK, font: `500 14px ${FONT}`, border: "1px solid rgba(255,255,255,.14)", width: "max-content", maxWidth: "calc(100vw - 32px)", boxSizing: "border-box" });
     const words = document.createElement("span");
     words.textContent = "3D preview · click the orb to talk, drag to look";
-    Object.assign(words.style, { whiteSpace: "nowrap", color: INK2 });
+    Object.assign(words.style, { color: INK2, textAlign: "center", flex: "1 1 auto" });
     // The same actions as the 3D buttons, reachable with the keyboard too.
     const domButton = (label, act) => {
       const b = document.createElement("button");

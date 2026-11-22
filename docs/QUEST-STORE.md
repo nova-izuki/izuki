@@ -18,7 +18,7 @@ Everything for the store page of the Quest app (`com.novaizuki.vr`, Meta app ID 
 | Mini landscape | `mini-landscape-1080x360.png` | 1080×360, 24-bit |
 | Logo (transparent) | `logo-transparent-3600x720.png` | 3600×720, 32-bit, transparent |
 | Icon | `icon-512x512.png` | 512×512, 24-bit, square corners, solid |
-| Spatialized icon | `spatial-icon-background-180x180.png` + `spatial-icon-foreground-180x180.png` | 180×180 each; the foreground is transparent |
+| Spatialized tile | `spatial-tile-background-512x512.png` + `spatial-tile-foreground-512x512.png` (and the optional 180×180 pair, `spatial-icon-…`) | 512×512 each; the back is solid, the front transparent with the orb inside the 392 px safe area and fully solid (the dashboard refuses a front layer with no solid pixels) |
 | Screenshots (5) | `screenshot-1-…` to `screenshot-5-…` | 2560×1440, 24-bit |
 | Trailer cover | `trailer-cover-2560x1440.png` | 2560×1440, 24-bit |
 
@@ -52,23 +52,32 @@ Sizes and rules from Meta's [asset guidelines](https://developers.meta.com/horiz
 
 Lengths: the short description is 286 characters and the long one 1,290, under the 500 and 1,500 limits noted on 2026-11-22 (the form shows its own counter).
 
-**Category:** Apps → Productivity. If the form asks for genres or tags: Productivity, Utility, Lifestyle.
+**Category:** Apps. Primary genre Productivity, additional genre Learning ("Media" would ask for a media type that doesn't fit).
 
-**Search keywords** (if the form offers them; generic words only, never other products' names): AI assistant, AI companion, voice assistant, chatbot, productivity, mixed reality, passthrough, PC screen, remote desktop, photo viewer, notes.
+**Search keywords** (up to 5, single words: the form refuses spaces; generic words only, never other products' names): assistant, AI, companion, voice, productivity.
 
 **Details:**
 - Price: Free. In-app purchases: none.
 - Devices: Quest 3, Quest 3S, Quest 2, Quest Pro ("what's this?" needs the Quest 3 or 3S camera).
-- Input: Touch controllers and hand tracking. Player mode: single user. Comfort: Comfortable (you never move; nothing moves you).
+- Early Access: on (the store page says it's still being built; it can only be added in the first submission and removed any time).
+- Input: Touch controller, Hands, Voice. Player mode: Single player. Play area: No Movement. Physical modes: Sitting, Standing. Comfort: Comfortable (you never move; nothing moves you). Social features: No. Subscription: not required.
 - Languages: English. Internet: required.
 - Website: https://izukinova.ai · Privacy policy: https://izukinova.ai/privacy/ (it has an "Izuki in VR" part since 2026-11-22) · Support: https://izukinova.ai/help/ and support@izukinova.ai
+
+## Where the dashboard stands (2026-11-22)
+
+Filled in and saved by Claude in the owner's signed-in dashboard: Name, Categorization, Specs, Details and every picture (covers, hero, icon, logo, five screenshots, the 512 tile). Left for the owner, on purpose:
+- **Content rating**: country of origin, a contact email (shared with IARC) and the IARC questionnaire.
+- **Pricing → listing type**: can't be changed after submission. Suggested: *Full release* (free, with the Early Access label). *Coming soon* would only collect wishlists.
+- **Submission tab**: organization verification, the Developer Distribution Agreement, app sharing preferences, the contact email, then *Submit for Review*.
+- **Build**: the store APK goes to a test channel first (below).
 
 ## Age rating and data use (the dashboard's forms)
 
 Answer them yourself, truthfully; what's true today:
 - No violence, no gambling, no purchases, no ads, no account, no chat between people.
 - An AI answers in its own words, and with "show my PC" the person can see and use any website on their own PC. If the age-rating form asks about unrestricted web access or AI-made content, the answer is yes.
-- Data: the microphone (the person's voice goes to the speech-to-text service they chose, Groq or Google), the camera (one photo, only when they ask "what's this?" and allow it, to their AI), and their PC's screen and folders (from their own paired PC). Nothing goes to us, and nothing from their Meta account is used.
+- Data: the microphone (the person's voice goes to the speech-to-text service they chose, Groq or Google), Izuki's spoken replies (their words go to Gemini's voice, or Groq's when Gemini's rests), the camera (one photo, only when they ask "what's this?" and allow it, to their AI), and their PC's screen and folders (from their own paired PC). Nothing goes to us, and nothing from their Meta account is used.
 
 ## Uploading (names in the dashboard may differ slightly)
 

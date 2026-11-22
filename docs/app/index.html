@@ -3516,12 +3516,13 @@
     // The second voice too (accepted Groq's terms meanwhile, say). Not defined in every test harness.
     try { resetGroqVoice(); } catch {}
     document.querySelectorAll(".voice-notice").forEach((n) => n.remove());
-    if (!key) { setStatus("Add a free Gemini key in Settings to use the natural voice."); return; }
+    // Either natural voice will do: Gemini's first, then Groq's.
+    if (!key && !brainKeys.groq) { setStatus("Add a free Gemini or Groq key in Settings to use the natural voice."); return; }
     const words = lastSpoken || pendingVoice?.words || "";
     if (!words) { setStatus("Natural voice is on again."); return; }
     if (button) { button.disabled = true; button.textContent = "Trying…"; }
     hush();
-    const url = await geminiVoice(words, 12000);
+    const url = (key ? await geminiVoice(words, 12000) : null) || (await groqVoice(words));
     if (!url) {
       voiceTold = "";
       voiceNotice();

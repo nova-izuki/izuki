@@ -27,6 +27,10 @@ const LAYOUTS = {
   square: { w: 1440, h: 1440, orb: 440, orbY: 0.385, font: 100, titleY: 0.705 },
   portrait: { w: 1008, h: 1440, orb: 400, orbY: 0.41, font: 84, titleY: 0.70 },
   icon: { w: 512, h: 512, orb: 268, orbY: 0.5, title: false, rings: false },
+  // The spatialized tile: a solid back layer and the orb on a transparent front
+  // layer (512: the orb and its ring inside the 392 px safe area; 180: 18 px padding).
+  "tile-bg": { w: 512, h: 512, orb: 0, title: false, rings: false },
+  "tile-fg": { w: 512, h: 512, orb: 280, orbY: 0.5, title: false, bare: true },
   "spatial-bg": { w: 180, h: 180, orb: 0, title: false, rings: false, stars: false },
   "spatial-fg": { w: 180, h: 180, orb: 96, orbY: 0.5, title: false, bare: true },
   logo: { w: 3600, h: 720, row: true, orb: 470, font: 250, gap: 160, bare: true },

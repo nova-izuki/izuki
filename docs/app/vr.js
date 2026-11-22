@@ -511,6 +511,8 @@
     active: false,
     scene: null,
     support: () => support,
+    /** The hooks the 3D room is given (its taps, photos, the PC); tests use them too. */
+    api: () => sceneApi,
     async gate(said) {
       let s = String(said || "").trim();
       // "Hey Nova" in the room: the call listens all the time, but only what's
@@ -629,16 +631,26 @@
     const core = g.IzukiCore;
     if (!core?.see) throw new Error("Izuki isn't ready yet.");
     const current = () => vr.active && visit === epoch;
+    // You picked another photo meanwhile: this answer belongs to the old one, so
+    // it never covers the photo you're looking at now.
+    const pick = photoPick;
+    const repicked = () => Object.assign(new Error("You picked another photo, so I set that answer aside. Ask me about this one."), { name: "AbortError" });
+    // A PC photo also has to be the one on show: one picked just before you
+    // asked can finish loading while the AI looks at the earlier one.
+    let shot = null;
+    const stale = () => pick !== photoPick || (source.shows === "photo" && photo !== shot);
     vr.scene?.orb("thinking");
     try {
-      const shot = await source.take();
+      shot = await source.take();
       // Left VR while the photo was being taken: nothing is sent.
       if (!current()) throw closedError();
+      if (stale()) throw repicked();
       panelShows = source.shows || "camera";
       vr.scene?.showLook({ url: shot.url, w: shot.w, h: shot.h, marks: [], say: "Looking…" });
       const reply = await core.see(lookPrompt(question), shot.b64, "image/jpeg", source.system);
       // Left (or left and came back) while the AI looked: the answer is dropped.
       if (!current()) throw closedError();
+      if (stale()) throw repicked();
       const { say, marks } = parseLook(reply);
       vr.scene?.showLook({ url: shot.url, w: shot.w, h: shot.h, marks, say });
       return say;

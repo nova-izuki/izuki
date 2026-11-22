@@ -43,6 +43,14 @@ jobs:
           java-version: '17'
       - name: The app's settings and the site's vouching agree
         run: node tools/quest-check.cjs
+      # On main, nothing is built or signed (preview or store copy) from a
+      # commit whose app tests fail: they run first, right here.
+      - name: The app's tests pass for this commit
+        if: github.ref == 'refs/heads/main'
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run test:phone
+          npm run test:site
       - name: Meta's Bubblewrap, told where Java and the Android SDK are
         run: |
           npm install --global @meta-quest/bubblewrap-cli@1.24.1
@@ -82,10 +90,13 @@ jobs:
             echo "name=Izuki-VR-Quest-TEST-ONLY.apk" >> "$GITHUB_OUTPUT"
             echo "::warning::No IZUKI_PREVIEW_KEYSTORE_B64 secret yet (docs/ANDROID-SIGNING.md): this build is TEST-ONLY, signed with a throwaway key the site doesn't vouch for."
           fi
+      # The version code is the minute of the build (since 2026): it only ever
+      # grows, so no build, re-runs of old runs included, repeats or goes below
+      # one already made. (Fits Android's limit for thousands of years.)
       - name: A new version number for every build (the store needs it to grow)
         working-directory: quest
         run: |
-          node -e "const fs=require('fs'),m=JSON.parse(fs.readFileSync('twa-manifest.json','utf8')),n=Number(process.env.GITHUB_RUN_NUMBER);m.appVersionCode=100+n;m.appVersion='1.0.'+n;fs.writeFileSync('twa-manifest.json',JSON.stringify(m,null,2))"
+          node -e "const fs=require('fs'),m=JSON.parse(fs.readFileSync('twa-manifest.json','utf8')),n=Number(process.env.GITHUB_RUN_NUMBER),a=Number(process.env.GITHUB_RUN_ATTEMPT||1);m.appVersionCode=Math.floor((Date.now()-Date.UTC(2026,0,1))/60000);m.appVersion='1.0.'+n+(a>1?'.'+a:'');fs.writeFileSync('twa-manifest.json',JSON.stringify(m,null,2))"
           grep -E '"appVersion(Code)?"' twa-manifest.json
       - name: Generate the Android project from quest/twa-manifest.json
         working-directory: quest

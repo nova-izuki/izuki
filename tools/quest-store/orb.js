@@ -34,7 +34,13 @@ export function orb(size, { theme = "Nova", time = 9, energy = 0.04 } = {}) {
   // A plain copy, so the WebGL context can go (a page only gets a few).
   const copy = document.createElement("canvas");
   copy.width = copy.height = size;
-  copy.getContext("2d").drawImage(renderer.domElement, 0, 0);
+  const cx = copy.getContext("2d");
+  cx.drawImage(renderer.domElement, 0, 0);
+  // In the room the orb is 90% solid over the room; on a transparent store
+  // layer Meta wants solid pixels, so its body becomes fully solid (edges stay soft).
+  const img = cx.getImageData(0, 0, size, size);
+  for (let i = 3; i < img.data.length; i += 4) img.data[i] = Math.min(255, Math.round(img.data[i] / 0.88));
+  cx.putImageData(img, 0, 0);
   mat.dispose();
   renderer.dispose();
   renderer.forceContextLoss();

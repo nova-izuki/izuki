@@ -155,9 +155,12 @@ async function openBrowser() {
   }
   let seq = 0;
   const pending = new Map(), errors = [];
+  /** The documents the main frame has committed (by loader id): a navigation is only done once its own one is here. */
+  const navigated = new Set();
   ws.onmessage = (e) => {
     const m = JSON.parse(String(e.data));
     if (m.method === "Runtime.exceptionThrown") errors.push(m.params.exceptionDetails.exception?.description || m.params.exceptionDetails.text);
+    if (m.method === "Page.frameNavigated" && !m.params.frame.parentId) navigated.add(m.params.frame.loaderId);
     if (pending.has(m.id)) { pending.get(m.id)(m); pending.delete(m.id); }
   };
   const call = (method, params = {}, ms = 60000) => new Promise((resolve, reject) => {
@@ -171,7 +174,7 @@ async function openBrowser() {
     return r.result.value;
   };
   try { await call("Runtime.enable"); await call("Page.enable"); } catch (e) { await close(); throw e; }
-  return { call, evaluate, errors, close };
+  return { call, evaluate, errors, navigated, close };
 }
 
 async function main() {
@@ -185,6 +188,12 @@ async function main() {
   const go = async (route, ready, tries = 100) => {
     const nav = await b.call("Page.navigate", { url: origin + route });
     if (nav.errorText) throw Error(nav.errorText);
+    // The answer to navigate can come before the new page replaces the old one:
+    // wait for this navigation's own document, so "ready" is asked of the new page.
+    if (nav.loaderId) {
+      for (let i = 0; i < 300 && !b.navigated.has(nav.loaderId); i++) await pause(50);
+      if (!b.navigated.has(nav.loaderId)) throw Error("the page never arrived: " + route);
+    }
     for (let i = 0; i < tries; i++) { if (await b.evaluate(ready).catch(() => false)) return; await pause(200); }
     throw Error("not ready: " + route + " " + b.errors.slice(-3).join(" | "));
   };
@@ -202,6 +211,8 @@ async function main() {
         ["portrait", "cover-portrait-1008x1440.png", 1008, 1440],
         ["mini", "mini-landscape-1080x360.png", 1080, 360],
         ["icon", "icon-512x512.png", 512, 512],
+        ["tile-bg", "spatial-tile-background-512x512.png", 512, 512],
+        ["tile-fg", "spatial-tile-foreground-512x512.png", 512, 512, true],
         ["spatial-bg", "spatial-icon-background-180x180.png", 180, 180],
         ["spatial-fg", "spatial-icon-foreground-180x180.png", 180, 180, true],
         ["logo", "logo-transparent-3600x720.png", 3600, 720, true],
