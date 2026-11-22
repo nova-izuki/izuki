@@ -606,12 +606,14 @@ export async function start({ mode, session, api, tint }) {
         clickRing(hit.point);
         // One point-and-click at a time: a quick second tap never moves the
         // pointer between the first tap's point and its click.
+        // Still the same open panel, still showing a real picture (not an error).
+        const still = () => pcUi.open && my === pcUi.gen && pcUi.live;
         pcUi.clicks = pcUi.clicks.then(async () => {
-          if (!pcUi.open || my !== pcUi.gen) return;
+          if (!still()) return;
           const r = await api.pc.send({ op: "point", nx, ny });
           if (r?.ok === false) { if (my === pcUi.gen) { pcUi.err = r.error || ""; drawBar(); } return; }
-          // Closed (or reopened) while the pointer moved: no click.
-          if (!pcUi.open || my !== pcUi.gen) return;
+          // Closed, reopened or lost the picture while the pointer moved: no click.
+          if (!still()) return;
           await api.pc.send({ op: "click", button: "left" });
         }).catch(() => {});
       },
