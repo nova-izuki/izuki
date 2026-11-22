@@ -388,6 +388,16 @@ export async function start({ mode, session, api, tint }) {
       renderer.xr.setReferenceSpaceType(ref);
       await renderer.xr.setSession(session);
       try { renderer.xr.setFoveation(1); } catch {}
+      // three.js learns about controllers and hands only from the session's
+      // "inputsourceschange" event. One announced while this room was still
+      // downloading (before three listened) would never get a pointer: hand
+      // those over now. A repeat is harmless (connecting is idempotent).
+      const missed = [...(session.inputSources || [])].filter((s) => !pointers.some((p) => p.source === s));
+      if (missed.length) {
+        const ev = new Event("inputsourceschange");
+        Object.assign(ev, { session, added: missed, removed: [] });
+        session.dispatchEvent(ev);
+      }
     } catch (e) {
       // Couldn't go in: leave nothing behind (vr.js says why).
       for (const off of cleanups) { try { off(); } catch {} }
@@ -600,6 +610,8 @@ export async function start({ mode, session, api, tint }) {
           if (!pcUi.open || my !== pcUi.gen) return;
           const r = await api.pc.send({ op: "point", nx, ny });
           if (r?.ok === false) { if (my === pcUi.gen) { pcUi.err = r.error || ""; drawBar(); } return; }
+          // Closed (or reopened) while the pointer moved: no click.
+          if (!pcUi.open || my !== pcUi.gen) return;
           await api.pc.send({ op: "click", button: "left" });
         }).catch(() => {});
       },
