@@ -615,6 +615,26 @@
         rideSaid["m" + mark] = true;
         say(`${mark} minutes into the drive to ${trip.place} — ${far()} covered. Maps still has the turns.`);
       }
+      // What's left really moved: the road opened up, or it closed. Say the
+      // new number instead of waiting to be asked — once per real drop, never
+      // twice within three minutes, only while actually moving, and never on
+      // the approach where "almost there" is the line.
+      if (trip.route && !rideSaid.near) {
+        const secs = trip.route.secs;
+        if (rideSaid.leftSecs === undefined) rideSaid.leftSecs = secs;
+        else if (secs > rideSaid.leftSecs) rideSaid.leftSecs = secs;
+        else if (
+          rideSaid.leftSecs - secs >= 180 &&
+          now - (rideSaid.leftAt || 0) >= 180_000 &&
+          rolling &&
+          speed * perMs >= 5 &&
+          trip.route.metres > 800
+        ) {
+          rideSaid.leftSecs = secs;
+          rideSaid.leftAt = now;
+          say(`Now about ${timeText(secs)} and ${leftText(trip.route.metres)} to ${trip.place}.`);
+        }
+      }
       if (rolling && speed * perMs < 6) { if (!crawlSince) crawlSince = now; } else crawlSince = 0;
       if (crawlSince && now - crawlSince > 90_000 && !rideSaid.crawl) {
         rideSaid.crawl = true;

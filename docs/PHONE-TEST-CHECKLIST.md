@@ -34,6 +34,9 @@ the build being tested.
       returns to Izuki.
 - [ ] Add **Ask Izuki** to Quick Settings and wake it once from another app.
 - [ ] Run **Autopilot → self-test**; it finishes with its Stop control present.
+- [ ] Drive toward a destination until the route noticeably shortens (a faster
+      road, or a detour clearing): it is said once — “Now about … to …” — and not
+      again for at least three minutes; standing still says nothing.
 - [ ] Refuse the location permission, start Drive mode, then use **Something
       wrong?** (Settings): the copied text has a **Now** block naming the reason
       (`location: denied`), not just the words you typed.

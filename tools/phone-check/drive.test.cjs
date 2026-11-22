@@ -315,6 +315,54 @@ const fix = (lat, lon, speed, at) => ({ coords: { latitude: lat, longitude: lon,
   document.visibilityState = 'visible';
   delete window.IzukiNative;
 
+  // ---- the ride-along says when what's left really changed ----------------
+  D3.stop();
+  mode = 'ok';
+  D3.start();
+  D3.gate('take me to walmart');
+  await settle();
+  await settle();
+  D3.track(fix(43.0000, -79.0000, 13, Date.now()));
+  // A clock the check can move: three minutes have to pass for the second line.
+  const realClock = Date.now;
+  let skew = 0;
+  Date.now = () => realClock() + skew;
+  const saidSoFar = () => spoken.filter((s) => /Now about/.test(s)).length;
+  const withLeft = (secs, metres) => {
+    D3.trip.route = { metres: metres, secs: secs, at: Date.now() };
+  };
+
+  D3.tick();                                  // the first number is the baseline
+  ok(saidSoFar() === 0, 'eta speech: the first number is not announced');
+
+  withLeft(600, 5200);                        // under two minutes off: not worth a word
+  D3.tick();
+  ok(saidSoFar() === 0, 'eta speech: a small change stays quiet');
+
+  withLeft(400, 4000);                        // five minutes off: say it
+  D3.tick();
+  ok(saidSoFar() === 1, 'eta speech: a real drop is said once');
+  ok(/walmart/.test(spoken[spoken.length - 1]), 'eta speech: and says where to');
+
+  withLeft(300, 3000);                        // another drop, inside the quiet window
+  D3.tick();
+  ok(saidSoFar() === 1, 'eta speech: not again within three minutes');
+
+  skew += 200_000;                            // the window passes
+  D3.track(fix(43.0000, -79.0000, 0, Date.now()));
+  withLeft(90, 2000);                         // a real drop, but standing at a light
+  D3.tick();
+  ok(saidSoFar() === 1, 'eta speech: not while stopped');
+
+  skew += 200_000;
+  D3.track(fix(43.0000, -79.0000, 13, Date.now()));
+  withLeft(60, 1200);
+  D3.tick();
+  ok(saidSoFar() === 2, 'eta speech: a later drop is said again');
+
+  Date.now = realClock;
+  D3.stop();
+
   let bad = 0;
   for (const [c, w] of cases) { if (!c) { bad++; console.log('FAIL', w); } }
   console.log(`Drive mode: ${cases.length - bad} passed, ${bad} failed`);
