@@ -104,6 +104,15 @@ jobs:
           bubblewrap update --skipVersionUpgrade
           # The template still lists jcenter(), which no longer exists.
           sed -i 's/jcenter()/mavenCentral()/g' build.gradle
+          # No Android backups of the app's data (Meta's security test flags
+          # them: "Application allows backup of private data").
+          m=app/src/main/AndroidManifest.xml
+          if grep -q 'android:allowBackup=' "$m"; then
+            sed -i 's/android:allowBackup="[^"]*"/android:allowBackup="false"/' "$m"
+          else
+            sed -i '0,/<application/s//<application android:allowBackup="false"/' "$m"
+          fi
+          grep -o 'android:allowBackup="[^"]*"' "$m"
       - name: Build and sign
         working-directory: quest
         run: bubblewrap build --skipPwaValidation --signingKeyPath "$RUNNER_TEMP/izuki-quest.p12" --signingKeyAlias izuki
@@ -113,6 +122,10 @@ jobs:
           "$tools/apksigner" verify --print-certs quest/app-release-signed.apk
           "$tools/aapt2" dump badging quest/app-release-signed.apk | grep -E "^package:|^application-label:|uses-permission|launchable-activity|sdkVersion|targetSdkVersion"
           "$tools/aapt2" dump badging quest/app-release-signed.apk | grep -q "package: name='com.novaizuki.vr'"
+          if ! "$tools/aapt2" dump xmltree --file AndroidManifest.xml quest/app-release-signed.apk | grep -Eq 'allowBackup\([^)]*\)=false'; then
+            echo "::error::The package still allows Android backups of its data."
+            exit 1
+          fi
           cp quest/app-release-signed.apk "${{ steps.key.outputs.name }}"
           rm -f "$RUNNER_TEMP/izuki-quest.p12"
       - uses: actions/upload-artifact@v4
@@ -155,3 +168,31 @@ jobs:
           name: izuki-vr-quest-store
           path: Izuki-VR-Quest-store.apk
           if-no-files-found: error
+      # Straight on to the private Alpha channel, so a new version reaches the
+      # owner's Quest with no upload by hand (Meta's website no longer takes
+      # uploads; this is Meta's own uploader). Only with the app secret in
+      # GitHub (IZUKI_QUEST_APP_SECRET, docs/QUEST-STORE.md); without it this
+      # step only says so. Going public stays a person's choice: a build reaches
+      # the store only after Meta's review and a release from the dashboard.
+      - name: Upload the store version to the private Alpha channel
+        if: github.ref == 'refs/heads/main' && env.STORE_APK == '1'
+        env:
+          APP_SECRET: ${{ github.ref == 'refs/heads/main' && secrets.IZUKI_QUEST_APP_SECRET || '' }}
+        run: |
+          if [ -z "$APP_SECRET" ]; then echo "No IZUKI_QUEST_APP_SECRET in GitHub yet: upload by hand (docs/QUEST-STORE.md)."; exit 0; fi
+          # A re-run of an older commit would put an older app on Alpha (its
+          # version code is still the newest): only main's latest commit uploads.
+          head=$(git ls-remote origin refs/heads/main | cut -f1)
+          if [ "$head" != "$GITHUB_SHA" ]; then echo "main has moved on to ${head::7}: not uploading this older build."; exit 0; fi
+          APP_SECRET=$(printf '%s' "$APP_SECRET" | tr -cd 'A-Za-z0-9')
+          echo "::add-mask::$APP_SECRET"
+          util="$RUNNER_TEMP/ovr-platform-util"
+          curl -fsSL --retry 3 -o "$util" "https://www.oculus.com/download_app/?id=5159709737372459"
+          chmod +x "$util"
+          v=$(node -p "require('./quest/twa-manifest.json').appVersion")
+          # The age group is the owner's own self-certification in the
+          # dashboard (2026-11-22: teens and adults, 13+). If they ever change
+          # it there, change it here too.
+          "$util" upload-quest-build --app-id 1490038460856480 --app-secret "$APP_SECRET" \
+            --apk Izuki-VR-Quest-store.apk --channel ALPHA --age-group TEENS_AND_ADULTS \
+            --notes "IZUKI NOVA $v (${GITHUB_SHA::7})"

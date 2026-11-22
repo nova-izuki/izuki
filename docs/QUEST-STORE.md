@@ -66,11 +66,11 @@ Lengths: the short description is 286 characters and the long one 1,290, under t
 
 ## Where the dashboard stands (2026-11-22)
 
-Filled in and saved by Claude in the owner's signed-in dashboard: Name, Categorization, Specs, Details and every picture (covers, hero, icon, logo, five screenshots, the 512 tile). Left for the owner, on purpose:
+Filled in and saved by Claude in the owner's signed-in dashboard: Name, Categorization, Specs, Details and every picture (covers, hero, icon, logo, five screenshots, the 512 tile). Done by the owner: the age group self-certification and the Developer Distribution Agreement. The first store build (version 1.0.13, build 469013) is on the private Alpha channel. Left for the owner, on purpose:
 - **Content rating**: country of origin, a contact email (shared with IARC) and the IARC questionnaire.
 - **Pricing → listing type**: can't be changed after submission. Suggested: *Full release* (free, with the Early Access label). *Coming soon* would only collect wishlists.
-- **Submission tab**: organization verification, the Developer Distribution Agreement, app sharing preferences, the contact email, then *Submit for Review*.
-- **Build**: the store APK goes to a test channel first (below).
+- **Submission tab**: organization verification, app sharing preferences, the contact email, then *Submit for Review*.
+- **Build page**: confirm the age group for the build (*Confirm*), add the Quest's account email under Alpha → Users (then accept Meta's emailed invitation), and try it on the headset.
 
 ## Age rating and data use (the dashboard's forms)
 
@@ -82,11 +82,32 @@ Answer them yourself, truthfully; what's true today:
 ## Uploading (names in the dashboard may differ slightly)
 
 1. **Try it on a real Quest first.** No one has yet; the store reviewers will test it on one.
-2. Get the store build: after this change merges, GitHub → Actions → "Build Izuki VR for Meta Quest" (the run on `main`) → download `izuki-vr-quest-store` (the APK signed with the store key; the other one, `izuki-vr-quest`, is the sideload preview).
-3. https://developers.meta.com/horizon/manage → IZUKI NOVA → upload the APK to a test channel (Alpha), install it on the Quest from there, and try it.
-4. Store listing: paste the words above and upload the pictures (the table).
-5. Fill the age rating and data use forms, then submit for review.
-6. Back up `izuki\.private\quest` (the store key). Every future update must be signed with it.
+2. Get the store build: GitHub → Actions → "Build Izuki VR for Meta Quest" (the run on `main`) → download `izuki-vr-quest-store` (the APK signed with the store key; the other one, `izuki-vr-quest`, is the sideload preview).
+3. Upload it to a test channel. Meta's website no longer takes uploads: it's Meta's own uploader, `ovr-platform-util` (the Windows one is kept in `izuki\.private\quest`), run from the `izuki` folder in PowerShell:
+   ```powershell
+   .\.private\quest\ovr-platform-util.exe upload-quest-build --app-id 1490038460856480 --app-secret <the app secret> --apk <the store APK> --channel ALPHA --age-group TEENS_AND_ADULTS
+   ```
+   `TEENS_AND_ADULTS` is the owner's own age group self-certification in the dashboard (13+); a build uploaded without it waits for *Confirm* on its build page.
+   The dashboard shows the app secret when you try to upload a build on the website (and on the app's API page). It's a password: never in the repository. Once it's in GitHub (below), `main` uploads by itself.
+4. In the dashboard: Alpha → Users → add the email of the Meta account the Quest signs in with. Meta emails an invitation: open it and accept it while signed in to that same account. The app then shows up in that Quest's library. Install it and try it.
+5. Store listing: paste the words above and upload the pictures (the table).
+6. Fill the age rating and data use forms, then submit for review.
+7. Back up `izuki\.private\quest` (the store key). Every future update must be signed with it.
+
+## Updates
+
+Almost every update needs no store update at all. The Quest app is a window onto the live web app (`izukinova.ai/app/?vr=app`), and the web app loads its files from the network first (`docs/app/sw.js`), so a change to the room is in everyone's headset the next time they open it, as soon as the site deploys.
+
+A new store build is needed only when the app's own package changes: its name, icon, permissions or anything else in `quest/`. Then:
+1. Merge the change. On `main`, "Build Izuki VR for Meta Quest" builds and signs the store version and, with the `IZUKI_QUEST_APP_SECRET` secret in GitHub, uploads it to the private Alpha channel by itself (each build's version code is the minute it was made, so it's always newer).
+2. Try it on the Quest from Alpha.
+3. In the dashboard, move the build to the store channel and submit it. Meta reviews updates too; once released, Quests install it by themselves.
+
+To give GitHub the app secret once (from the `izuki` folder; the secret is never printed or committed):
+```powershell
+gh secret set IZUKI_QUEST_APP_SECRET -R nova-izuki/izuki
+```
+It asks for the value; paste the app secret and press Enter.
 
 ## Getting to the top
 

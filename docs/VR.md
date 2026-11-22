@@ -60,12 +60,12 @@ and shows the explainer otherwise.
 - Build: `.github/workflows/quest.yml` (Bubblewrap 1.24.1, JDK 17, target SDK 32) → the artifact `izuki-vr-quest`.
 - Signing: the private preview key (`IZUKI_PREVIEW_KEYSTORE_B64`, see `ANDROID-SIGNING.md`), and only for builds of `main` (branches, pull requests and manual runs elsewhere build TEST-ONLY). `docs/.well-known/assetlinks.json` vouches for that key only, which is what lets the app show the site without a URL bar. Until that secret is in GitHub (the owner runs `.private/android/add-key-to-github.ps1`), the build is named **TEST-ONLY**, signed with a throwaway key, and isn't meant to be installed.
 - Install (sideload): Developer Mode on the headset (a free Meta developer account, then the Meta Horizon phone app → the headset → Developer Mode), USB-C to the PC, then `adb install Izuki-VR-Quest.apk` (or SideQuest). It appears in the library under **Unknown Sources**.
-- Store: the same package, named **IZUKI NOVA** in the library, signed with its own store key on `main` (artifact `izuki-vr-quest-store`, see `ANDROID-SIGNING.md`). The store page (pictures, words, upload steps) is in [QUEST-STORE.md](QUEST-STORE.md); `node tools/quest-store-art.cjs` remakes its pictures from the room.
+- Store: the same package, named **IZUKI NOVA** in the library, signed with its own store key on `main` (artifact `izuki-vr-quest-store`, see `ANDROID-SIGNING.md`). With the `IZUKI_QUEST_APP_SECRET` secret in GitHub, `main` also uploads it to the private Alpha channel by itself. The store page (pictures, words, upload steps, how updates reach people) is in [QUEST-STORE.md](QUEST-STORE.md); `node tools/quest-store-art.cjs` remakes its pictures from the room.
 
 ## Not done yet (next)
 
 1. **Try it on a real headset** (owner): Quest 3 passthrough, hands, controllers, camera permission, the mic during immersive mode.
-2. **Meta Horizon Store** (owner): the store key, store build and store page are ready ([QUEST-STORE.md](QUEST-STORE.md)); upload, fill the rating and data forms, submit. A trailer is optional and not made yet.
+2. **Meta Horizon Store** (owner): the store page is filled, the agreement is signed and the first store build is on the private Alpha channel ([QUEST-STORE.md](QUEST-STORE.md)); left: organization verification, the rating and data forms, a try on the headset, then submit. A trailer is optional and not made yet.
 3. **Live PC video** through `remote/stream` instead of pictures; typing on the PC by voice from VR ("type…").
 4. **Pen in the real room**: put the circles on the real object (hit-test/depth) instead of only on the photo.
 5. **Notes that stay exactly where you put them** (WebXR anchors, persistent on Quest).
