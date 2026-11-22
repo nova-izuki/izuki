@@ -68,6 +68,7 @@ test("long replies are split where Orpheus can read them whole", () => {
   const plain = (v) => JSON.parse(JSON.stringify(v));
   assert.deepEqual(plain(orpheusPieces("Hi. How are you?", 180)), ["Hi. How are you?"], "short sentences are packed together");
   assert.deepEqual(plain(orpheusPieces("   ", 180)), []);
+  assert.deepEqual(plain(orpheusPieces("It costs 3.5 dollars. See izukinova.ai today.", 30)), ["It costs 3.5 dollars.", "See izukinova.ai today."], "a decimal or an address is never split at its dot");
 });
 
 test("the clips are joined into one WAV; mismatched or broken ones are refused", () => {

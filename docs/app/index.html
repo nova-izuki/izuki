@@ -3509,6 +3509,8 @@
     voiceRest = null;
     voiceTold = "";
     store.set("voiceRest", null);
+    // The second voice too (accepted Groq's terms meanwhile, say). Not defined in every test harness.
+    try { resetGroqVoice(); } catch {}
     document.querySelectorAll(".voice-notice").forEach((n) => n.remove());
     if (!key) { setStatus("Add a free Gemini key in Settings to use the natural voice."); return; }
     const words = lastSpoken || pendingVoice?.words || "";
@@ -3635,12 +3637,18 @@
     if (!r || typeof r !== "object" || r.tag !== groqTag()) return null;
     return r.kind === "auth" || Date.now() < r.until ? r : null;
   }
-  function groqVoiceFail(kind, res, why) {
+  /** `tag`: the key the request was made with (a key changed meanwhile isn't blamed). */
+  function groqVoiceFail(kind, res, why, tag = groqTag()) {
     const waits = { auth: 0, terms: 3600000, rate: 60000, daily: 6 * 3600000, server: 60000, network: 20000, unsupported: 1800000 };
     const wait = kind === "auth" ? 0 : Math.max(retryAfterMs(res) || 0, waits[kind] ?? 60000);
-    groqVoiceRest = { kind, until: Date.now() + wait, tag: groqTag(), why: String(why || "").slice(0, 120) };
+    groqVoiceRest = { kind, until: Date.now() + wait, tag, why: String(why || "").slice(0, 120) };
     store.set("groqVoiceRest", groqVoiceRest);
     note("groq voice resting: " + kind);
+  }
+  /** The person's own Retry (after accepting Groq's terms, say): ask Orpheus again. */
+  function resetGroqVoice() {
+    groqVoiceRest = null;
+    store.set("groqVoiceRest", null);
   }
   /** What a refused Orpheus request means (status and the words Groq sent back). */
   function groqVoiceKind(status, body) {
@@ -3661,7 +3669,8 @@
       else if (cur.length + 1 + s.length <= max) cur += " " + s;
       else { out.push(cur); cur = s; }
     };
-    for (const sentence of String(text || "").replace(/\s+/g, " ").trim().match(/[^.!?…]+[.!?…]*/g) || []) {
+    // Sentences end at . ! ? … followed by a space: "3.5" and "izukinova.ai" stay whole.
+    for (const sentence of String(text || "").replace(/\s+/g, " ").trim().split(/(?<=[.!?…])\s+/).filter(Boolean)) {
       let s = sentence.trim();
       while (s.length > max) {
         let cut = s.lastIndexOf(" ", max);
@@ -3717,6 +3726,7 @@
   async function groqVoice(t, budgetMs = 9000) {
     const k = brainKeys.groq;
     if (!k || groqVoiceResting()) return null;
+    const tag = groqTag();
     // Orpheus speaks English only; another language keeps the phone's voice.
     const lang = String(hearing().code || "en").toLowerCase();
     if (lang && !lang.startsWith("en")) return null;
@@ -3740,12 +3750,12 @@
         if (!r.ok) {
           let why = "";
           try { why = (await r.text()).slice(0, 400); } catch {}
-          groqVoiceFail(groqVoiceKind(r.status, why), r, why);
+          groqVoiceFail(groqVoiceKind(r.status, why), r, why, tag);
           return null;
         }
         wavs.push(new Uint8Array(await r.arrayBuffer()));
       } catch (e) {
-        if (e?.name !== "AbortError") groqVoiceFail("network");
+        if (e?.name !== "AbortError") groqVoiceFail("network", null, "", tag);
         else note("groq voice took too long");
         return null;
       } finally {

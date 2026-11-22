@@ -422,13 +422,21 @@
 
   /** The photo open in the room (from the PC), so "what's in this photo?" knows which. */
   let photo = null;
+  /** What the photo panel shows now: "photo" (that PC photo), "camera" or "screen". */
+  let panelShows = "";
+  /** Each photo you pick gets a number: one that arrives after you picked another (or left) is dropped. */
+  let photoPick = 0;
   async function openPhoto(dir, item) {
     if (!isPicture(item.name)) return "I can show pictures here. " + item.name + " isn't one; ask me to open it on your PC.";
     if (Number(item.size) > 25e6) return "That picture is too big to bring over (over 25 MB).";
+    const visit = epoch, my = ++photoPick;
+    const current = () => vr.active && visit === epoch && my === photoPick;
     const r = await pc.file(joinPath(dir, item.name));
+    if (!current()) return "";
     if (r.error) return r.error;
     let bmp = null;
-    try { bmp = await createImageBitmap(r.blob); } catch { return "I can't show that kind of picture here."; }
+    try { bmp = await createImageBitmap(r.blob); } catch { return current() ? "I can't show that kind of picture here." : ""; }
+    if (!current()) { bmp.close?.(); return ""; }
     // Big photos are made smaller: easier to show, and to send when you ask about one.
     const scale = Math.min(1, 1600 / Math.max(bmp.width, bmp.height));
     const c = document.createElement("canvas");
@@ -437,7 +445,9 @@
     bmp.close?.();
     const url = c.toDataURL("image/jpeg", 0.86);
     photo = { b64: url.slice(url.indexOf(",") + 1), url, w: c.width, h: c.height, name: item.name };
-    vr.scene?.showLook({ url, w: c.width, h: c.height, marks: [], say: item.name + ' · say "what\'s in this photo?"' });
+    panelShows = "photo";
+    // Picked by you: it opens even if this same photo was closed before.
+    vr.scene?.showLook({ url, w: c.width, h: c.height, marks: [], say: item.name + ' · say "what\'s in this photo?"', picked: true });
     return "";
   }
   /** A small picture for the gallery (or null): big files are skipped. */
@@ -581,9 +591,10 @@
    */
   async function lookSource(kind) {
     const pcFrame = () => { const f = vr.scene?.pcFrame?.(); if (!f) throw new Error("Your PC's picture isn't showing yet."); return f; };
-    const camera = { take: () => cam.frame(), system: LOOK_SYSTEM };
-    const screen = { take: pcFrame, system: SCREEN_SYSTEM };
-    if (kind === "photo-ask" && photo && vr.scene?.lookShown?.()) return { take: () => photo, system: PHOTO_SYSTEM };
+    const camera = { take: () => cam.frame(), system: LOOK_SYSTEM, shows: "camera" };
+    const screen = { take: pcFrame, system: SCREEN_SYSTEM, shows: "screen" };
+    // "This photo" is the PC photo only while that's what the panel shows.
+    if (kind === "photo-ask" && photo && panelShows === "photo" && vr.scene?.lookShown?.()) return { take: () => photo, system: PHOTO_SYSTEM, shows: "photo" };
     const pcOn = !!vr.scene?.pcShown?.();
     if (kind === "screen") {
       if (pcOn) return screen;
@@ -603,6 +614,7 @@
       const shot = await source.take();
       // Left VR while the photo was being taken: nothing is sent.
       if (!current()) throw closedError();
+      panelShows = source.shows || "camera";
       vr.scene?.showLook({ url: shot.url, w: shot.w, h: shot.h, marks: [], say: "Looking…" });
       const reply = await core.see(lookPrompt(question), shot.b64, "image/jpeg", source.system);
       // Left (or left and came back) while the AI looked: the answer is dropped.
@@ -646,6 +658,7 @@
     exited() {
       epoch++;
       photo = null;
+      panelShows = "";
       heyNova = false;
       armed = false;
       vr.active = false;

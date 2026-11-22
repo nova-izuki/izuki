@@ -273,12 +273,16 @@ export async function start({ mode, session, api, tint }) {
       y += 14;
       for (const line of fit.lines) write(ctx, line, padX, (y += lh), fit.size, view.reply ? "#ffffff" : "#d6def5", 500);
     }
+    announce(view.notice || view.reply);
     if (note) {
       let ny = h - 26 - (note.lines.length - 1) * note.size * 1.25;
       for (const line of note.lines) { write(ctx, line, padX, ny, note.size, "#fcd34d", 500); ny += note.size * 1.25; }
     }
     caption.update();
   }
+  /** The preview's screen-reader line (flat only), and whether it exists yet. */
+  let spoken = null, spokenReady = false;
+  const announce = (t) => { if (spokenReady && spoken && t && spoken.textContent !== t) spoken.textContent = t; };
   let noticeTimer = 0;
   /** A short note under the words for a while. */
   function notice(text, ms = 12000) {
@@ -556,6 +560,7 @@ export async function start({ mode, session, api, tint }) {
     let y = 18;
     for (const line of fit.lines) write(ctx, line, 30, (y += fit.size * 1.28), fit.size, "#ffffff", 500);
     lookUi.text.update();
+    announce(lookUi.say);
   }
   function drawLookPhoto(progress) {
     const ph = lookUi.photo;
@@ -591,8 +596,10 @@ export async function start({ mode, session, api, tint }) {
     if (!lookUi.group.visible) return;
     lookUi.say = "Looking…"; drawLookText();
   }
-  async function showLook({ url, w, h, marks, say }) {
-    if (url === lookUi.closed) return;
+  async function showLook({ url, w, h, marks, say, picked }) {
+    // A late answer for a photo you closed stays closed; one you pick again opens.
+    if (picked) lookUi.closed = "";
+    else if (url === lookUi.closed) return;
     const my = ++lookUi.seq;
     lookUi.want = url;
     if (url !== lookUi.url) {
@@ -806,7 +813,7 @@ export async function start({ mode, session, api, tint }) {
   // Pictures, Music, Videos), as a gallery: four by three tiles a page, photos
   // as thumbnails, folders to open, "Up" and page arrows. A photo opens big.
   const FILES_W = 1.0, FILES_H = 0.74, COLS = 4, ROWS = 3, PAGE = COLS * ROWS, HEAD = 0.12;
-  const filesUi = { group: new Group(), card: card(FILES_W, FILES_H), handle: card(0.3, 0.035), open: false, gen: 0, path: "", up: "", items: [], page: 0, title: "", err: "", loading: false, thumbs: new Map(), btns: [] };
+  const filesUi = { group: new Group(), card: card(FILES_W, FILES_H), handle: card(0.3, 0.035), open: false, gen: 0, path: "", up: "", items: [], page: 0, title: "", err: "", loading: false, thumbs: new Map(), pending: new Set(), btns: [] };
   filesUi.group.visible = false;
   scene.add(filesUi.group);
   filesUi.group.add(filesUi.card.mesh, filesUi.handle.mesh);
@@ -889,16 +896,21 @@ export async function start({ mode, session, api, tint }) {
   async function loadThumbs(my) {
     for (const it of pageItems()) {
       if (my !== filesUi.gen || !filesUi.open) return;
-      if (it.dir || !api.isPicture(it.name) || filesUi.thumbs.has(thumbKey(it))) continue;
-      const bmp = await api.thumb(filesUi.path, it);
+      const key = thumbKey(it);
+      // Already here, or already on its way (paging back and forth): never fetched twice.
+      if (it.dir || !api.isPicture(it.name) || filesUi.thumbs.has(key) || filesUi.pending.has(key)) continue;
+      filesUi.pending.add(key);
+      let bmp = null;
+      try { bmp = await api.thumb(filesUi.path, it); } finally { if (my === filesUi.gen) filesUi.pending.delete(key); }
       if (my !== filesUi.gen || !filesUi.open) { bmp?.close?.(); return; }
-      filesUi.thumbs.set(thumbKey(it), bmp || null);
+      filesUi.thumbs.set(key, bmp || null);
       if (bmp) drawFiles();
     }
   }
   function dropThumbs() {
     for (const b of filesUi.thumbs.values()) b?.close?.();
     filesUi.thumbs.clear();
+    filesUi.pending.clear();
   }
   /** Open a folder (or, with no path, the list of your folders). "" when it opened, else why not. */
   async function filesGo(path, title) {
@@ -952,8 +964,10 @@ export async function start({ mode, session, api, tint }) {
     filesUi.open = true;
     filesUi.group.visible = true;
     if (!folder) return filesGo("", "Your folders");
+    // Closed, or you opened something else, while the list was on its way: it's dropped.
+    const my = filesUi.gen;
     const roots = await api.pc.roots();
-    if (!filesUi.open) return "";
+    if (!filesUi.open || my !== filesUi.gen) return "";
     if (roots.error) { filesUi.err = roots.error; drawFiles(); return roots.error; }
     const r = roots.roots.find((x) => String(x.name).toLowerCase() === folder.toLowerCase());
     if (!r) { await filesGo("", "Your folders"); return "I couldn't find a " + folder + " folder on your PC, so here are all your folders."; }
@@ -1180,6 +1194,7 @@ export async function start({ mode, session, api, tint }) {
   // ---- a normal screen: a few words on how to drive it ----------------------------
   let overlay = null;
   if (flat) {
+    spokenReady = true;
     overlay = document.createElement("div");
     overlay.setAttribute("role", "status");
     Object.assign(overlay.style, { position: "fixed", top: "max(12px, env(safe-area-inset-top))", left: "50%", transform: "translateX(-50%)", zIndex: "2147483001", display: "flex", gap: "10px", alignItems: "center", padding: "8px 8px 8px 16px", borderRadius: "999px", background: "rgba(10,13,30,.82)", color: "#e6ecff", font: `500 14px ${FONT}`, border: "1px solid rgba(167,139,250,.45)", maxWidth: "calc(100vw - 32px)" });
@@ -1194,7 +1209,12 @@ export async function start({ mode, session, api, tint }) {
       b.onclick = act;
       return b;
     };
-    overlay.append(words, domButton("Talk", () => api.tapOrb()), domButton("My PC", togglePc), domButton("Pin", pinLast), domButton("Leave", () => stop()));
+    overlay.append(words, domButton("Talk", () => api.tapOrb()), domButton("Photos", togglePhotos), domButton("My PC", togglePc), domButton("Pin", pinLast), domButton("Style", restyle), domButton("Leave", () => stop()));
+    // What the canvas says (Izuki's words, a photo's answer), for screen readers.
+    spoken = document.createElement("span");
+    spoken.setAttribute("aria-live", "polite");
+    Object.assign(spoken.style, { position: "absolute", width: "1px", height: "1px", overflow: "hidden", clip: "rect(0 0 0 0)", whiteSpace: "nowrap" });
+    overlay.append(spoken);
     document.body.appendChild(overlay);
   } else {
     on(session, "end", () => stop());
@@ -1272,7 +1292,9 @@ function addSpace(scene, floorY) {
       void main(){
         float h = vW.y;
         vec3 c = h < 0.0 ? mix(uMid, uLow, clamp(-h * 3.0, 0.0, 1.0)) : mix(uMid, uTop, clamp(h * 1.5, 0.0, 1.0));
-        float band = exp(-pow((h - 0.18) * 7.0, 2.0)) * (0.5 + 0.5 * sin(atan(vW.z, vW.x) * 3.0));
+        // pow() of a negative number is undefined in GLSL: square it by hand.
+        float off = (h - 0.18) * 7.0;
+        float band = exp(-off * off) * (0.5 + 0.5 * sin(atan(vW.z, vW.x) * 3.0));
         c += uBand * band * uBandAmt;
         gl_FragColor = vec4(c, 1.0);
       }`,
