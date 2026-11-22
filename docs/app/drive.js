@@ -307,6 +307,10 @@
       if (r) t.route = r;
       paint();
       saveTrip();
+      // The route just landed, so say it on the orb now: waiting for the next
+      // five-second check can be a whole minute behind Maps, where background
+      // timers are throttled.
+      if (r) showAmbient(false);
       return t.route || null;
     });
     planning = asked;
