@@ -3513,13 +3513,16 @@
     voiceRest = null;
     voiceTold = "";
     store.set("voiceRest", null);
+    // The second voice too (accepted Groq's terms meanwhile, say). Not defined in every test harness.
+    try { resetGroqVoice(); } catch {}
     document.querySelectorAll(".voice-notice").forEach((n) => n.remove());
-    if (!key) { setStatus("Add a free Gemini key in Settings to use the natural voice."); return; }
+    // Either natural voice will do: Gemini's first, then Groq's.
+    if (!key && !brainKeys.groq) { setStatus("Add a free Gemini or Groq key in Settings to use the natural voice."); return; }
     const words = lastSpoken || pendingVoice?.words || "";
     if (!words) { setStatus("Natural voice is on again."); return; }
     if (button) { button.disabled = true; button.textContent = "Trying…"; }
     hush();
-    const url = await geminiVoice(words, 12000);
+    const url = (key ? await geminiVoice(words, 12000) : null) || (await groqVoice(words));
     if (!url) {
       voiceTold = "";
       voiceNotice();
@@ -3621,6 +3624,165 @@
       clearTimeout(timer);
     }
   }
+
+  // ---- the second natural voice: Orpheus on Groq (tested by tools/phone-check/groqvoice.test.cjs) ----
+  // Gemini's free speech allowance lasts a handful of replies, then rests. A
+  // headset browser has no voice of its own, so on a Quest the replies went
+  // silent and only the words showed. With a Groq key (the same one that
+  // hears you), Orpheus speaks instead, like the PC's "Human (Groq)" voice.
+  const ORPHEUS_FOR = { nova: "hannah", leo: "troy", sophie: "diana", kiki: "diana", alfred: "daniel", atlas: "daniel", ezinne: "hannah", dre: "austin", nia: "autumn" };
+  /** Orpheus reads at most this many characters a request. */
+  const ORPHEUS_MAX = 200;
+  const ORPHEUS_TERMS = "console.groq.com/playground?model=canopylabs/orpheus-v1-english";
+  const groqTag = () => String(brainKeys.groq || "").slice(-6);
+  let groqVoiceRest = store.get("groqVoiceRest", null);
+  /** Why Orpheus is resting, while it is: a refused key until the key changes, the rest for a while. */
+  function groqVoiceResting() {
+    const r = groqVoiceRest;
+    if (!r || typeof r !== "object" || r.tag !== groqTag()) return null;
+    return r.kind === "auth" || Date.now() < r.until ? r : null;
+  }
+  /** `tag`: the key the request was made with (a key changed meanwhile isn't blamed). */
+  function groqVoiceFail(kind, res, why, tag = groqTag()) {
+    const waits = { auth: 0, terms: 3600000, rate: 60000, daily: 6 * 3600000, server: 60000, network: 20000, unsupported: 1800000 };
+    const wait = kind === "auth" ? 0 : Math.max(retryAfterMs(res) || 0, waits[kind] ?? 60000);
+    groqVoiceRest = { kind, until: Date.now() + wait, tag, why: String(why || "").slice(0, 120) };
+    store.set("groqVoiceRest", groqVoiceRest);
+    note("groq voice resting: " + kind);
+  }
+  /** The person's own Retry (after accepting Groq's terms, say): ask Orpheus again. */
+  function resetGroqVoice() {
+    groqVoiceRest = null;
+    store.set("groqVoiceRest", null);
+  }
+  /** What a refused Orpheus request means (status and the words Groq sent back). */
+  function groqVoiceKind(status, body) {
+    const b = String(body || "").toLowerCase();
+    if (status === 401 || status === 403) return /terms|accept/.test(b) ? "terms" : "auth";
+    if (/terms|accept/.test(b)) return "terms";
+    if (status === 429) return /per day|\(rpd\)|\(tpd\)|daily/.test(b) ? "daily" : "rate";
+    if (status >= 500) return "server";
+    return "unsupported";
+  }
+  /** Words into pieces Orpheus reads whole: sentences, packed, each at most `max` characters. */
+  function orpheusPieces(text, max) {
+    const out = [];
+    let cur = "";
+    const add = (s) => {
+      if (!s) return;
+      if (!cur) cur = s;
+      else if (cur.length + 1 + s.length <= max) cur += " " + s;
+      else { out.push(cur); cur = s; }
+    };
+    // Sentences end at . ! ? … followed by a space: "3.5" and "izukinova.ai" stay whole.
+    for (const sentence of String(text || "").replace(/\s+/g, " ").trim().split(/(?<=[.!?…])\s+/).filter(Boolean)) {
+      let s = sentence.trim();
+      while (s.length > max) {
+        let cut = s.lastIndexOf(" ", max);
+        if (cut < max / 2) cut = max;
+        add(s.slice(0, cut).trim());
+        s = s.slice(cut).trim();
+      }
+      add(s);
+    }
+    if (cur) out.push(cur);
+    return out;
+  }
+  /** WAV files of one voice, end to end, as one WAV (Orpheus answers a piece at a time). */
+  function joinWavs(files) {
+    let fmt = null;
+    const datas = [];
+    for (const f of files) {
+      if (!(f instanceof Uint8Array) || f.length < 12) return null;
+      const v = new DataView(f.buffer, f.byteOffset, f.byteLength);
+      if (String.fromCharCode(f[0], f[1], f[2], f[3]) !== "RIFF" || String.fromCharCode(f[8], f[9], f[10], f[11]) !== "WAVE") return null;
+      let at = 12, myFmt = null, data = null;
+      while (at + 8 <= f.length) {
+        const id = String.fromCharCode(f[at], f[at + 1], f[at + 2], f[at + 3]);
+        let size = v.getUint32(at + 4, true);
+        const body = at + 8;
+        if (id === "fmt ") myFmt = f.slice(body, body + 16);
+        else if (id === "data") {
+          // A streamed WAV may not know its length (0 or 0xFFFFFFFF): the rest of the file.
+          if (!size || size === 0xffffffff || body + size > f.length) size = f.length - body;
+          data = f.subarray(body, body + size);
+          break;
+        }
+        at = body + size + (size & 1);
+      }
+      if (!myFmt || myFmt.length < 16 || !data) return null;
+      if (fmt && fmt.join() !== myFmt.join()) return null;
+      fmt = myFmt;
+      datas.push(data);
+    }
+    if (!fmt) return null;
+    const total = datas.reduce((n, d) => n + d.length, 0);
+    const out = new Uint8Array(44 + total);
+    const w = new DataView(out.buffer);
+    const tag = (at, s) => { for (let i = 0; i < 4; i++) out[at + i] = s.charCodeAt(i); };
+    tag(0, "RIFF"); w.setUint32(4, 36 + total, true); tag(8, "WAVE");
+    tag(12, "fmt "); w.setUint32(16, 16, true); out.set(fmt, 20);
+    tag(36, "data"); w.setUint32(40, total, true);
+    let p = 44;
+    for (const d of datas) { out.set(d, p); p += d.length; }
+    return out;
+  }
+  /** Orpheus on Groq: a playable URL, or null (no key, resting, not English, refused, too slow). */
+  async function groqVoice(t, budgetMs = 9000) {
+    const k = brainKeys.groq;
+    if (!k || groqVoiceResting()) return null;
+    const tag = groqTag();
+    // Orpheus speaks English only; another language keeps the phone's voice.
+    const lang = String(hearing().code || "en").toLowerCase();
+    if (lang && !lang.startsWith("en")) return null;
+    const direction = "friendly";
+    const pieces = orpheusPieces(t, ORPHEUS_MAX - direction.length - 3);
+    if (!pieces.length) return null;
+    const deadline = Date.now() + budgetMs;
+    const wavs = [];
+    for (const piece of pieces) {
+      const left = deadline - Date.now();
+      if (left < 1000) return null;
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), left);
+      try {
+        const r = await fetch("https://api.groq.com/openai/v1/audio/speech", {
+          method: "POST",
+          signal: ctrl.signal,
+          headers: { "Content-Type": "application/json", Authorization: "Bearer " + k },
+          body: JSON.stringify({ model: "canopylabs/orpheus-v1-english", input: `[${direction}] ${piece}`, voice: ORPHEUS_FOR[person().id] || "hannah", response_format: "wav" }),
+        });
+        if (!r.ok) {
+          let why = "";
+          try { why = (await r.text()).slice(0, 400); } catch {}
+          groqVoiceFail(groqVoiceKind(r.status, why), r, why, tag);
+          return null;
+        }
+        wavs.push(new Uint8Array(await r.arrayBuffer()));
+      } catch (e) {
+        if (e?.name !== "AbortError") groqVoiceFail("network", null, "", tag);
+        else note("groq voice took too long");
+        return null;
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+    const joined = joinWavs(wavs);
+    return joined ? URL.createObjectURL(new Blob([joined], { type: "audio/wav" })) : null;
+  }
+  /** A natural voice for these words: Gemini's, then Orpheus on Groq while Gemini's rests or refuses. */
+  async function naturalVoice(t) {
+    return (await geminiVoice(t)) || groqVoice(t);
+  }
+  /** Why there's no voice right now, in a few words (the VR room has no Retry button). */
+  function quietWhy() {
+    const rest = voiceResting(), g = groqVoiceResting();
+    if (g?.kind === "terms") return "Groq's voice needs its terms accepted once (sign in at " + ORPHEUS_TERMS + "). Showing my words meanwhile.";
+    if (rest && !brainKeys.groq) return "My voice is resting (" + voiceWhy(rest) + "). Add a free Groq key in Settings and I'll talk with a second voice.";
+    if (rest || g) return "My voices are resting for now (free allowances). Showing my words meanwhile.";
+    return "I couldn't play my voice here. Showing my words.";
+  }
+  // ---- end the second natural voice ----
 
   /** Stops whatever is being said right now, and lets its promise finish. */
   let stopSound = null;
@@ -3835,7 +3997,7 @@
     if (!voiceOn && !turnCtx) {
       stream?.cancel();
       liveSaid(t);
-      offerHear(null, t.replace(/[*_#`]/g, ""));
+      offerHear(null, t.replace(/[*_#`]/g, ""), "muted");
       return;
     }
     const s = stream || voiceStream({ siri });
@@ -3906,7 +4068,7 @@
     const push = (w) => {
       // Markdown and emoji would be read out as noise by the phone's voice.
       w = w.replace(/[*_#`]/g, "").replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/gu, "").replace(/\s+/g, " ").trim();
-      if (w && alive() && !ended) pieces.push({ words: w, url: natural() ? geminiVoice(w) : Promise.resolve(null) });
+      if (w && alive() && !ended) pieces.push({ words: w, url: natural() ? naturalVoice(w) : Promise.resolve(null) });
       if (!playing && pieces.length) playing = run();
       wake();
     };
@@ -4046,10 +4208,13 @@
   }
 
   /** The phone won't play sound before a tap: the answer, out loud, in one tap — or talk back. */
-  function offerHear(url, words) {
+  /** why: "muted" when the person turned the voice off (not a failure). */
+  function offerHear(url, words, why = "") {
     clearVoiceRecovery();
     pendingVoice = { url, words };
     note("voice needs a play tap");
+    // In a headset the page's buttons can't be seen: the room says why it's quiet.
+    toViews("quiet", why === "muted" ? "Izuki's sound is muted, so I'm showing my words. Unmute it in the app to hear me." : quietWhy());
     const last = [...log.querySelectorAll(".msg.izuki")].pop();
     const row = el("div", "chip-row voice-recovery");
     const hear = el("button", "chip primary", "🔊 Tap to hear it");

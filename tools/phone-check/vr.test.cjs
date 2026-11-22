@@ -37,10 +37,39 @@ test("headset commands are recognised, whole and polite", () => {
   for (const [kind, list] of Object.entries(cases)) for (const s of list) assert.equal(command(s)?.kind, kind, `"${s}" should be ${kind}`);
 });
 
+test("the new headset commands: photos, screen, style, sleep", () => {
+  const cases = {
+    files: ["show my photos", "can you go into my photos and folders", "open my pictures on my PC", "show me my downloads", "open my documents folder", "browse my videos", "show my files"],
+    "files-hide": ["close my photos", "hide the files"],
+    "photo-ask": ["what's in this photo", "describe this picture", "who's in this photo?"],
+    screen: ["what's on my screen", "what is the answer on my screen", "explain my PC screen", "read the screen for me", "what does my screen say"],
+    "look-style": ["change your look", "switch your colours", "new look"],
+    space: ["change the room", "change the background"],
+    sleep: ["stop listening", "go to sleep"],
+    help: ["What can you do?", "what can I say", "Hey Nova, what can you do here?", "how does this work", "help", "show me what you can do"],
+  };
+  for (const [kind, list] of Object.entries(cases)) for (const s of list) assert.equal(command(s)?.kind, kind, `"${s}" should be ${kind}`);
+  assert.equal(command("show my photos").folder, "Pictures");
+  assert.equal(command("open my downloads folder").folder, "Downloads");
+  assert.equal(command("show my files").folder, "");
+  assert.equal(command("show my PC")?.kind, "pc", "still the PC's screen");
+});
+
+test("what goes to the PC (with its screen showing), and calling Izuki by name", () => {
+  const { onPc, named } = helpers;
+  for (const s of ["open Spotify", "click the send button", "type hello world", "scroll down", "search for cats", "close this window", "play the next song", "what's the weather on my PC"]) assert.ok(onPc(s), `"${s}" is for the PC`);
+  for (const s of ["what's the weather", "tell me a joke", "how are you", "who won the game", "explain photosynthesis"]) assert.ok(!onPc(s), `"${s}" stays a question`);
+  assert.deepEqual(plain(named("hey nova what's the time", "Nova")), { called: true, rest: "what's the time" });
+  assert.deepEqual(plain(named("Izuki, open spotify")), { called: true, rest: "open spotify" });
+  assert.deepEqual(plain(named("ok so hey sophie can you help", "Sophie")), { called: true, rest: "ok so can you help" });
+  assert.equal(named("what time is it").called, false);
+  assert.equal(named("I like supernovas").called, false, "a word that only contains the name isn't a call");
+});
+
 test("everything else goes on to the brain as usual", () => {
   for (const s of ["what is this week's weather", "what's that song called", "open my PC's downloads", "on my PC open Spotify", "show my PC's battery",
     "what is the capital of France", "pin my tabs on the PC", "come here tomorrow at 5", "remind me to look at the oven", "look up the news",
-    "what does my calendar say", "how do I fix my wifi", "explain quantum physics", "close Spotify on my PC", "", "   "]) {
+    "what does my calendar say", "how do I fix my wifi", "what can you do about my wifi", "help me write an email", "explain quantum physics", "close Spotify on my PC", "", "   "]) {
     assert.equal(command(s), null, `"${s}" is not a headset command`);
   }
 });
@@ -110,7 +139,7 @@ test("a point on the PC panel becomes the same point on the PC", () => {
 });
 
 // ---- the browser side, with a pretend headset -------------------------------
-function browser({ camera = false, see = async () => "{}", denied = false, pcs = [], playFails = false, xr = null, ua = "Mozilla/5.0 (X11; Linux x86_64; Quest 3) OculusBrowser/40.0", facing = "" } = {}) {
+function browser({ camera = false, see = async () => "{}", denied = false, pcs = [], playFails = false, xr = null, ua = "Mozilla/5.0 (X11; Linux x86_64; Quest 3) OculusBrowser/40.0", facing = "", pcAnswers = {}, bitmap = async () => {} } = {}) {
   const local = new Map([["izuki.remotePcs", JSON.stringify(pcs)]]);
   const calls = [];
   let stopped = 0, opens = 0;
@@ -120,6 +149,19 @@ function browser({ camera = false, see = async () => "{}", denied = false, pcs =
     orb(m) { this.states.push(m); }, heard() {}, said() {}, line() {}, level() {},
     showLook(v) { calls.push(["showLook", v]); }, pin(t) { calls.push(["pin", t]); }, comeHere() { calls.push(["come"]); },
     pcOpen: async () => { calls.push(["pcOpen"]); return ""; }, pcClose() { calls.push(["pcClose"]); }, pcShown() { return scene.shown; }, stop() { calls.push(["stop"]); },
+    pcFrame: () => (scene.shown ? { b64: "UENTQ1JFRU4=", url: "data:image/jpeg;base64,UENTQ1JFRU4=", w: 1280, h: 720 } : null),
+    lookOpen: false,
+    lookShown: () => scene.lookOpen,
+    filesOpen: async (folder) => { calls.push(["filesOpen", folder]); return ""; }, filesClose() { calls.push(["filesClose"]); },
+    nextTheme: () => "This is Aurora.", notice(t) { calls.push(["notice", t]); },
+  };
+  // The paired PC: each path answers from pcAnswers (JSON), and every request is kept.
+  const fetch = async (url, init = {}) => {
+    calls.push(["fetch", String(url), init.body ? JSON.parse(init.body) : null]);
+    const path = String(url).replace(/^https?:\/\/[^/]+\//, "").split("?")[0];
+    const body = pcAnswers[path];
+    if (body === undefined) return { ok: false, status: 404, headers: { get: () => "application/json" }, json: async () => ({}), text: async () => "" };
+    return { ok: true, status: 200, headers: { get: () => "application/json" }, json: async () => body, text: async () => JSON.stringify(body), blob: async () => ({ size: 3 }) };
   };
   const el = (tag) => tag === "video"
     ? { play: async () => { if (playFails) { const e = new Error("no play"); e.name = "NotReadableError"; throw e; } }, videoWidth: 640, videoHeight: 480, muted: false, playsInline: false, srcObject: null }
@@ -134,12 +176,13 @@ function browser({ camera = false, see = async () => "{}", denied = false, pcs =
       },
       xr,
     },
-    IzukiCore: { see: async (prompt, b64, type, system) => { calls.push(["see", { prompt, b64, type, system }]); return see(); } },
+    IzukiCore: { see: async (prompt, b64, type, system) => { calls.push(["see", { prompt, b64, type, system }]); return see(); }, name: () => "Nova" },
   };
   const ctx = {
     window, document: { createElement: el, head: { appendChild() {} }, getElementById: () => null },
     localStorage: { getItem: (k) => (local.has(k) ? local.get(k) : null), setItem: (k, v) => local.set(k, String(v)), removeItem: (k) => local.delete(k) },
-    setTimeout: (fn, ms) => setTimeout(fn, Math.min(ms, 5)), clearTimeout, URLSearchParams, console, Promise, Date, Math, JSON,
+    setTimeout: (fn, ms) => setTimeout(fn, Math.min(ms, 5)), clearTimeout, URLSearchParams, console, Promise, Date, Math, JSON, fetch, AbortController,
+    createImageBitmap: async () => { await bitmap(); return { width: 40, height: 30, close() {} }; },
   };
   vm.runInNewContext(src, ctx);
   const vr = window.IzukiVr;
@@ -211,6 +254,46 @@ test("an answer that arrives after you left VR is dropped, and the orb is left a
   assert.deepEqual(plain(b.scene.states), ["listening", "thinking"], "the orb isn't touched after leaving");
 });
 
+test("an answer about a photo you've since swapped never covers the new photo", async () => {
+  const pc = { name: "My PC", link: "https://pc.example/", pass: "p" };
+  let b;
+  const ask = async (swapDuringLook) => {
+    b = browser({
+      pcs: [pc], pcAnswers: { "remote/files/get": {} },
+      see: async () => { if (swapDuringLook) await b.vr.api().openPhoto("C:\\Pics", { name: "beach.jpg", size: 10 }); return '{"say":"Two dogs on a sofa."}'; },
+    });
+    await b.vr.api().openPhoto("C:\\Pics", { name: "dogs.jpg", size: 10 });
+    b.scene.lookOpen = true;
+    return b.vr.gate("what's in this photo?");
+  };
+  // Still the same photo: the answer shows on it, as before.
+  let r = await ask(false);
+  assert.equal(r.say, "Two dogs on a sofa.");
+  assert.equal(b.calls.filter((c) => c[0] === "showLook").pop()[1].say, "Two dogs on a sofa.");
+  // Another photo picked while the AI looked: the old answer is set aside and the new photo stays.
+  r = await ask(true);
+  assert.match(r.say, /picked another photo/);
+  const last = b.calls.filter((c) => c[0] === "showLook").pop()[1];
+  assert.equal(last.picked, true, "the last thing drawn is the photo you picked");
+  assert.match(last.say, /beach\.jpg/);
+  // Picked just before asking, it lands while the AI looks at the earlier one: set aside too.
+  let hold = false, release;
+  const held = new Promise((r) => (release = r));
+  let next;
+  b = browser({
+    pcs: [pc], pcAnswers: { "remote/files/get": {} },
+    bitmap: async () => { if (hold) { hold = false; await held; } },
+    see: async () => { release(); await next; return '{"say":"Two dogs on a sofa."}'; },
+  });
+  await b.vr.api().openPhoto("C:\\Pics", { name: "dogs.jpg", size: 10 });
+  b.scene.lookOpen = true;
+  hold = true;
+  next = b.vr.api().openPhoto("C:\\Pics", { name: "beach.jpg", size: 10 });
+  r = await b.vr.gate("what's in this photo?");
+  assert.match(r.say, /picked another photo/);
+  assert.match(b.calls.filter((c) => c[0] === "showLook").pop()[1].say, /beach\.jpg/, "the photo on show is the one you picked last");
+});
+
 test("if the 3D room can't load, the headset session is ended, not left empty", async () => {
   let ended = 0;
   const xr = { requestSession: async () => ({ end: async () => { ended++; } }), isSessionSupported: async () => true };
@@ -244,14 +327,106 @@ test("show my PC opens the screen; anything else carries on to the brain", async
   assert.deepEqual(plain(on), { said: "on my PC open Spotify" }, "a PC job is not swallowed");
 });
 
-test("what's this? with no camera: says so, or lets the PC answer when it's showing", async () => {
-  const b = browser({ camera: false });
+test("what's this? with no camera: says so, or looks at the PC's screen when it's showing", async () => {
+  const b = browser({ camera: false, see: async () => '{"say":"Your PC shows the Settings app.","marks":[{"x":100,"y":80,"label":"Display"}]}' });
   let r = await b.vr.gate("what's this?");
   assert.equal(r.done, true);
   assert.match(r.say, /can't see through this headset's cameras/);
   b.scene.shown = true;
   r = await b.vr.gate("what's this?");
-  assert.deepEqual(plain(r), { said: "what's this?" });
+  assert.equal(r.say, "Your PC shows the Settings app.");
+  const seen = b.calls.find((c) => c[0] === "see")[1];
+  assert.match(seen.system, /PC screen/);
+  assert.equal(seen.b64, "UENTQ1JFRU4=", "the PC's picture, not a camera photo");
+});
+
+test("what's on my screen? reads the PC's screen (even with a camera), else says how", async () => {
+  const b = browser({ camera: true, see: async () => '{"say":"It asks you to restart.","marks":[]}' });
+  let r = await b.vr.gate("what's on my screen?");
+  assert.match(r.say, /show my PC/, "no PC showing and no real screen asked about: it says how");
+  b.scene.shown = true;
+  r = await b.vr.gate("Hey Nova, what is the answer on my screen");
+  assert.equal(r.say, "It asks you to restart.");
+  const seen = b.calls.find((c) => c[0] === "see")[1];
+  assert.match(seen.system, /PC screen/);
+  assert.match(seen.system, /never give the answers/, "a graded test on the PC still gets coaching");
+  assert.equal(b.opens(), 0, "the camera wasn't opened for the PC's screen");
+});
+
+test("photos and folders: the gallery opens your PC's folder; unpaired, it says how", async () => {
+  let b = browser();
+  let r = await b.vr.gate("can you go into my photos and folders");
+  assert.match(r.say, /Pair this headset with your PC/);
+  assert.match(r.say, /Quest's own photos/);
+  b = browser({ pcs: [{ name: "My PC", link: "https://pc.example/", pass: "p" }] });
+  r = await b.vr.gate("can you go into my photos and folders");
+  assert.deepEqual(plain(b.calls.filter((c) => c[0] === "filesOpen")), [["filesOpen", "Pictures"]]);
+  r = await b.vr.gate("open my downloads folder on my PC");
+  assert.deepEqual(plain(b.calls.filter((c) => c[0] === "filesOpen").pop()), ["filesOpen", "Downloads"]);
+  await b.vr.gate("show my files");
+  assert.deepEqual(plain(b.calls.filter((c) => c[0] === "filesOpen").pop()), ["filesOpen", ""]);
+  await b.vr.gate("close my photos");
+  assert.ok(b.calls.some((c) => c[0] === "filesClose"));
+});
+
+test("with the PC on the big screen, something to do is done on the PC; questions stay here", async () => {
+  const b = browser({ pcs: [{ name: "My PC", link: "https://pc.example/", pass: "p" }], pcAnswers: { talk: { text: "Opened Spotify." } } });
+  b.scene.shown = true;
+  const r = await b.vr.gate("open Spotify");
+  assert.equal(r.say, "Opened Spotify.");
+  const sent = b.calls.find((c) => c[0] === "fetch" && c[1].endsWith("/talk"));
+  assert.deepEqual(plain(sent[2]), { text: "open Spotify" });
+  const q = await b.vr.gate("what's the capital of Kenya?");
+  assert.deepEqual(plain(q), { said: "what's the capital of Kenya?" }, "a question goes to the brain as usual");
+  b.scene.shown = false;
+  const off = await b.vr.gate("open Spotify");
+  assert.deepEqual(plain(off), { said: "open Spotify" }, "PC not showing: the usual way");
+});
+
+test("everything for the PC on the panel goes to that PC, even with another chosen", async () => {
+  const home = { name: "Home PC", link: "https://home.example/", pass: "h" };
+  const work = { name: "Work PC", link: "https://work.example/", pass: "w" };
+  const b = browser({ pcs: [work, home], pcAnswers: { talk: { text: "Done." }, remote: { ok: true }, "remote/status": { ok: true } } });
+  // The panel opened on the home PC; the chosen one (first in the list) is the work PC.
+  b.scene.shown = true;
+  b.scene.pcTarget = () => home;
+  await b.vr.gate("open Spotify");
+  const api = b.vr.api();
+  await api.pc.send({ op: "click", button: "left" }, home);
+  await api.pc.status(home);
+  const urls = b.calls.filter((c) => c[0] === "fetch").map((c) => c[1]);
+  assert.ok(urls.length >= 3);
+  assert.ok(urls.every((u) => u.startsWith(home.link)), "never the chosen work PC: " + urls.join(" "));
+  // With no PC named, calls go to the chosen one, as before.
+  await api.pc.status();
+  assert.ok(b.calls.filter((c) => c[0] === "fetch").pop()[1].startsWith(work.link));
+});
+
+test("\"Hey Nova\" in the room: only what's said to Izuki is answered", async () => {
+  const b = browser();
+  b.vr.handsFree(true);
+  assert.equal(await b.vr.gate("so what do you want for dinner"), null, "talk in the room isn't for Izuki");
+  assert.deepEqual(plain(await b.vr.gate("Hey Nova, what's the time?")), { said: "what's the time?" });
+  assert.equal((await b.vr.gate("hey nova")).say, "Mhm?");
+  b.vr.line("izuki", "It's five o'clock.");
+  assert.deepEqual(plain(await b.vr.gate("and in Tokyo?")), { said: "and in Tokyo?" }, "a follow-up right after needs no name");
+  b.vr.handsFree(false);
+  assert.deepEqual(plain(await b.vr.gate("what's the weather")), { said: "what's the weather" }, "after a tap (not hands-free) anything counts");
+});
+
+test("\"stop listening\" works hands-free even without the name", async () => {
+  const b = browser();
+  b.vr.handsFree(true);
+  const r = await b.vr.gate("stop listening");
+  assert.ok(r && r.done, "not ignored as room talk");
+  assert.match(r.say, /stopped listening/);
+});
+
+test("change your look; stop listening", async () => {
+  const b = browser();
+  assert.equal((await b.vr.gate("change your look")).say, "This is Aurora.");
+  assert.equal((await b.vr.gate("change the background")).say, "This is Aurora.");
+  assert.match((await b.vr.gate("stop listening")).say, /stopped listening/);
 });
 
 test("what's this? with a camera: one photo to the person's own AI, circles on it, the orb given back", async () => {

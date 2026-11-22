@@ -19,6 +19,12 @@ install.
 | **Look and ask** | "What's this?", "how do I fix this?", "what does this say?". On browsers that share the headset camera (Quest Browser on Quest 3/3S, after the person allows it), one photo goes to the person's own AI. Izuki answers and draws pen circles with labels on the photo. Graded quizzes and tests get coaching, never answers. |
 | **Your PC, big** | "Show my PC": the PC's screen on a 1.6 m panel, a few frames a second. Point and click on it, thumbstick to scroll, and Izuki's status with **Stop**. It uses the phone's Remote pairing; the PC's own approval rules still apply. |
 | **Pin that** | Keeps the last answer as a card in the room. Carry it anywhere, tap it to hear it. Notes come back next time (fanned round you). |
+| **Calling Izuki** | "Hey Nova" any time in the room (it listens hands-free from going in, and answers only when called by name, or a follow-up within 30 s), the orb (trigger or pinch), A/X, or the Talk button. "Stop listening" stops it. |
+| **What's on my screen?** | With the PC on the big screen, Izuki reads that screen (its picture, not the camera) and circles what matters. Something to do ("open Spotify", "click Send", "type…") is done on the PC while you watch, under the PC's own approval rules. Other Quest apps can't be seen or controlled: Meta lets only its own assistant do that. |
+| **Photos and folders** | "Show my photos" opens a gallery of the PC's Pictures (and Up to Desktop, Documents, Downloads, Music, Videos; read-only, the PC's own limits); point at a photo to see it big, then "what's in this photo?". The Quest's own photos aren't reachable from a website. |
+| **Style** | Five calm looks (Nova, Midnight, Aurora, Dawn, Pearl): the orb's colours and, without passthrough, the sky. The Style button or "change your look". |
+| **First visit** | The orb blooms into view with one ring of light, then its words and buttons fade in (no motion with reduced motion). Three suggestions float above it ("What can you do?" or "What's this?", "Show my photos", "Change your look"): tap one and Izuki does it; they leave after the first conversation. "What can you do?" is a short spoken tour that names only what works on that headset now. |
+| **Voice** | Gemini's natural voice; when its small free allowance rests, Orpheus on Groq (the Groq key that hears you); the room says why when neither can speak. |
 | **3D preview** | On a normal screen (or with `?vr`), the same room driven by the mouse. |
 
 ## How it fits together
@@ -54,12 +60,12 @@ and shows the explainer otherwise.
 - Build: `.github/workflows/quest.yml` (Bubblewrap 1.24.1, JDK 17, target SDK 32) → the artifact `izuki-vr-quest`.
 - Signing: the private preview key (`IZUKI_PREVIEW_KEYSTORE_B64`, see `ANDROID-SIGNING.md`), and only for builds of `main` (branches, pull requests and manual runs elsewhere build TEST-ONLY). `docs/.well-known/assetlinks.json` vouches for that key only, which is what lets the app show the site without a URL bar. Until that secret is in GitHub (the owner runs `.private/android/add-key-to-github.ps1`), the build is named **TEST-ONLY**, signed with a throwaway key, and isn't meant to be installed.
 - Install (sideload): Developer Mode on the headset (a free Meta developer account, then the Meta Horizon phone app → the headset → Developer Mode), USB-C to the PC, then `adb install Izuki-VR-Quest.apk` (or SideQuest). It appears in the library under **Unknown Sources**.
-- Store: the same package can go to the Meta Horizon Store under the owner's developer account. Per `ANDROID-SIGNING.md`, a store build should get its own key; add its fingerprint to `assetlinks.json` next to the preview one.
+- Store: the same package, named **IZUKI NOVA** in the library, signed with its own store key on `main` (artifact `izuki-vr-quest-store`, see `ANDROID-SIGNING.md`). The store page (pictures, words, upload steps) is in [QUEST-STORE.md](QUEST-STORE.md); `node tools/quest-store-art.cjs` remakes its pictures from the room.
 
 ## Not done yet (next)
 
 1. **Try it on a real headset** (owner): Quest 3 passthrough, hands, controllers, camera permission, the mic during immersive mode.
-2. **Meta Horizon Store**: the Quest app above, submitted under the owner's Meta developer account, with its own store key.
+2. **Meta Horizon Store** (owner): the store key, store build and store page are ready ([QUEST-STORE.md](QUEST-STORE.md)); upload, fill the rating and data forms, submit. A trailer is optional and not made yet.
 3. **Live PC video** through `remote/stream` instead of pictures; typing on the PC by voice from VR ("type…").
 4. **Pen in the real room**: put the circles on the real object (hit-test/depth) instead of only on the photo.
 5. **Notes that stay exactly where you put them** (WebXR anchors, persistent on Quest).

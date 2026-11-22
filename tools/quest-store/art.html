@@ -1,0 +1,177 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>IZUKI NOVA store art</title>
+<style>
+  @font-face { font-family: "Sora"; src: url("/fonts/sora.woff2") format("woff2"); font-weight: 300 800; }
+  html, body { margin: 0; background: #000; }
+  canvas { display: block; max-width: 100vw; }
+</style>
+<canvas id="out"></canvas>
+<script type="module">
+// One branded picture per call: paint(name) draws it at Meta's exact size and
+// returns a PNG data URL. Calm precision: graphite sky with the room's horizon
+// glow, faint stars, the floor's rings, the orb with its one ring of light, and
+// the title. No other text (Meta: the exact title, no taglines or badges).
+import { orb, halo } from "/store/orb.js";
+
+const TITLE = "IZUKI NOVA";
+const INK = "#F4F6FA";
+const TEAL = "94,234,212";
+
+// Sizes are Meta's (developers.meta.com/horizon/resources/asset-guidelines).
+// orb: the orb's diameter; row: orb beside the title (wide formats), else above it.
+const LAYOUTS = {
+  hero: { w: 3000, h: 900, row: true, orb: 390, font: 148, gap: 130 },
+  mini: { w: 1080, h: 360, row: true, orb: 152, font: 58, gap: 52 },
+  landscape: { w: 2560, h: 1440, orb: 480, orbY: 0.385, font: 128, titleY: 0.705 },
+  square: { w: 1440, h: 1440, orb: 440, orbY: 0.385, font: 100, titleY: 0.705 },
+  portrait: { w: 1008, h: 1440, orb: 400, orbY: 0.41, font: 84, titleY: 0.70 },
+  icon: { w: 512, h: 512, orb: 268, orbY: 0.5, title: false, rings: false },
+  // The spatialized tile: a solid back layer and the orb on a transparent front
+  // layer (512: the orb and its ring inside the 392 px safe area; 180: 18 px padding).
+  "tile-bg": { w: 512, h: 512, orb: 0, title: false, rings: false },
+  "tile-fg": { w: 512, h: 512, orb: 280, orbY: 0.5, title: false, bare: true },
+  "spatial-bg": { w: 180, h: 180, orb: 0, title: false, rings: false, stars: false },
+  "spatial-fg": { w: 180, h: 180, orb: 96, orbY: 0.5, title: false, bare: true },
+  logo: { w: 3600, h: 720, row: true, orb: 470, font: 250, gap: 160, bare: true },
+};
+
+// A fixed seed: the same stars every run.
+function rng(seed) { let s = seed >>> 0; return () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296); }
+
+function sky(ctx, w, h, horizon) {
+  const g = ctx.createLinearGradient(0, 0, 0, h);
+  const at = (y) => Math.min(1, Math.max(0, y / h));
+  g.addColorStop(0, "#040609");
+  g.addColorStop(at(horizon - h * 0.30), "#070a0e");
+  g.addColorStop(at(horizon - h * 0.10), "#0a1216");
+  g.addColorStop(at(horizon - h * 0.025), "#11272a");
+  g.addColorStop(at(horizon), "#16312f");
+  g.addColorStop(at(horizon + h * 0.025), "#0f1f22");
+  g.addColorStop(at(horizon + h * 0.12), "#080c10");
+  g.addColorStop(1, "#030405");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, w, h);
+}
+
+function stars(ctx, w, h, horizon, k) {
+  const r = rng(7), n = Math.round((w * horizon) / 5200);
+  for (let i = 0; i < n; i++) {
+    const x = r() * w, y = Math.pow(r(), 1.4) * horizon * 0.92;
+    const a = (0.12 + r() * 0.45) * (1 - (y / horizon) * 0.6);
+    ctx.fillStyle = `rgba(223,232,245,${a.toFixed(3)})`;
+    ctx.beginPath(); ctx.arc(x, y, (0.5 + r() * 0.9) * k, 0, Math.PI * 2); ctx.fill();
+  }
+}
+
+// The room's floor rings (0.4 m apart, out to 3.2 m), in true perspective under the orb.
+function rings(ctx, w, h, horizon, cx, k) {
+  const focal = h / (2 * Math.tan((38 / 2) * Math.PI / 180)), eye = 1.2, z0 = 4.5;
+  ctx.save();
+  ctx.lineCap = "round";
+  for (let R = 0.4; R <= 3.2 + 1e-6; R += 0.4) {
+    const m = R / 3.2;
+    ctx.beginPath();
+    let pen = false;
+    for (let i = 0; i <= 360; i++) {
+      const a = (i / 360) * Math.PI * 2, x = Math.cos(a) * R, z = z0 + Math.sin(a) * R;
+      if (z < 0.6) { pen = false; continue; }
+      const sx = cx + (focal * x) / z, sy = horizon + (focal * eye) / z;
+      if (pen) ctx.lineTo(sx, sy); else { ctx.moveTo(sx, sy); pen = true; }
+    }
+    ctx.strokeStyle = `rgba(165,245,236,${(0.3 * (1 - m) + 0.05).toFixed(3)})`;
+    ctx.lineWidth = (1.6 - m * 0.8) * k;
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function title(ctx, x, yMid, font, align, bare) {
+  ctx.save();
+  ctx.font = `600 ${font}px Sora`;
+  ctx.letterSpacing = `${(font * 0.16).toFixed(1)}px`;
+  ctx.textAlign = "left";
+  ctx.textBaseline = "alphabetic";
+  const m = ctx.measureText(TITLE);
+  // Letter spacing also trails the last letter: leave it out of the width.
+  const width = m.width - font * 0.16;
+  const left = align === "center" ? x - width / 2 : x;
+  const base = yMid + (m.actualBoundingBoxAscent - m.actualBoundingBoxDescent) / 2;
+  // On the art, a faint teal light; alone (the logo, on any background), a soft dark edge.
+  ctx.shadowColor = bare ? "rgba(4,6,9,0.75)" : `rgba(${TEAL},0.22)`;
+  ctx.shadowBlur = font * (bare ? 0.09 : 0.35);
+  ctx.fillStyle = INK;
+  ctx.fillText(TITLE, left, base);
+  ctx.shadowBlur = 0;
+  ctx.fillText(TITLE, left, base);
+  ctx.restore();
+  return width;
+}
+
+function titleWidth(ctx, font) {
+  ctx.save();
+  ctx.font = `600 ${font}px Sora`;
+  ctx.letterSpacing = `${(font * 0.16).toFixed(1)}px`;
+  const w = ctx.measureText(TITLE).width - font * 0.16;
+  ctx.restore();
+  return w;
+}
+
+function glowAndOrb(ctx, cx, cy, d, theme, bare) {
+  if (!d) return;
+  if (!bare) {
+    // The orb's own light on the room around it.
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    const g = ctx.createRadialGradient(cx, cy, d * 0.2, cx, cy, d * 1.35);
+    g.addColorStop(0, `rgba(${TEAL},0.20)`);
+    g.addColorStop(0.45, `rgba(${TEAL},0.06)`);
+    g.addColorStop(1, `rgba(${TEAL},0)`);
+    ctx.fillStyle = g;
+    ctx.fillRect(cx - d * 1.4, cy - d * 1.4, d * 2.8, d * 2.8);
+    ctx.restore();
+  }
+  // Rendered at twice the size, then drawn down: a clean edge.
+  const o = orb(Math.round(d * 2), { theme, energy: 0.04 });
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(o, cx - d / 2, cy - d / 2, d, d);
+  // The one ring of light (the room's entrance ring), hairline thin.
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(cx, cy, d * 0.66, 0, Math.PI * 2);
+  ctx.strokeStyle = `rgba(${TEAL},${bare ? 0.7 : 0.55})`;
+  ctx.lineWidth = Math.max(1.2, d * 0.0085);
+  ctx.stroke();
+  ctx.restore();
+}
+
+window.__art = {
+  async paint(name, theme = "Nova") {
+    await document.fonts.load("600 100px Sora");
+    const L = LAYOUTS[name];
+    if (!L) throw new Error("no layout " + name);
+    const c = document.getElementById("out");
+    c.width = L.w; c.height = L.h;
+    const ctx = c.getContext("2d");
+    ctx.clearRect(0, 0, L.w, L.h);
+    const k = L.h / 1440 * 2;
+    let cx = L.w / 2, cy = L.h * (L.orbY ?? 0.5), tx = L.w / 2, ty = L.h * (L.titleY ?? 0.5), align = "center";
+    if (L.row) {
+      const tw = titleWidth(ctx, L.font), group = L.orb + L.gap + tw;
+      cx = (L.w - group) / 2 + L.orb / 2; cy = L.h / 2;
+      tx = (L.w - group) / 2 + L.orb + L.gap; ty = L.h / 2; align = "left";
+    }
+    const horizon = L.row ? L.h * 0.5 : cy + L.orb * 0.62;
+    if (!L.bare) {
+      sky(ctx, L.w, L.h, horizon);
+      if (L.stars !== false) stars(ctx, L.w, L.h, horizon, Math.max(1, k));
+      if (L.rings !== false) rings(ctx, L.w, L.h, horizon, cx, Math.max(1, k));
+    }
+    glowAndOrb(ctx, cx, cy, L.orb, theme, !!L.bare);
+    if (L.title !== false) title(ctx, tx, ty, L.font, align, !!L.bare);
+    return c.toDataURL("image/png");
+  },
+  names: Object.keys(LAYOUTS),
+};
+window.__artReady = true;
+</script>

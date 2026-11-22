@@ -44,10 +44,14 @@ const statement = links.find((s) => s.target?.package_name === twa.packageId);
 ok(statement, "assetlinks.json names the package");
 ok(statement.relation.includes("delegate_permission/common.handle_all_urls"), "it delegates the site to the app");
 ok(statement.target.namespace === "android_app", "for an Android app");
-const recorded = (read("docs/ANDROID-SIGNING.md").match(/Certificate SHA-256: `([0-9A-F:]{95})`/) || [])[1];
+const signing = read("docs/ANDROID-SIGNING.md");
+const recorded = (signing.match(/Certificate SHA-256: `([0-9A-F:]{95})`/) || [])[1];
+const store = (signing.match(/Quest store key fingerprint: `([0-9A-F:]{95})`/) || [])[1];
 ok(recorded, "docs/ANDROID-SIGNING.md records the private preview key's fingerprint");
-ok(statement.target.sha256_cert_fingerprints.length === 1 && statement.target.sha256_cert_fingerprints[0] === recorded,
-  "the site vouches only for the private preview key (never the public one in the repo)");
+ok(store, "docs/ANDROID-SIGNING.md records the Quest store key's fingerprint");
+const vouched = statement.target.sha256_cert_fingerprints;
+ok(vouched.length === 2 && vouched.includes(recorded) && vouched.includes(store),
+  "the site vouches for exactly the private preview key and the store key (never the public one in the repo)");
 ok(twa.signingKey?.alias === "izuki", "signed with the preview key's alias");
 
 console.log(`quest: ${checks} checks passed`);

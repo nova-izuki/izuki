@@ -26,9 +26,27 @@ import {
   TorusGeometry, Vector2, Vector3, WebGLRenderer,
 } from "three";
 
-const FONT = `"Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`;
-const TEAL = "#5eead4", VIOLET = "#a78bfa", PINK = "#f472b6";
-const LABEL = { listening: "Listening…", thinking: "Thinking…", speaking: "Izuki" };
+// The room's type: IZUKI NOVA's own faces (the site's self-hosted Sora for
+// labels, Manrope for words), loaded before the first card is drawn.
+const DISPLAY = `"Sora", "Manrope", system-ui, sans-serif`;
+const FONT = `"Manrope", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`;
+// Calm precision: graphite panels, two steps of white, one accent (the orb's
+// teal) for what's live or on, amber only for a warning.
+const INK = "#F4F6FA", INK2 = "#A7B0C0", TEAL = "#5EEAD4", WARN = "#FBBF24";
+const LABEL = { listening: "Listening", thinking: "Thinking" };
+/** The sharpest texture filtering this headset offers (set once the renderer exists). */
+let ANISO = 1;
+
+async function loadFonts() {
+  if (typeof FontFace === "undefined" || !document.fonts) return;
+  const faces = [
+    new FontFace("Sora", "url(../fonts/sora.woff2)", { weight: "300 800" }),
+    new FontFace("Manrope", "url(../fonts/manrope.woff2)", { weight: "400 700" }),
+  ];
+  const load = Promise.all(faces.map(async (f) => { await f.load(); document.fonts.add(f); }));
+  // Never hold the room up for long: the system face stands in if the fonts are slow.
+  await Promise.race([load, new Promise((r) => setTimeout(r, 2500))]).catch(() => {});
+}
 
 const NOISE = `
 float hash3(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
@@ -80,13 +98,15 @@ void main() {
 
 // ---------------------------------------------------------------------------
 // Cards: a canvas drawn in 2D, shown on a flat panel in the room.
-function card(wM, hM, px = 2000) {
+function card(wM, hM, px = 2400) {
   const canvas = document.createElement("canvas");
   canvas.width = Math.max(8, Math.round(wM * px));
   canvas.height = Math.max(8, Math.round(hM * px));
   const ctx = canvas.getContext("2d");
   const tex = new CanvasTexture(canvas);
   tex.colorSpace = SRGBColorSpace;
+  // Text stays sharp when a panel is seen at an angle.
+  tex.anisotropy = ANISO;
   const mat = new MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false });
   const mesh = new Mesh(new PlaneGeometry(wM, hM), mat);
   return { canvas, ctx, tex, mesh, w: canvas.width, h: canvas.height, update() { tex.needsUpdate = true; } };
@@ -103,30 +123,41 @@ function rr(ctx, x, y, w, h, r) {
   ctx.closePath();
 }
 
-/** The glass every card shares: deep navy, a teal-violet-pink rim. */
+/**
+ * The panel every card shares: dark graphite, nearly opaque (it has to read
+ * over a real room), a hairline edge, and its top edge catching the light.
+ * hot: the accent edge (pointed at, or on).
+ */
 function glass(ctx, w, h, r, opts = {}) {
   ctx.clearRect(0, 0, w, h);
-  const pad = Math.max(2, h * 0.012);
+  const line = 3, pad = line;
   rr(ctx, pad, pad, w - pad * 2, h - pad * 2, r);
-  ctx.fillStyle = opts.fill || "rgba(10, 13, 30, 0.86)";
+  const fill = ctx.createLinearGradient(0, 0, 0, h);
+  fill.addColorStop(0, opts.fill0 || "rgba(24, 27, 36, 0.94)");
+  fill.addColorStop(1, opts.fill1 || "rgba(13, 15, 21, 0.95)");
+  ctx.fillStyle = fill;
   ctx.fill();
-  if (opts.rim !== false) {
-    const g = ctx.createLinearGradient(0, 0, w, h);
-    g.addColorStop(0, opts.hot ? "rgba(94,234,212,1)" : "rgba(94,234,212,.7)");
-    g.addColorStop(0.55, opts.hot ? "rgba(167,139,250,1)" : "rgba(167,139,250,.55)");
-    g.addColorStop(1, opts.hot ? "rgba(244,114,182,1)" : "rgba(244,114,182,.55)");
-    ctx.strokeStyle = g;
-    ctx.lineWidth = pad * (opts.hot ? 1.6 : 1);
-    ctx.stroke();
+  ctx.lineWidth = opts.hot ? line * 1.6 : line;
+  ctx.strokeStyle = opts.hot ? "rgba(94, 234, 212, 0.9)" : "rgba(255, 255, 255, 0.13)";
+  ctx.stroke();
+  if (!opts.hot) {
+    const lit = ctx.createLinearGradient(pad + r, 0, w - pad - r, 0);
+    lit.addColorStop(0, "rgba(255,255,255,0)");
+    lit.addColorStop(0.5, "rgba(255,255,255,0.34)");
+    lit.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.fillStyle = lit;
+    ctx.fillRect(pad + r, pad - line / 2, w - 2 * (pad + r), line);
   }
 }
 
-function write(ctx, s, x, y, size, color, weight = 500, align = "left") {
-  ctx.font = `${weight} ${size}px ${FONT}`;
+function write(ctx, s, x, y, size, color, weight = 500, align = "left", family = FONT, tracking = "0px") {
+  ctx.font = `${weight} ${size}px ${family}`;
   ctx.fillStyle = color;
   ctx.textAlign = align;
   ctx.textBaseline = "alphabetic";
+  if ("letterSpacing" in ctx) ctx.letterSpacing = tracking;
   ctx.fillText(s, x, y);
+  if ("letterSpacing" in ctx) ctx.letterSpacing = "0px";
 }
 
 function ellipsize(ctx, s, width) {
@@ -151,29 +182,66 @@ function glowTexture() {
   return t;
 }
 
-// Icons, drawn into a 100×100 box.
+// Icons: one family, outlines in a single stroke (set by the caller), drawn
+// into a 100×100 box. No text glyphs stand in for icons.
 const ICONS = {
-  mic(x) { x.beginPath(); x.roundRect ? x.roundRect(38, 18, 24, 42, 12) : rr(x, 38, 18, 24, 42, 12); x.stroke(); x.beginPath(); x.arc(50, 50, 22, 0.15 * Math.PI, 0.85 * Math.PI); x.stroke(); x.beginPath(); x.moveTo(50, 72); x.lineTo(50, 84); x.moveTo(38, 84); x.lineTo(62, 84); x.stroke(); },
-  done(x) { x.beginPath(); x.moveTo(26, 52); x.lineTo(43, 69); x.lineTo(75, 34); x.stroke(); },
-  quiet(x) { x.beginPath(); rr(x, 33, 33, 34, 34, 6); x.fill(); },
-  end(x) { x.beginPath(); x.moveTo(18, 58); x.quadraticCurveTo(50, 30, 82, 58); x.lineTo(74, 68); x.lineTo(62, 60); x.lineTo(62, 52); x.quadraticCurveTo(50, 46, 38, 52); x.lineTo(38, 60); x.lineTo(26, 68); x.closePath(); x.fill(); },
-  eye(x) { x.beginPath(); x.moveTo(14, 50); x.quadraticCurveTo(50, 14, 86, 50); x.quadraticCurveTo(50, 86, 14, 50); x.stroke(); x.beginPath(); x.arc(50, 50, 12, 0, Math.PI * 2); x.stroke(); },
+  mic(x) { x.beginPath(); rr(x, 39, 16, 22, 42, 11); x.stroke(); x.beginPath(); x.arc(50, 48, 22, 0.12 * Math.PI, 0.88 * Math.PI); x.stroke(); x.beginPath(); x.moveTo(50, 70); x.lineTo(50, 84); x.stroke(); },
+  done(x) { x.beginPath(); x.moveTo(27, 52); x.lineTo(43, 68); x.lineTo(74, 35); x.stroke(); },
+  quiet(x) { x.beginPath(); rr(x, 32, 32, 36, 36, 7); x.stroke(); },
+  end(x) { x.beginPath(); x.moveTo(20, 60); x.quadraticCurveTo(50, 32, 80, 60); x.lineTo(72, 69); x.lineTo(61, 61); x.lineTo(61, 53); x.quadraticCurveTo(50, 48, 39, 53); x.lineTo(39, 61); x.lineTo(28, 69); x.closePath(); x.stroke(); },
+  eye(x) { x.beginPath(); x.moveTo(14, 50); x.quadraticCurveTo(50, 16, 86, 50); x.quadraticCurveTo(50, 84, 14, 50); x.stroke(); x.beginPath(); x.arc(50, 50, 11, 0, Math.PI * 2); x.stroke(); },
   pc(x) { x.beginPath(); rr(x, 16, 22, 68, 44, 6); x.stroke(); x.beginPath(); x.moveTo(36, 82); x.lineTo(64, 82); x.moveTo(50, 66); x.lineTo(50, 82); x.stroke(); },
-  pin(x) { x.beginPath(); x.moveTo(50, 86); x.lineTo(50, 60); x.stroke(); x.beginPath(); x.moveTo(30, 60); x.lineTo(70, 60); x.lineTo(62, 44); x.lineTo(62, 22); x.lineTo(38, 22); x.lineTo(38, 44); x.closePath(); x.stroke(); },
-  leave(x) { x.beginPath(); x.moveTo(30, 30); x.lineTo(70, 70); x.moveTo(70, 30); x.lineTo(30, 70); x.stroke(); },
-  think(x) { for (let i = 0; i < 3; i++) { x.beginPath(); x.arc(30 + i * 20, 50, 6, 0, Math.PI * 2); x.fill(); } },
+  pin(x) { x.beginPath(); x.moveTo(50, 86); x.lineTo(50, 62); x.stroke(); x.beginPath(); x.moveTo(31, 62); x.lineTo(69, 62); x.lineTo(62, 46); x.lineTo(62, 20); x.lineTo(38, 20); x.lineTo(38, 46); x.closePath(); x.stroke(); },
+  leave(x) { x.beginPath(); x.moveTo(32, 32); x.lineTo(68, 68); x.moveTo(68, 32); x.lineTo(32, 68); x.stroke(); },
+  think(x) { for (let i = 0; i < 3; i++) { x.beginPath(); x.arc(30 + i * 20, 50, 4.5, 0, Math.PI * 2); x.stroke(); } },
+  photos(x) { x.beginPath(); rr(x, 16, 24, 68, 52, 8); x.stroke(); x.beginPath(); x.moveTo(23, 69); x.lineTo(42, 49); x.lineTo(56, 62); x.lineTo(65, 54); x.lineTo(78, 69); x.stroke(); x.beginPath(); x.arc(64, 38, 5, 0, Math.PI * 2); x.stroke(); },
+  style(x) {
+    // Two four-point stars, outlined.
+    const star = (cx, cy, r) => { x.beginPath(); x.moveTo(cx, cy - r); x.quadraticCurveTo(cx, cy, cx + r, cy); x.quadraticCurveTo(cx, cy, cx, cy + r); x.quadraticCurveTo(cx, cy, cx - r, cy); x.quadraticCurveTo(cx, cy, cx, cy - r); x.stroke(); };
+    star(44, 56, 26); star(74, 28, 12);
+  },
+  folder(x) { x.beginPath(); x.moveTo(14, 30); x.lineTo(40, 30); x.lineTo(48, 38); x.lineTo(86, 38); x.lineTo(86, 78); x.lineTo(14, 78); x.closePath(); x.stroke(); },
+  doc(x) { x.beginPath(); x.moveTo(28, 14); x.lineTo(60, 14); x.lineTo(76, 30); x.lineTo(76, 86); x.lineTo(28, 86); x.closePath(); x.stroke(); x.beginPath(); x.moveTo(38, 50); x.lineTo(66, 50); x.moveTo(38, 62); x.lineTo(66, 62); x.moveTo(38, 74); x.lineTo(56, 74); x.stroke(); },
+  close(x) { x.beginPath(); x.moveTo(34, 34); x.lineTo(66, 66); x.moveTo(66, 34); x.lineTo(34, 66); x.stroke(); },
+  back(x) { x.beginPath(); x.moveTo(58, 30); x.lineTo(38, 50); x.lineTo(58, 70); x.stroke(); },
+  next(x) { x.beginPath(); x.moveTo(42, 30); x.lineTo(62, 50); x.lineTo(42, 70); x.stroke(); },
+  up(x) { x.beginPath(); x.moveTo(30, 56); x.lineTo(50, 36); x.lineTo(70, 56); x.moveTo(50, 36); x.lineTo(50, 74); x.stroke(); },
 };
+/** A small round control on its own card: graphite, a hairline ring, one icon. */
+function roundButton(c, name) {
+  const { ctx, w, h } = c;
+  ctx.clearRect(0, 0, w, h);
+  ctx.beginPath(); ctx.arc(w / 2, h / 2, w / 2 - 4, 0, Math.PI * 2);
+  ctx.fillStyle = "rgba(20, 23, 31, 0.95)"; ctx.fill();
+  ctx.lineWidth = 3; ctx.strokeStyle = "rgba(255,255,255,0.18)"; ctx.stroke();
+  icon(ctx, name, w / 2, h / 2, w * 0.62, INK, 7);
+  c.update();
+}
+/** An icon at (cx, cy), `size` pixels across, in one stroke. */
+function icon(ctx, name, cx, cy, size, color = INK, weight = 6) {
+  ctx.save();
+  const s = size / 100;
+  ctx.translate(cx - 50 * s, cy - 50 * s);
+  ctx.scale(s, s);
+  ctx.strokeStyle = color; ctx.fillStyle = color;
+  ctx.lineWidth = weight; ctx.lineCap = "round"; ctx.lineJoin = "round";
+  ICONS[name]?.(ctx);
+  ctx.restore();
+}
 
 // ---------------------------------------------------------------------------
 export async function start({ mode, session, api, tint }) {
   const flat = mode === "flat";
   const passthrough = mode === "immersive-ar";
   const util = api.util;
+  // The brand faces first, so no card is drawn in a stand-in font.
+  await loadFonts();
 
   const renderer = new WebGLRenderer({ antialias: true, alpha: true, powerPreference: "high-performance" });
   renderer.setClearColor(0x000000, 0);
   renderer.outputColorSpace = SRGBColorSpace;
   renderer.setPixelRatio(flat ? Math.min(2, window.devicePixelRatio || 1) : 1);
+  ANISO = Math.max(1, renderer.capabilities.getMaxAnisotropy?.() || 1);
   renderer.setSize(window.innerWidth, window.innerHeight);
   const canvas = renderer.domElement;
   Object.assign(canvas.style, { position: "fixed", inset: "0", width: "100vw", height: "100vh", zIndex: "2147483000", touchAction: "none", display: flat ? "block" : "none" });
@@ -186,13 +254,40 @@ export async function start({ mode, session, api, tint }) {
 
   const disposables = [];
   const track = (o) => { disposables.push(o); return o; };
+  /** What fades in after the orb blooms (the words, the buttons, the suggestions). */
+  const fadeIn = [];
+  // The one authored moment: the orb blooms into being with a single ring of
+  // light, then its words and buttons fade in. Reduced motion: no bloom.
+  let born = 0;
+  const calm = (() => { try { return matchMedia("(prefers-reduced-motion: reduce)").matches; } catch { return false; } })();
+  const easeOut = (x) => 1 - Math.pow(1 - Math.min(1, Math.max(0, x)), 4);
+  let faded = false;
 
-  // ---- the palette: IZUKI NOVA, leaning to the person's own orb colour --------
-  const base = { a: new Color(0.18, 0.83, 0.75), b: new Color(0.55, 0.36, 0.96), c: new Color(0.96, 0.45, 0.71) };
-  if (tint) {
-    const h = parseInt(tint.slice(1), 16);
-    const t = new Color(((h >> 16) & 255) / 255, ((h >> 8) & 255) / 255, (h & 255) / 255);
-    base.a.lerp(t, 0.6); base.b.lerp(t, 0.35); base.c.lerp(t, 0.45);
+  // ---- the palette: the room's look (THEMES); the first, IZUKI NOVA's own,
+  // leans to the person's orb colour when they picked one ----------------------
+  const base = { a: new Color(), b: new Color(), c: new Color() };
+  let themeAt = 0, haloIdle = 0x7dd3fc;
+  /** A light sky behind the buttons (Pearl, without passthrough): their labels go dark. */
+  let lightRoom = false;
+  try { themeAt = Math.max(0, THEMES.findIndex((t) => t.name === localStorage.getItem("izuki.vr.theme"))); } catch {}
+  function applyTheme(i) {
+    const t = THEMES[i];
+    base.a.setRGB(...t.orb[0]); base.b.setRGB(...t.orb[1]); base.c.setRGB(...t.orb[2]);
+    if (i === 0 && tint) {
+      const h = parseInt(tint.slice(1), 16);
+      const c = new Color(((h >> 16) & 255) / 255, ((h >> 8) & 255) / 255, (h & 255) / 255);
+      base.a.lerp(c, 0.6); base.b.lerp(c, 0.35); base.c.lerp(c, 0.45);
+    }
+    haloIdle = t.halo;
+    space?.set(t);
+    const light = !!t.light && !!space;
+    if (light !== lightRoom) { lightRoom = light; for (const b of buttons) b.draw(); }
+  }
+  function nextTheme() {
+    themeAt = (themeAt + 1) % THEMES.length;
+    applyTheme(themeAt);
+    try { localStorage.setItem("izuki.vr.theme", THEMES[themeAt].name); } catch {}
+    return "This is " + THEMES[themeAt].name + (passthrough ? "." : ", with its own sky.") + " Say “change your look” again for the next one.";
   }
 
   // ---- the orb, its words and its buttons: one group that stays with you ----
@@ -215,12 +310,17 @@ export async function start({ mode, session, api, tint }) {
   halo.renderOrder = 1;
   const ringMat = track(new MeshBasicMaterial({ color: 0x5eead4, transparent: true, opacity: 0, blending: AdditiveBlending, depthWrite: false }));
   const ring = new Mesh(track(new TorusGeometry(0.118, 0.003, 8, 120, Math.PI * 1.4)), ringMat);
-  rig.add(halo, orb, ring);
+  // The entrance's own ring: whole and hairline thin, it opens once and is gone.
+  const bloomMat = track(new MeshBasicMaterial({ color: 0x5eead4, transparent: true, opacity: 0, blending: AdditiveBlending, depthWrite: false }));
+  const bloom = new Mesh(track(new TorusGeometry(0.1, 0.0016, 8, 160)), bloomMat);
+  bloom.visible = false;
+  rig.add(halo, orb, ring, bloom);
 
   const caption = card(0.56, 0.19);
   caption.mesh.position.set(0, -0.2, 0.01);
   rig.add(caption.mesh);
   track(caption.tex); track(caption.mesh.material); track(caption.mesh.geometry);
+  fadeIn.push(caption.mesh.material);
 
   const view = {
     state: "", you: "", reply: "", stage: "", mic: 0, energy: 0, think: 0, hovered: false,
@@ -229,68 +329,98 @@ export async function start({ mode, session, api, tint }) {
 
   function drawCaption() {
     const { ctx, w, h } = caption;
-    glass(ctx, w, h, 44);
-    const padX = 40;
-    const label = LABEL[view.state] || (view.stage ? view.stage : view.you || view.reply ? "Izuki" : "IZUKI NOVA");
-    write(ctx, label, padX, 62, 32, TEAL, 650);
-    let y = 62;
+    glass(ctx, w, h, 52);
+    const padX = 56;
+    let y = 30;
+    // What's happening right now (listening, thinking, or the step it's on),
+    // with a live dot. Nothing when there's nothing to say about it.
+    const state = LABEL[view.state] || view.stage || "";
+    if (state) {
+      ctx.beginPath(); ctx.arc(padX + 9, y + 34, 9, 0, Math.PI * 2); ctx.fillStyle = TEAL; ctx.fill();
+      ctx.font = `600 30px ${DISPLAY}`;
+      write(ctx, ellipsize(ctx, state, w - padX * 2 - 40), padX + 34, y + 45, 30, TEAL, 600, "left", DISPLAY, "0.02em");
+      y += 62;
+    } else y += 14;
     if (view.you) {
-      ctx.font = `400 32px ${FONT}`;
-      write(ctx, ellipsize(ctx, "You: " + view.you, w - padX * 2), padX, (y += 50), 32, "#aab6d6", 400);
+      ctx.font = `500 34px ${FONT}`;
+      write(ctx, ellipsize(ctx, view.you, w - padX * 2), padX, (y += 40), 34, INK2, 500);
+      y += 10;
     }
     const body = view.reply || (!view.you ? view.hint : "");
+    const measure = (s, size) => { ctx.font = `500 ${size}px ${FONT}`; return ctx.measureText(s).width; };
+    // A note (why the voice is quiet: amber; a new look: quiet grey) sits at the bottom.
+    const note = view.notice ? util.fitLines(view.notice, w - padX * 2, 2, 30, 26, measure) : null;
+    const noteH = note ? note.lines.length * note.size * 1.3 + 22 : 0;
     if (body) {
-      const room = h - y - 30;
-      const measure = (s, size) => { ctx.font = `500 ${size}px ${FONT}`; return ctx.measureText(s).width; };
-      const maxLines = Math.max(1, Math.floor(room / (30 * 1.28)));
-      const fit = util.fitLines(body, w - padX * 2, Math.min(maxLines, 5), 48, 30, measure);
-      const lh = fit.size * 1.28;
-      y += 14;
-      for (const line of fit.lines) write(ctx, line, padX, (y += lh), fit.size, view.reply ? "#ffffff" : "#d6def5", 500);
+      const room = h - y - 36 - noteH;
+      const maxLines = Math.max(1, Math.floor(room / (32 * 1.32)));
+      const fit = util.fitLines(body, w - padX * 2, Math.min(maxLines, 5), 50, 32, measure);
+      const lh = fit.size * 1.32;
+      y += 6;
+      for (const line of fit.lines) write(ctx, line, padX, (y += lh), fit.size, view.reply ? INK : INK2, 500);
+    }
+    announce(view.notice || view.reply);
+    if (note) {
+      let ny = h - 32 - (note.lines.length - 1) * note.size * 1.3;
+      for (const line of note.lines) { write(ctx, line, padX, ny, note.size, view.noticeWarn ? WARN : INK2, 500); ny += note.size * 1.3; }
     }
     caption.update();
+  }
+  /** The preview's screen-reader line (flat only), and whether it exists yet. */
+  let spoken = null, spokenReady = false;
+  const announce = (t) => { if (spokenReady && spoken && t && spoken.textContent !== t) spoken.textContent = t; };
+  let noticeTimer = 0;
+  /** A short note under the words for a while; `warn` for trouble (amber), else quiet grey. */
+  function notice(text, ms = 12000, warn = false) {
+    view.notice = String(text || "");
+    view.noticeWarn = !!warn;
+    clearTimeout(noticeTimer);
+    noticeTimer = setTimeout(() => { view.notice = ""; drawCaption(); }, ms);
+    drawCaption();
   }
 
   // Buttons along the bottom.
   const buttons = [];
-  function button(icon, label, onTap) {
+  function button(iconName, label, onTap) {
     const c = card(0.088, 0.112, 2400);
     track(c.tex); track(c.mesh.material); track(c.mesh.geometry);
-    const b = { c, icon, label, hot: false, shown: true };
+    fadeIn.push(c.mesh.material);
+    // hot: pointed at; on: what it opens is open (Photos, My PC).
+    const b = { c, icon: iconName, label, hot: false, on: false, shown: true };
     b.draw = () => {
       const { ctx, w, h } = c;
       ctx.clearRect(0, 0, w, h);
-      const r = w * 0.4, cx = w / 2, cy = r + 8;
+      const r = w * 0.38, cx = w / 2, cy = r + 10;
       ctx.beginPath();
       ctx.arc(cx, cy, r, 0, Math.PI * 2);
-      ctx.fillStyle = b.hot ? "rgba(40, 52, 96, 0.95)" : "rgba(14, 18, 40, 0.9)";
+      const fill = ctx.createLinearGradient(0, cy - r, 0, cy + r);
+      fill.addColorStop(0, b.hot ? "rgba(44, 50, 64, 0.97)" : "rgba(26, 29, 38, 0.95)");
+      fill.addColorStop(1, b.hot ? "rgba(26, 30, 40, 0.97)" : "rgba(14, 16, 22, 0.95)");
+      ctx.fillStyle = fill;
       ctx.fill();
-      const g = ctx.createLinearGradient(0, 0, w, w);
-      g.addColorStop(0, TEAL); g.addColorStop(0.6, VIOLET); g.addColorStop(1, PINK);
-      ctx.strokeStyle = g;
-      ctx.lineWidth = b.hot ? 7 : 4;
+      ctx.lineWidth = b.hot || b.on ? 5 : 3;
+      ctx.strokeStyle = b.on ? TEAL : b.hot ? "rgba(255,255,255,0.55)" : "rgba(255,255,255,0.16)";
       ctx.stroke();
-      ctx.save();
-      const s = (r * 1.15) / 100;
-      ctx.translate(cx - 50 * s, cy - 50 * s);
-      ctx.scale(s, s);
-      ctx.strokeStyle = "#ffffff"; ctx.fillStyle = "#ffffff";
-      ctx.lineWidth = 7; ctx.lineCap = "round"; ctx.lineJoin = "round";
-      ICONS[b.icon]?.(ctx);
-      ctx.restore();
-      write(ctx, b.label, cx, h - 12, 34, "#e6ecff", 600, "center");
+      icon(ctx, b.icon, cx, cy, r * 1.05, b.on ? TEAL : INK, 6.5);
+      // The label sits on the room itself: ink that reads on this look's sky.
+      const ink = lightRoom ? { on: "#0F766E", hot: "#11151C", rest: "#2A303B" } : { on: TEAL, hot: INK, rest: INK2 };
+      write(ctx, b.label, cx, h - 12, 30, b.on ? ink.on : b.hot ? ink.hot : ink.rest, 600, "center", DISPLAY, "0.01em");
       c.update();
     };
-    b.set = (icon, label) => { if (icon === b.icon && label === b.label) return; b.icon = icon; b.label = label; b.draw(); };
+    b.set = (name, label) => { if (name === b.icon && label === b.label) return; b.icon = name; b.label = label; b.draw(); };
+    b.setOn = (on) => { if (!!on === b.on) return; b.on = !!on; b.draw(); };
     b.draw();
-    ui(c.mesh, { tap: onTap, hover: (on) => { b.hot = on; b.draw(); c.mesh.scale.setScalar(on ? 1.08 : 1); } });
+    // Pointed at: it brightens and comes 6 mm towards you (no jumpy scaling).
+    ui(c.mesh, { tap: onTap, hover: (on) => { b.hot = on; b.draw(); c.mesh.position.z = on ? 0.026 : 0.02; } });
     rig.add(c.mesh);
     buttons.push(b);
     return b;
   }
   function layoutButtons() {
     const shown = buttons.filter((b) => b.shown);
-    shown.forEach((b, i) => { b.c.mesh.visible = true; b.c.mesh.position.set((i - (shown.length - 1) / 2) * 0.1, -0.375, 0.02); });
+    // Up to eight buttons in one row under the words.
+    const gap = shown.length > 6 ? 0.088 : 0.1;
+    shown.forEach((b, i) => { b.c.mesh.visible = true; b.c.mesh.position.set((i - (shown.length - 1) / 2) * gap, -0.375, 0.02); });
     for (const b of buttons) if (!b.shown) b.c.mesh.visible = false;
   }
 
@@ -386,8 +516,11 @@ export async function start({ mode, session, api, tint }) {
       const ref = !feats || feats.includes("local-floor") ? "local-floor" : "local";
       if (ref === "local") floorY = -1.6;
       renderer.xr.setReferenceSpaceType(ref);
+      // Crisp: a quarter more pixels than the headset's default (the room is
+      // light to draw), and only light foveation, so text at the sides stays sharp.
+      try { renderer.xr.setFramebufferScaleFactor(1.25); } catch {}
       await renderer.xr.setSession(session);
-      try { renderer.xr.setFoveation(1); } catch {}
+      try { renderer.xr.setFoveation(0.2); } catch {}
       // three.js learns about controllers and hands only from the session's
       // "inputsourceschange" event. One announced while this room was still
       // downloading (before three listened) would never get a pointer: hand
@@ -407,7 +540,8 @@ export async function start({ mode, session, api, tint }) {
       throw e;
     }
   }
-  if (!passthrough) addSpace(scene, floorY);
+  const space = passthrough ? null : addSpace(scene, floorY);
+  applyTheme(themeAt);
 
   // The mouse (and touch) on a normal screen.
   const mouse = new Vector2(), mouseP = flat ? pointer("mouse", null) : null;
@@ -472,13 +606,61 @@ export async function start({ mode, session, api, tint }) {
   const lookB = button("eye", "Look", () => { showLookWaiting(); api.look(); });
   const togglePc = () => { if (pcUi.open) pcClose(); else void pcOpen().then((why) => { if (why) api.speak(why); }); };
   const pinLast = () => { const t = api.lastReply(); if (t) pin(t); else api.speak("There's nothing to pin yet. Ask me something first."); };
-  button("pc", "My PC", togglePc);
+  const togglePhotos = () => {
+    if (filesUi.open) return filesClose();
+    if (!api.pc.current()) return notice("Your photos are on your PC: pair this headset with it once (leave the room, Remote, Pair).", 12000, true);
+    void filesOpen("Pictures").then((why) => { if (why) notice(why, 12000, true); });
+  };
+  const restyle = () => notice(nextTheme(), 5000);
+  const photosB = button("photos", "Photos", togglePhotos);
+  const pcB = button("pc", "My PC", togglePc);
   button("pin", "Pin", pinLast);
+  button("style", "Style", restyle);
   button("leave", "Leave", () => stop());
   endB.shown = false;
   lookB.shown = false;
   layoutButtons();
-  void api.hasCamera().then((yes) => { lookB.shown = !!yes; layoutButtons(); });
+
+  // ---- "try saying": three suggestions above the orb on a first visit ----------
+  // Tap one and Izuki does it; they leave after the first conversation.
+  const chips = [];
+  function chip(iconName, words, phrase) {
+    const c = card(0.205, 0.054, 2400);
+    track(c.tex); track(c.mesh.material); track(c.mesh.geometry);
+    if (!faded) fadeIn.push(c.mesh.material);
+    const k = { c, hot: false };
+    k.draw = () => {
+      const { ctx, w, h } = c;
+      glass(ctx, w, h, (h - 6) / 2, { hot: k.hot });
+      icon(ctx, iconName, 58, h / 2, 50, TEAL, 7);
+      ctx.font = `500 37px ${FONT}`;
+      write(ctx, ellipsize(ctx, words, w - 124), 98, h / 2 + 13, 37, INK, 500);
+      c.update();
+    };
+    k.draw();
+    ui(c.mesh, { tap: () => { hideChips(); api.ask(phrase); }, hover: (on) => { k.hot = on; k.draw(); } });
+    rig.add(c.mesh);
+    chips.push(k);
+    return k;
+  }
+  let firstVisit = false;
+  try { firstVisit = localStorage.getItem("izuki.vr.tried") !== "1"; } catch {}
+  function hideChips() {
+    firstVisit = false;
+    for (const k of chips) k.c.mesh.visible = false;
+    try { localStorage.setItem("izuki.vr.tried", "1"); } catch {}
+  }
+  function layoutChips() {
+    chips.forEach((k, i) => { k.c.mesh.position.set((i - (chips.length - 1) / 2) * 0.218, 0.17, 0.01); }); syncButtons();
+  }
+  void api.hasCamera().then((yes) => {
+    lookB.shown = !!yes;
+    layoutButtons();
+    chip(yes ? "eye" : "mic", yes ? "“What's this?”" : "“What can you do?”", yes ? "What's this?" : "What can you do?");
+    chip("photos", "“Show my photos”", "Show my photos");
+    chip("style", "“Change your look”", "Change your look");
+    layoutChips();
+  });
 
   // ---- what Izuki looked at -----------------------------------------------------
   const lookUi = { group: new Group(), photo: null, text: card(0.5, 0.15), img: null, url: "", want: "", closed: "", seq: 0, marks: [], say: "", t0: 0, anim: false, close: card(0.05, 0.05) };
@@ -489,25 +671,20 @@ export async function start({ mode, session, api, tint }) {
   ui(lookUi.text.mesh, { drag: () => lookUi.group });
   track(lookUi.text.tex); track(lookUi.close.tex);
   lookUi.group.add(lookUi.text.mesh, lookUi.close.mesh);
-  {
-    const { ctx, w, h } = lookUi.close;
-    ctx.beginPath(); ctx.arc(w / 2, h / 2, w / 2 - 3, 0, Math.PI * 2); ctx.fillStyle = "rgba(14,18,40,.92)"; ctx.fill();
-    ctx.strokeStyle = "#fff"; ctx.lineWidth = 7; ctx.lineCap = "round";
-    ctx.beginPath(); ctx.moveTo(w * 0.34, h * 0.34); ctx.lineTo(w * 0.66, h * 0.66); ctx.moveTo(w * 0.66, h * 0.34); ctx.lineTo(w * 0.34, h * 0.66); ctx.stroke();
-    lookUi.close.update();
-  }
+  roundButton(lookUi.close, "close");
   // Closed means closed: a photo still decoding, or this look's answer
   // arriving later, doesn't bring it back. A new look opens it again.
   ui(lookUi.close.mesh, { tap: () => { lookUi.seq++; lookUi.closed = lookUi.want; lookUi.group.visible = false; } });
 
   function drawLookText() {
     const { ctx, w, h } = lookUi.text;
-    glass(ctx, w, h, 36);
+    glass(ctx, w, h, 44);
     const measure = (s, size) => { ctx.font = `500 ${size}px ${FONT}`; return ctx.measureText(s).width; };
-    const fit = util.fitLines(lookUi.say, w - 60, 4, 34, 22, measure);
-    let y = 18;
-    for (const line of fit.lines) write(ctx, line, 30, (y += fit.size * 1.28), fit.size, "#ffffff", 500);
+    const fit = util.fitLines(lookUi.say, w - 96, 4, 38, 26, measure);
+    let y = 22;
+    for (const line of fit.lines) write(ctx, line, 48, (y += fit.size * 1.32), fit.size, INK, 500);
     lookUi.text.update();
+    announce(lookUi.say);
   }
   function drawLookPhoto(progress) {
     const ph = lookUi.photo;
@@ -524,17 +701,18 @@ export async function start({ mode, session, api, tint }) {
       const p = Math.max(0, Math.min(1, progress * n - i));
       if (p <= 0) return;
       const x = (m.x / 1000) * w, y = (m.y / 1000) * h, r = w * 0.065;
+      // The pen: a teal circle drawn round it, lifted off any photo by a soft dark shadow.
       ctx.save();
-      ctx.shadowColor = TEAL; ctx.shadowBlur = 18;
-      ctx.strokeStyle = TEAL; ctx.lineWidth = 7; ctx.lineCap = "round";
+      ctx.shadowColor = "rgba(0,0,0,0.55)"; ctx.shadowBlur = 10; ctx.shadowOffsetY = 3;
+      ctx.strokeStyle = TEAL; ctx.lineWidth = 6; ctx.lineCap = "round";
       ctx.beginPath(); ctx.arc(x, y, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * p); ctx.stroke();
       ctx.restore();
       if (p > 0.85 && m.label) {
-        ctx.font = `600 26px ${FONT}`;
+        ctx.font = `600 28px ${FONT}`;
         const tw = ctx.measureText(m.label).width;
-        const lx = Math.min(w - tw - 36, Math.max(10, x - tw / 2 - 14)), ly = y + r + 12 > h - 46 ? y - r - 52 : y + r + 12;
-        rr(ctx, lx, ly, tw + 28, 40, 20); ctx.fillStyle = "rgba(8,10,24,.82)"; ctx.fill();
-        write(ctx, m.label, lx + 14, ly + 29, 26, "#ffffff", 600);
+        const lx = Math.min(w - tw - 40, Math.max(10, x - tw / 2 - 16)), ly = y + r + 12 > h - 50 ? y - r - 56 : y + r + 12;
+        rr(ctx, lx, ly, tw + 32, 44, 22); ctx.fillStyle = "rgba(14,16,22,0.88)"; ctx.fill();
+        write(ctx, m.label, lx + 16, ly + 31, 28, INK, 600);
       }
     });
     ph.update();
@@ -543,8 +721,10 @@ export async function start({ mode, session, api, tint }) {
     if (!lookUi.group.visible) return;
     lookUi.say = "Looking…"; drawLookText();
   }
-  async function showLook({ url, w, h, marks, say }) {
-    if (url === lookUi.closed) return;
+  async function showLook({ url, w, h, marks, say, picked }) {
+    // A late answer for a photo you closed stays closed; one you pick again opens.
+    if (picked) lookUi.closed = "";
+    else if (url === lookUi.closed) return;
     const my = ++lookUi.seq;
     lookUi.want = url;
     if (url !== lookUi.url) {
@@ -579,7 +759,7 @@ export async function start({ mode, session, api, tint }) {
   }
 
   // ---- your PC, big -------------------------------------------------------------
-  const pcUi = { group: new Group(), open: false, live: false, gen: 0, err: "", clicks: Promise.resolve(), doing: "", busy: false, screen: null, bar: card(1.6, 0.09), handle: card(0.32, 0.035), aspect: 9 / 16 };
+  const pcUi = { group: new Group(), open: false, live: false, gen: 0, target: null, err: "", clicks: Promise.resolve(), doing: "", busy: false, screen: null, bar: card(1.6, 0.09), handle: card(0.32, 0.035), aspect: 9 / 16 };
   pcUi.group.visible = false;
   scene.add(pcUi.group);
   track(pcUi.bar.tex); track(pcUi.handle.tex);
@@ -610,14 +790,14 @@ export async function start({ mode, session, api, tint }) {
         const still = () => pcUi.open && my === pcUi.gen && pcUi.live;
         pcUi.clicks = pcUi.clicks.then(async () => {
           if (!still()) return;
-          const r = await api.pc.send({ op: "point", nx, ny });
+          const r = await api.pc.send({ op: "point", nx, ny }, pcUi.target);
           if (r?.ok === false) { if (my === pcUi.gen) { pcUi.err = r.error || ""; drawBar(); } return; }
           // Closed, reopened or lost the picture while the pointer moved: no click.
           if (!still()) return;
-          await api.pc.send({ op: "click", button: "left" });
+          await api.pc.send({ op: "click", button: "left" }, pcUi.target);
         }).catch(() => {});
       },
-      scroll: (n) => { if (pcUi.live) void api.pc.send({ op: "scroll", dy: n }); },
+      scroll: (n) => { if (pcUi.live) void api.pc.send({ op: "scroll", dy: n }, pcUi.target); },
     });
     return s;
   }
@@ -627,7 +807,7 @@ export async function start({ mode, session, api, tint }) {
     const { ctx, w, h } = pcUi.handle;
     ctx.clearRect(0, 0, w, h);
     rr(ctx, 4, 4, w - 8, h - 8, (h - 8) / 2);
-    ctx.fillStyle = "rgba(220,230,255,.55)"; ctx.fill();
+    ctx.fillStyle = "rgba(255,255,255,0.34)"; ctx.fill();
     pcUi.handle.update();
   }
   ui(pcUi.handle.mesh, { drag: () => pcUi.group });
@@ -638,7 +818,7 @@ export async function start({ mode, session, api, tint }) {
     glass(ctx, w, h, 24);
     ctx.font = `500 ${Math.round(h * 0.05)}px ${FONT}`;
     const lines = util.wrapLines(text, w * 0.7, (t) => ctx.measureText(t).width);
-    lines.forEach((l, i) => write(ctx, l, w / 2, h / 2 + (i - (lines.length - 1) / 2) * h * 0.075, Math.round(h * 0.05), "#e6ecff", 500, "center"));
+    lines.forEach((l, i) => write(ctx, l, w / 2, h / 2 + (i - (lines.length - 1) / 2) * h * 0.075, Math.round(h * 0.05), INK2, 500, "center"));
     s.update();
   }
   function drawScreen(bmp) {
@@ -650,14 +830,20 @@ export async function start({ mode, session, api, tint }) {
   }
   function drawBar() {
     const { ctx, w, h } = pcUi.bar;
-    glass(ctx, w, h, 40);
-    ctx.beginPath(); ctx.arc(60, h / 2, 14, 0, Math.PI * 2); ctx.fillStyle = pcUi.err ? "#fbbf24" : "#34d399"; ctx.fill();
-    const line = pcUi.err || (pcUi.doing ? "Izuki: " + pcUi.doing : api.pc.name() + " · point and click, thumbstick to scroll");
-    ctx.font = `500 64px ${FONT}`;
-    write(ctx, ellipsize(ctx, line, w - 760), 100, h / 2 + 22, 64, "#ffffff", 500);
-    const pill = (x, label, color) => { rr(ctx, x, 18, 280, h - 36, (h - 36) / 2); ctx.fillStyle = color; ctx.fill(); write(ctx, label, x + 140, h / 2 + 20, 58, "#fff", 650, "center"); };
-    if (pcUi.busy) pill(w - 620, "Stop", "rgba(239,68,68,.9)");
-    pill(w - 310, "Close", "rgba(255,255,255,.18)");
+    glass(ctx, w, h, 48);
+    // Live (teal) or in trouble (amber), then what Izuki is doing there.
+    ctx.beginPath(); ctx.arc(72, h / 2, 13, 0, Math.PI * 2); ctx.fillStyle = pcUi.err ? WARN : TEAL; ctx.fill();
+    const line = pcUi.err || (pcUi.doing ? "Izuki: " + pcUi.doing : (pcUi.target?.name || api.pc.name()) + " · point and click, thumbstick to scroll");
+    ctx.font = `500 60px ${FONT}`;
+    write(ctx, ellipsize(ctx, line, w - 800), 116, h / 2 + 21, 60, pcUi.err ? WARN : INK, 500);
+    const pill = (x, label, danger) => {
+      rr(ctx, x, 30, 280, h - 60, (h - 60) / 2);
+      ctx.fillStyle = danger ? "rgba(220, 38, 38, 0.82)" : "rgba(255, 255, 255, 0.07)"; ctx.fill();
+      if (!danger) { ctx.lineWidth = 3; ctx.strokeStyle = "rgba(255,255,255,0.16)"; ctx.stroke(); }
+      write(ctx, label, x + 140, h / 2 + 19, 52, INK, 600, "center", DISPLAY, "0.02em");
+    };
+    if (pcUi.busy) pill(w - 620, "Stop", true);
+    pill(w - 310, "Close", false);
     pcUi.bar.update();
   }
   ui(pcUi.bar.mesh, {
@@ -667,7 +853,7 @@ export async function start({ mode, session, api, tint }) {
       else if (pcUi.busy && x > pcUi.bar.w - 630) {
         const my = pcUi.gen;
         // Stop stays offered until the PC confirms it stopped.
-        void api.pc.send({ op: "stop" }).then((r) => {
+        void api.pc.send({ op: "stop" }, pcUi.target).then((r) => {
           if (!pcUi.open || my !== pcUi.gen) return;
           if (r?.ok === false) pcUi.err = r.error || "Your PC didn't confirm it stopped.";
           else { pcUi.busy = false; pcUi.err = ""; }
@@ -682,7 +868,7 @@ export async function start({ mode, session, api, tint }) {
   async function pcLoop(my) {
     while (pcUi.open && my === pcUi.gen) {
       const t0 = performance.now();
-      const r = await api.pc.shot(1280);
+      const r = await api.pc.shot(1280, pcUi.target);
       if (!pcUi.open || my !== pcUi.gen) break;
       if (r.blob) {
         // The panel may have closed (or reopened) while the picture decoded.
@@ -704,7 +890,7 @@ export async function start({ mode, session, api, tint }) {
   }
   async function statusLoop(my) {
     while (pcUi.open && my === pcUi.gen) {
-      const s = await api.pc.status();
+      const s = await api.pc.status(pcUi.target);
       if (!pcUi.open || my !== pcUi.gen) break;
       if (!s.error) { pcUi.doing = s.doing; pcUi.busy = s.busy; drawBar(); }
       await sleep(3000);
@@ -718,14 +904,12 @@ export async function start({ mode, session, api, tint }) {
     pcUi.group.visible = true;
     pcUi.open = true;
     pcUi.err = "";
-    // Make room: the orb moves to your left, still in reach, until the PC closes.
-    if (!rig.userData.placed) {
-      const a = headYaw + 0.62;
-      goal = { x: headPos.x - Math.sin(a) * 0.7, y: headPos.y - 0.12, z: headPos.z - Math.cos(a) * 0.7 };
-      rig.userData.placed = "pc";
-    }
+    // This panel is this PC: its pictures, clicks, scrolls, Stop and spoken
+    // tasks all go to the PC it opened on, even if another is chosen meanwhile.
+    pcUi.target = api.pc.current();
+    stepAside("pc");
     const my = ++pcUi.gen;
-    drawScreenMessage("Connecting to " + api.pc.name() + "…");
+    drawScreenMessage("Connecting to " + (pcUi.target?.name || api.pc.name()) + "…");
     drawBar();
     void pcLoop(my);
     void statusLoop(my);
@@ -733,7 +917,18 @@ export async function start({ mode, session, api, tint }) {
   }
   function pcClose() {
     pcUi.open = false; pcUi.gen++; pcUi.group.visible = false;
-    if (rig.userData.placed === "pc") comeHere();
+    if (rig.userData.placed === "pc") { if (filesUi?.open) rig.userData.placed = "files"; else comeHere(); }
+  }
+  /** The orb steps aside to your left (for the PC's screen or the gallery), unless you placed it yourself. */
+  function stepAside(why) {
+    if (rig.userData.placed === true) return;
+    if (!rig.userData.placed) {
+      // 40° to your left and a little low: its words clear the PC panel's lower-left corner
+      // (the panel spans 27° each side at 1.55 m), and the orb stays in reach.
+      const a = headYaw + 0.7;
+      goal = { x: headPos.x - Math.sin(a) * 0.7, y: headPos.y - 0.17, z: headPos.z - Math.cos(a) * 0.7 };
+    }
+    rig.userData.placed = why;
   }
 
   // A small ring where you clicked on the PC.
@@ -746,6 +941,201 @@ export async function start({ mode, session, api, tint }) {
     m.renderOrder = 998;
     scene.add(m);
     rings.push({ m, t0: performance.now() });
+  }
+
+  // ---- your PC's folders and photos -----------------------------------------------
+  // The phone Remote's read-only folder access (Desktop, Documents, Downloads,
+  // Pictures, Music, Videos), as a gallery: four by three tiles a page, photos
+  // as thumbnails, folders to open, "Up" and page arrows. A photo opens big.
+  const FILES_W = 1.0, FILES_H = 0.74, COLS = 4, ROWS = 3, PAGE = COLS * ROWS, HEAD = 0.12;
+  const filesUi = { group: new Group(), card: card(FILES_W, FILES_H), handle: card(0.3, 0.035), open: false, gen: 0, path: "", up: "", items: [], page: 0, title: "", err: "", loading: false, thumbs: new Map(), pending: new Set(), btns: [] };
+  filesUi.group.visible = false;
+  scene.add(filesUi.group);
+  filesUi.group.add(filesUi.card.mesh, filesUi.handle.mesh);
+  filesUi.handle.mesh.position.set(0, FILES_H / 2 + 0.035, 0);
+  track(filesUi.card.tex); track(filesUi.handle.tex);
+  {
+    const { ctx, w, h } = filesUi.handle;
+    rr(ctx, 4, 4, w - 8, h - 8, (h - 8) / 2);
+    ctx.fillStyle = "rgba(255,255,255,0.34)"; ctx.fill();
+    filesUi.handle.update();
+  }
+  ui(filesUi.handle.mesh, { drag: () => filesUi.group });
+  const pageItems = () => filesUi.items.slice(filesUi.page * PAGE, filesUi.page * PAGE + PAGE);
+  const pageCount = () => Math.max(1, Math.ceil(filesUi.items.length / PAGE));
+  const thumbKey = (it) => filesUi.path + "|" + it.name;
+  function tileRect(i) {
+    const { w, h } = filesUi.card;
+    const top = h * HEAD, pad = w * 0.018;
+    const cw = (w - pad * (COLS + 1)) / COLS, ch = (h - top - pad * (ROWS + 1)) / ROWS;
+    return { x: pad + (i % COLS) * (cw + pad), y: top + pad + Math.floor(i / COLS) * (ch + pad), w: cw, h: ch };
+  }
+  function drawFiles() {
+    const { ctx, w, h } = filesUi.card;
+    glass(ctx, w, h, 56);
+    const hh = h * HEAD;
+    // The header: where you are, then round icon buttons right to left.
+    filesUi.btns = [];
+    const d = hh * 0.62, cy = hh * 0.56;
+    let bx = w - 44;
+    const control = (name, act) => {
+      const cx = bx - d / 2;
+      ctx.beginPath(); ctx.arc(cx, cy, d / 2, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(255,255,255,0.06)"; ctx.fill();
+      ctx.lineWidth = 3; ctx.strokeStyle = "rgba(255,255,255,0.16)"; ctx.stroke();
+      icon(ctx, name, cx, cy, d * 0.62, INK, 7);
+      filesUi.btns.push({ x0: bx - d, x1: bx, act });
+      bx -= d + 20;
+    };
+    control("close", () => filesClose());
+    if (filesUi.page + 1 < pageCount()) control("next", () => { filesUi.page++; drawFiles(); loadThumbs(filesUi.gen); });
+    if (filesUi.page > 0) control("back", () => { filesUi.page--; drawFiles(); loadThumbs(filesUi.gen); });
+    if (filesUi.path) control("up", () => { void filesGo(filesUi.up, ""); });
+    ctx.font = `600 50px ${DISPLAY}`;
+    const title = ellipsize(ctx, filesUi.title || "Your folders", bx - 220);
+    write(ctx, title, 56, cy + 18, 50, INK, 600, "left", DISPLAY, "-0.01em");
+    if (pageCount() > 1) {
+      ctx.font = `600 50px ${DISPLAY}`;
+      const tw = ctx.measureText(title).width;
+      write(ctx, `${filesUi.page + 1} / ${pageCount()}`, 56 + tw + 28, cy + 16, 34, INK2, 500);
+    }
+    if (filesUi.loading || filesUi.err || !filesUi.items.length) {
+      const say = filesUi.loading ? "Opening…" : filesUi.err || "This folder is empty.";
+      ctx.font = `500 46px ${FONT}`;
+      const lines = util.wrapLines(say, w * 0.7, (t) => ctx.measureText(t).width);
+      lines.forEach((l, i) => write(ctx, l, w / 2, h * 0.55 + (i - (lines.length - 1) / 2) * 64, 46, filesUi.err ? WARN : INK2, 500, "center"));
+      filesUi.card.update();
+      return;
+    }
+    pageItems().forEach((it, i) => {
+      const r = tileRect(i);
+      ctx.save();
+      rr(ctx, r.x, r.y, r.w, r.h, 26); ctx.fillStyle = "rgba(255,255,255,0.045)"; ctx.fill(); ctx.clip();
+      const bmp = filesUi.thumbs.get(thumbKey(it));
+      if (bmp) {
+        // Cover the tile, keeping the photo's shape.
+        const s = Math.max(r.w / bmp.width, r.h / bmp.height);
+        ctx.drawImage(bmp, r.x + (r.w - bmp.width * s) / 2, r.y + (r.h - bmp.height * s) / 2, bmp.width * s, bmp.height * s);
+      } else {
+        icon(ctx, it.dir ? "folder" : api.isPicture(it.name) ? "photos" : "doc", r.x + r.w / 2, r.y + r.h * 0.42, Math.min(r.w, r.h) * 0.4, it.dir ? INK : INK2, 4);
+      }
+      // Its name, over a soft fade at the bottom.
+      const fade = ctx.createLinearGradient(0, r.y + r.h - 92, 0, r.y + r.h);
+      fade.addColorStop(0, "rgba(10,12,18,0)"); fade.addColorStop(1, "rgba(10,12,18,0.86)");
+      ctx.fillStyle = fade; ctx.fillRect(r.x, r.y + r.h - 92, r.w, 92);
+      ctx.font = `500 30px ${FONT}`;
+      write(ctx, ellipsize(ctx, it.name, r.w - 36), r.x + 18, r.y + r.h - 20, 30, INK, 500);
+      ctx.restore();
+    });
+    filesUi.card.update();
+  }
+  /** Small pictures for the photos on this page, one at a time. */
+  async function loadThumbs(my) {
+    for (const it of pageItems()) {
+      if (my !== filesUi.gen || !filesUi.open) return;
+      const key = thumbKey(it);
+      // Already here, or already on its way (paging back and forth): never fetched twice.
+      if (it.dir || !api.isPicture(it.name) || filesUi.thumbs.has(key) || filesUi.pending.has(key)) continue;
+      filesUi.pending.add(key);
+      let bmp = null;
+      try { bmp = await api.thumb(filesUi.path, it); } finally { if (my === filesUi.gen) filesUi.pending.delete(key); }
+      if (my !== filesUi.gen || !filesUi.open) { bmp?.close?.(); return; }
+      // Another load got there first: keep that one, free this one.
+      if (filesUi.thumbs.has(key)) { bmp?.close?.(); continue; }
+      filesUi.thumbs.set(key, bmp || null);
+      if (bmp) drawFiles();
+    }
+  }
+  function dropThumbs() {
+    for (const b of filesUi.thumbs.values()) b?.close?.();
+    filesUi.thumbs.clear();
+    filesUi.pending.clear();
+  }
+  /** Open a folder (or, with no path, the list of your folders). "" when it opened, else why not. */
+  async function filesGo(path, title) {
+    const my = ++filesUi.gen;
+    dropThumbs();
+    Object.assign(filesUi, { loading: true, err: "", items: [], page: 0, title: title || filesUi.title });
+    drawFiles();
+    let r;
+    if (path) r = await api.pc.list(path);
+    else {
+      const roots = await api.pc.roots();
+      r = roots.error ? roots : { path: "", up: "", items: roots.roots.map((x) => ({ name: x.name, dir: true, at: x.path })) };
+    }
+    if (my !== filesUi.gen || !filesUi.open) return "";
+    filesUi.loading = false;
+    if (r.error) { filesUi.err = r.error; drawFiles(); return r.error; }
+    Object.assign(filesUi, { path: r.path, up: r.up, items: r.items });
+    if (!title) filesUi.title = r.path ? String(r.path).split(/[\\/]/).filter(Boolean).slice(-2).join(" › ") : "Your folders";
+    drawFiles();
+    void loadThumbs(my);
+    return "";
+  }
+  ui(filesUi.card.mesh, {
+    tap: (hit) => {
+      if (!hit?.uv) return;
+      const { w, h } = filesUi.card;
+      const x = hit.uv.x * w, y = (1 - hit.uv.y) * h;
+      if (y < h * HEAD) { filesUi.btns.find((b) => x >= b.x0 && x <= b.x1)?.act(); return; }
+      // While a folder is on its way the tiles still show the last one: a tap
+      // there would interrupt the folder you asked for (the header still works).
+      if (filesUi.loading) return;
+      const i = pageItems().findIndex((_, k) => { const r = tileRect(k); return x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h; });
+      const it = pageItems()[i];
+      if (!it) return;
+      if (it.dir) void filesGo(it.at || api.joinPath(filesUi.path, it.name), it.name);
+      else void api.openPhoto(filesUi.path, it).then((why) => { if (why) notice(why, 12000, true); });
+    },
+    // The wheel or thumbstick turns the pages.
+    scroll: (n) => {
+      const next = Math.max(0, Math.min(pageCount() - 1, filesUi.page + Math.sign(n)));
+      if (next !== filesUi.page) { filesUi.page = next; drawFiles(); void loadThumbs(filesUi.gen); }
+    },
+  });
+  /** Show the gallery: a folder by name ("Pictures"), or the list of your folders. */
+  async function filesOpen(folder) {
+    if (!filesUi.open) {
+      // In front of you (to the right when the PC's screen has the middle),
+      // and the orb steps aside to your left meanwhile, as it does for the PC.
+      const a = headYaw - (pcUi.open ? 0.85 : 0.05), d = 1.15;
+      filesUi.group.position.set(headPos.x - Math.sin(a) * d, headPos.y - 0.04, headPos.z - Math.cos(a) * d);
+      faceHead(filesUi.group);
+      stepAside("files");
+    }
+    filesUi.open = true;
+    filesUi.group.visible = true;
+    if (!folder) return filesGo("", "Your folders");
+    // Closed, or you opened something else, while the list was on its way: it's
+    // dropped. This open counts as the newest (an older named open can't win).
+    const my = ++filesUi.gen;
+    Object.assign(filesUi, { loading: true, err: "" });
+    drawFiles();
+    const roots = await api.pc.roots();
+    if (!filesUi.open || my !== filesUi.gen) return "";
+    if (roots.error) { filesUi.loading = false; filesUi.err = roots.error; drawFiles(); return roots.error; }
+    const r = roots.roots.find((x) => String(x.name).toLowerCase() === folder.toLowerCase());
+    if (!r) { await filesGo("", "Your folders"); return "I couldn't find a " + folder + " folder on your PC, so here are all your folders."; }
+    return filesGo(r.path, r.name);
+  }
+  function filesClose() {
+    filesUi.open = false;
+    filesUi.gen++;
+    filesUi.group.visible = false;
+    dropThumbs();
+    if (rig.userData.placed === "files") { if (pcUi.open) rig.userData.placed = "pc"; else comeHere(); }
+  }
+
+  /** A picture of the PC's screen as it shows now (for "what's on my screen?"), or null. */
+  function pcFrame() {
+    if (!pcUi.open || !pcUi.live) return null;
+    const s = pcUi.screen;
+    const scale = Math.min(1, 1600 / Math.max(s.w, s.h));
+    const c = document.createElement("canvas");
+    c.width = Math.max(1, Math.round(s.w * scale)); c.height = Math.max(1, Math.round(s.h * scale));
+    c.getContext("2d").drawImage(s.canvas, 0, 0, c.width, c.height);
+    const url = c.toDataURL("image/jpeg", 0.85);
+    return { b64: url.slice(url.indexOf(",") + 1), url, w: c.width, h: c.height };
   }
 
   // ---- pinned answers -------------------------------------------------------------
@@ -770,18 +1160,15 @@ export async function start({ mode, session, api, tint }) {
     const x = card(0.04, 0.04);
     {
       const { ctx, w, h } = c;
-      glass(ctx, w, h, 36, { fill: "rgba(18, 16, 40, 0.9)" });
-      write(ctx, "Pinned", 34, 58, 28, PINK, 650);
+      glass(ctx, w, h, 44);
+      icon(ctx, "pin", 62, 66, 34, INK2, 7);
+      write(ctx, "Pinned", 88, 76, 28, INK2, 600, "left", DISPLAY, "0.02em");
       const measure = (s, size) => { ctx.font = `500 ${size}px ${FONT}`; return ctx.measureText(s).width; };
-      const fit = util.fitLines(text, w - 68, 6, 32, 20, measure);
-      let y = 66;
-      for (const line of fit.lines) write(ctx, line, 34, (y += fit.size * 1.3), fit.size, "#ffffff", 500);
+      const fit = util.fitLines(text, w - 96, 6, 34, 22, measure);
+      let y = 92;
+      for (const line of fit.lines) write(ctx, line, 48, (y += fit.size * 1.32), fit.size, INK, 500);
       c.update();
-      const xc = x.ctx;
-      xc.beginPath(); xc.arc(x.w / 2, x.h / 2, x.w / 2 - 3, 0, Math.PI * 2); xc.fillStyle = "rgba(14,18,40,.92)"; xc.fill();
-      xc.strokeStyle = "#fff"; xc.lineWidth = 6; xc.lineCap = "round";
-      xc.beginPath(); xc.moveTo(x.w * 0.34, x.h * 0.34); xc.lineTo(x.w * 0.66, x.h * 0.66); xc.moveTo(x.w * 0.66, x.h * 0.34); xc.lineTo(x.w * 0.34, x.h * 0.66); xc.stroke();
-      x.update();
+      roundButton(x, "close");
     }
     x.mesh.position.set(0.135, 0.08, 0.004);
     group.add(c.mesh, x.mesh);
@@ -821,7 +1208,21 @@ export async function start({ mode, session, api, tint }) {
     faceHead(rig);
     rig.visible = true;
     placed = true;
+    born = performance.now();
     pinned.forEach(placeNote);
+  }
+  // (born, calm, easeOut and faded are declared with fadeIn, near the top.)
+  function entrance(now) {
+    if (!born || faded) return;
+    const e = calm ? 1 : easeOut((now - born) / 1100);
+    const panels = calm ? 1 : easeOut((now - born - 350) / 600);
+    orb.scale.multiplyScalar(0.3 + 0.7 * e);
+    haloMat.opacity += (1 - e) * 0.45;
+    const r = calm ? 1 : Math.min(1, (now - born) / 1500);
+    bloom.visible = r < 1;
+    if (r < 1) { bloomMat.opacity = 0.8 * (1 - r) * (1 - r); bloom.scale.setScalar(0.9 + easeOut(r) * 1.6); }
+    for (const m of fadeIn) m.opacity = panels;
+    if (e >= 1 && panels >= 1 && r >= 1) faded = true;
   }
   let goal = null;
   function follow(dt) {
@@ -856,8 +1257,9 @@ export async function start({ mode, session, api, tint }) {
     orbMat.uniforms.uThink.value = view.think;
     const s = (1 + Math.sin(t * 1.7) * 0.012 + view.energy * 0.1) * (view.hovered ? 1.06 : 1);
     orb.scale.setScalar(s);
-    haloMat.opacity = 0.2 + view.energy * 0.45;
-    haloMat.color.setHex(HALO[view.state] || 0x7dd3fc);
+    // The orb's own light: quiet at rest, rising with a voice.
+    haloMat.opacity = 0.1 + view.energy * 0.36;
+    haloMat.color.setHex(HALO[view.state] || haloIdle);
     halo.scale.setScalar(0.4 + view.energy * 0.12);
     const ringOn = view.state === "listening" || view.state === "thinking";
     ringMat.opacity += ((ringOn ? 0.6 : 0) - ringMat.opacity) * Math.min(1, dt * 6);
@@ -875,6 +1277,14 @@ export async function start({ mode, session, api, tint }) {
     else talkB.set("mic", "Talk");
     const calling = !!api.calling?.();
     if (calling !== endB.shown) { endB.shown = calling; layoutButtons(); }
+    // What's open shows on its button.
+    photosB.setOn(filesUi.open);
+    pcB.setOn(pcUi.open);
+    // The suggestions wait for a brain (a key) and step aside while Izuki thinks
+    // or talks. A hands-free call listens all the time in the headset, so they
+    // show while it listens too; the first conversation sends them away.
+    const tips = firstVisit && (st === "" || st === "listening") && !!api.ready?.();
+    for (const k of chips) k.c.mesh.visible = tips;
   }
 
   // ---- the loop -----------------------------------------------------------------------
@@ -889,6 +1299,7 @@ export async function start({ mode, session, api, tint }) {
     if (!placed && frames > 3) placeRig();
     if (placed) follow(dt);
     orbTick(dt, clock);
+    entrance(now);
 
     for (const p of pointers) {
       if (!aim(p)) continue;
@@ -949,21 +1360,29 @@ export async function start({ mode, session, api, tint }) {
   // ---- a normal screen: a few words on how to drive it ----------------------------
   let overlay = null;
   if (flat) {
+    spokenReady = true;
     overlay = document.createElement("div");
     overlay.setAttribute("role", "status");
-    Object.assign(overlay.style, { position: "fixed", top: "max(12px, env(safe-area-inset-top))", left: "50%", transform: "translateX(-50%)", zIndex: "2147483001", display: "flex", gap: "10px", alignItems: "center", padding: "8px 8px 8px 16px", borderRadius: "999px", background: "rgba(10,13,30,.82)", color: "#e6ecff", font: `500 14px ${FONT}`, border: "1px solid rgba(167,139,250,.45)", maxWidth: "calc(100vw - 32px)" });
+    // One row when it fits; on a narrow screen the buttons wrap under the words.
+    Object.assign(overlay.style, { position: "fixed", top: "max(12px, env(safe-area-inset-top))", left: "50%", transform: "translateX(-50%)", zIndex: "2147483001", display: "flex", flexWrap: "wrap", justifyContent: "center", gap: "8px 10px", alignItems: "center", padding: "8px 8px 8px 16px", borderRadius: "24px", background: "rgba(18,20,27,.9)", color: INK, font: `500 14px ${FONT}`, border: "1px solid rgba(255,255,255,.14)", width: "max-content", maxWidth: "calc(100vw - 32px)", boxSizing: "border-box" });
     const words = document.createElement("span");
-    words.textContent = "3D preview: click the orb to talk, drag to look around.";
+    words.textContent = "3D preview · click the orb to talk, drag to look";
+    Object.assign(words.style, { color: INK2, textAlign: "center", flex: "1 1 auto" });
     // The same actions as the 3D buttons, reachable with the keyboard too.
     const domButton = (label, act) => {
       const b = document.createElement("button");
       b.type = "button";
       b.textContent = label;
-      Object.assign(b.style, { font: `600 14px ${FONT}`, color: "#fff", background: "rgba(255,255,255,.14)", border: "0", borderRadius: "999px", padding: "8px 14px", cursor: "pointer" });
+      Object.assign(b.style, { font: `600 14px ${FONT}`, color: INK, background: "rgba(255,255,255,.1)", border: "1px solid rgba(255,255,255,.12)", borderRadius: "999px", padding: "8px 14px", cursor: "pointer", whiteSpace: "nowrap" });
       b.onclick = act;
       return b;
     };
-    overlay.append(words, domButton("Talk", () => api.tapOrb()), domButton("My PC", togglePc), domButton("Pin", pinLast), domButton("Leave", () => stop()));
+    overlay.append(words, domButton("Talk", () => api.tapOrb()), domButton("Photos", togglePhotos), domButton("My PC", togglePc), domButton("Pin", pinLast), domButton("Style", restyle), domButton("Leave", () => stop()));
+    // What the canvas says (Izuki's words, a photo's answer), for screen readers.
+    spoken = document.createElement("span");
+    spoken.setAttribute("aria-live", "polite");
+    Object.assign(spoken.style, { position: "absolute", width: "1px", height: "1px", overflow: "hidden", clip: "rect(0 0 0 0)", whiteSpace: "nowrap" });
+    overlay.append(spoken);
     document.body.appendChild(overlay);
   } else {
     on(session, "end", () => stop());
@@ -973,6 +1392,8 @@ export async function start({ mode, session, api, tint }) {
     if (stopped) return;
     stopped = true;
     pcClose();
+    filesClose();
+    clearTimeout(noticeTimer);
     renderer.setAnimationLoop(null);
     if (!flat) { try { session.end(); } catch {} }
     for (const off of cleanups) { try { off(); } catch {} }
@@ -1003,63 +1424,110 @@ export async function start({ mode, session, api, tint }) {
     line(who, t, opts) {
       const s = String(t || "");
       if (!s) return;
-      if (who === "me") { view.you = s; view.reply = ""; view.hint = ""; }
+      if (who === "me") { view.you = s; view.reply = ""; view.hint = ""; if (firstVisit) hideChips(); }
       else if (who === "izuki") { if (opts?.thinking) view.stage = s; else { view.reply = s; view.stage = ""; } }
       drawCaption();
     },
     level(v) { view.mic = Math.max(0, Math.min(1, Number(v) || 0)); },
     showLook,
+    lookShown: () => lookUi.group.visible,
     pin,
     comeHere,
     pcOpen,
+    /** The PC the panel shows (null when it's closed). */
+    pcTarget: () => (pcUi.open ? pcUi.target : null),
     pcClose,
     pcShown: () => pcUi.open,
+    pcFrame,
+    filesOpen,
+    filesClose,
+    nextTheme,
+    notice,
     stop,
   };
 }
 
-// The calm space for headsets without passthrough (and the 3D preview).
+// The space for headsets without passthrough (and the 3D preview), coloured by
+// the theme (set): a dark sky with a soft glow along the horizon, a few faint
+// stars, and fine rings on the floor around you (a quiet sense of space and
+// scale, not decoration).
 function addSpace(scene, floorY) {
-  const sky = new Mesh(new SphereGeometry(40, 32, 16), new ShaderMaterial({
-    side: BackSide, depthWrite: false,
+  const skyU = {
+    uLow: { value: new Color() }, uMid: { value: new Color() }, uTop: { value: new Color() },
+    uBand: { value: new Color() }, uBandAmt: { value: 0 },
+  };
+  const sky = new Mesh(new SphereGeometry(40, 48, 24), new ShaderMaterial({
+    side: BackSide, depthWrite: false, uniforms: skyU,
     vertexShader: "varying vec3 vW; void main(){ vW = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }",
     fragmentShader: `varying vec3 vW;
+      uniform vec3 uLow; uniform vec3 uMid; uniform vec3 uTop; uniform vec3 uBand; uniform float uBandAmt;
       void main(){
         float h = vW.y;
-        vec3 low = vec3(0.02, 0.025, 0.06), mid = vec3(0.07, 0.08, 0.19), top = vec3(0.10, 0.06, 0.20);
-        vec3 c = h < 0.0 ? mix(mid, low, clamp(-h * 3.0, 0.0, 1.0)) : mix(mid, top, clamp(h * 1.5, 0.0, 1.0));
-        float band = exp(-pow((h - 0.18) * 7.0, 2.0)) * (0.5 + 0.5 * sin(atan(vW.z, vW.x) * 3.0));
-        c += vec3(0.05, 0.18, 0.17) * band * 0.6;
+        vec3 c = h < 0.0 ? mix(uMid, uLow, clamp(-h * 2.5, 0.0, 1.0)) : mix(uMid, uTop, clamp(h * 1.6, 0.0, 1.0));
+        // The horizon glow: brightest at eye level, fading up and down.
+        c += uBand * exp(-abs(h) * 7.0) * uBandAmt;
         gl_FragColor = vec4(c, 1.0);
       }`,
   }));
   sky.renderOrder = -10;
   scene.add(sky);
 
-  const n = 700, pos = new Float32Array(n * 3);
+  const n = 320, pos = new Float32Array(n * 3);
   for (let i = 0; i < n; i++) {
-    const u = Math.random() * Math.PI * 2, v = Math.random() * 0.9 + 0.05;
+    const u = Math.random() * Math.PI * 2, v = Math.random() * 0.85 + 0.12;
     const r = 30;
     pos[i * 3] = Math.cos(u) * Math.sqrt(1 - v * v) * r;
     pos[i * 3 + 1] = v * r;
     pos[i * 3 + 2] = Math.sin(u) * Math.sqrt(1 - v * v) * r;
   }
-  const stars = new Points(new BufferGeometry().setAttribute("position", new Float32BufferAttribute(pos, 3)), new PointsMaterial({ color: 0xcfe8ff, size: 0.07, transparent: true, opacity: 0.8, depthWrite: false }));
+  const stars = new Points(new BufferGeometry().setAttribute("position", new Float32BufferAttribute(pos, 3)), new PointsMaterial({ color: 0xdfe8f5, size: 0.05, transparent: true, opacity: 0.5, depthWrite: false }));
   scene.add(stars);
 
+  // Rings every 40 cm out to 3.2 m, finer and fainter with distance, over a
+  // faint pool of light under you. White; the theme tints them.
   const c = document.createElement("canvas");
-  c.width = c.height = 256;
+  c.width = c.height = 2048;
   const x = c.getContext("2d");
-  const g = x.createRadialGradient(128, 128, 0, 128, 128, 128);
-  g.addColorStop(0, "rgba(94,234,212,0.35)");
-  g.addColorStop(0.45, "rgba(167,139,250,0.14)");
-  g.addColorStop(1, "rgba(0,0,0,0)");
-  x.fillStyle = g;
-  x.fillRect(0, 0, 256, 256);
+  const mid = 1024, perM = 1024 / 3.2;
+  const pool = x.createRadialGradient(mid, mid, 0, mid, mid, 1024);
+  pool.addColorStop(0, "rgba(255,255,255,0.10)"); pool.addColorStop(0.5, "rgba(255,255,255,0.03)"); pool.addColorStop(1, "rgba(255,255,255,0)");
+  x.fillStyle = pool; x.fillRect(0, 0, 2048, 2048);
+  for (let m = 0.4; m <= 3.2 + 1e-6; m += 0.4) {
+    const k = m / 3.2;
+    x.beginPath(); x.arc(mid, mid, m * perM, 0, Math.PI * 2);
+    x.lineWidth = 2.2 - k; x.strokeStyle = `rgba(255,255,255,${(0.34 * (1 - k) + 0.04).toFixed(3)})`; x.stroke();
+  }
   const tex = new CanvasTexture(c);
   tex.colorSpace = SRGBColorSpace;
-  const floor = new Mesh(new CircleGeometry(3.2, 64), new MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false }));
+  tex.anisotropy = ANISO;
+  const floor = new Mesh(new CircleGeometry(3.2, 128), new MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false }));
   floor.rotation.x = -Math.PI / 2;
   floor.position.y = floorY;
   scene.add(floor);
+  return {
+    set(t) {
+      skyU.uLow.value.setRGB(...t.low); skyU.uMid.value.setRGB(...t.mid); skyU.uTop.value.setRGB(...t.top);
+      skyU.uBand.value.setRGB(...t.band); skyU.uBandAmt.value = t.bandAmt;
+      stars.material.opacity = t.stars;
+      stars.visible = t.stars > 0.02;
+      floor.material.color.setRGB(...t.floor);
+    },
+  };
 }
+
+// Looks for the room, in order: the orb's three colours and, where you see a
+// space rather than your room, its sky (low/mid/top), the horizon glow, stars
+// and the floor's tint. Calm, dark and low in saturation: the orb carries the
+// colour. Picked with the Style button or "change your look".
+const THEMES = [
+  { name: "Nova", orb: [[0.18, 0.83, 0.75], [0.55, 0.36, 0.96], [0.96, 0.45, 0.71]], halo: 0x7dd3fc,
+    low: [0.008, 0.01, 0.014], mid: [0.03, 0.036, 0.05], top: [0.012, 0.014, 0.022], band: [0.08, 0.2, 0.2], bandAmt: 0.55, stars: 0.5, floor: [0.6, 1, 0.95] },
+  { name: "Midnight", orb: [[0.25, 0.5, 1.0], [0.4, 0.75, 1.0], [0.75, 0.85, 1.0]], halo: 0x93c5fd,
+    low: [0.006, 0.01, 0.02], mid: [0.02, 0.04, 0.08], top: [0.008, 0.014, 0.03], band: [0.1, 0.16, 0.32], bandAmt: 0.6, stars: 0.6, floor: [0.7, 0.82, 1] },
+  { name: "Aurora", orb: [[0.25, 0.92, 0.6], [0.2, 0.75, 0.9], [0.55, 0.45, 0.95]], halo: 0x6ee7b7,
+    low: [0.006, 0.012, 0.012], mid: [0.02, 0.045, 0.045], top: [0.01, 0.018, 0.022], band: [0.08, 0.3, 0.18], bandAmt: 0.7, stars: 0.5, floor: [0.6, 1, 0.8] },
+  { name: "Dawn", orb: [[1.0, 0.7, 0.52], [0.92, 0.55, 0.62], [1.0, 0.86, 0.66]], halo: 0xfed7aa,
+    low: [0.012, 0.009, 0.01], mid: [0.06, 0.04, 0.045], top: [0.02, 0.016, 0.026], band: [0.32, 0.16, 0.1], bandAmt: 0.55, stars: 0.2, floor: [1, 0.85, 0.75] },
+  { name: "Pearl", light: true, orb: [[0.86, 0.88, 0.96], [0.7, 0.76, 0.92], [0.94, 0.88, 0.92]], halo: 0xe2e8f0,
+    low: [0.42, 0.44, 0.48], mid: [0.66, 0.68, 0.73], top: [0.8, 0.81, 0.85], band: [0.06, 0.06, 0.07], bandAmt: 0.4, stars: 0, floor: [0.2, 0.22, 0.28] },
+];
