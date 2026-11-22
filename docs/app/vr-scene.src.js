@@ -759,7 +759,7 @@ export async function start({ mode, session, api, tint }) {
   }
 
   // ---- your PC, big -------------------------------------------------------------
-  const pcUi = { group: new Group(), open: false, live: false, gen: 0, err: "", clicks: Promise.resolve(), doing: "", busy: false, screen: null, bar: card(1.6, 0.09), handle: card(0.32, 0.035), aspect: 9 / 16 };
+  const pcUi = { group: new Group(), open: false, live: false, gen: 0, target: null, err: "", clicks: Promise.resolve(), doing: "", busy: false, screen: null, bar: card(1.6, 0.09), handle: card(0.32, 0.035), aspect: 9 / 16 };
   pcUi.group.visible = false;
   scene.add(pcUi.group);
   track(pcUi.bar.tex); track(pcUi.handle.tex);
@@ -790,14 +790,14 @@ export async function start({ mode, session, api, tint }) {
         const still = () => pcUi.open && my === pcUi.gen && pcUi.live;
         pcUi.clicks = pcUi.clicks.then(async () => {
           if (!still()) return;
-          const r = await api.pc.send({ op: "point", nx, ny });
+          const r = await api.pc.send({ op: "point", nx, ny }, pcUi.target);
           if (r?.ok === false) { if (my === pcUi.gen) { pcUi.err = r.error || ""; drawBar(); } return; }
           // Closed, reopened or lost the picture while the pointer moved: no click.
           if (!still()) return;
-          await api.pc.send({ op: "click", button: "left" });
+          await api.pc.send({ op: "click", button: "left" }, pcUi.target);
         }).catch(() => {});
       },
-      scroll: (n) => { if (pcUi.live) void api.pc.send({ op: "scroll", dy: n }); },
+      scroll: (n) => { if (pcUi.live) void api.pc.send({ op: "scroll", dy: n }, pcUi.target); },
     });
     return s;
   }
@@ -833,7 +833,7 @@ export async function start({ mode, session, api, tint }) {
     glass(ctx, w, h, 48);
     // Live (teal) or in trouble (amber), then what Izuki is doing there.
     ctx.beginPath(); ctx.arc(72, h / 2, 13, 0, Math.PI * 2); ctx.fillStyle = pcUi.err ? WARN : TEAL; ctx.fill();
-    const line = pcUi.err || (pcUi.doing ? "Izuki: " + pcUi.doing : api.pc.name() + " · point and click, thumbstick to scroll");
+    const line = pcUi.err || (pcUi.doing ? "Izuki: " + pcUi.doing : (pcUi.target?.name || api.pc.name()) + " · point and click, thumbstick to scroll");
     ctx.font = `500 60px ${FONT}`;
     write(ctx, ellipsize(ctx, line, w - 800), 116, h / 2 + 21, 60, pcUi.err ? WARN : INK, 500);
     const pill = (x, label, danger) => {
@@ -853,7 +853,7 @@ export async function start({ mode, session, api, tint }) {
       else if (pcUi.busy && x > pcUi.bar.w - 630) {
         const my = pcUi.gen;
         // Stop stays offered until the PC confirms it stopped.
-        void api.pc.send({ op: "stop" }).then((r) => {
+        void api.pc.send({ op: "stop" }, pcUi.target).then((r) => {
           if (!pcUi.open || my !== pcUi.gen) return;
           if (r?.ok === false) pcUi.err = r.error || "Your PC didn't confirm it stopped.";
           else { pcUi.busy = false; pcUi.err = ""; }
@@ -868,7 +868,7 @@ export async function start({ mode, session, api, tint }) {
   async function pcLoop(my) {
     while (pcUi.open && my === pcUi.gen) {
       const t0 = performance.now();
-      const r = await api.pc.shot(1280);
+      const r = await api.pc.shot(1280, pcUi.target);
       if (!pcUi.open || my !== pcUi.gen) break;
       if (r.blob) {
         // The panel may have closed (or reopened) while the picture decoded.
@@ -890,7 +890,7 @@ export async function start({ mode, session, api, tint }) {
   }
   async function statusLoop(my) {
     while (pcUi.open && my === pcUi.gen) {
-      const s = await api.pc.status();
+      const s = await api.pc.status(pcUi.target);
       if (!pcUi.open || my !== pcUi.gen) break;
       if (!s.error) { pcUi.doing = s.doing; pcUi.busy = s.busy; drawBar(); }
       await sleep(3000);
@@ -904,10 +904,12 @@ export async function start({ mode, session, api, tint }) {
     pcUi.group.visible = true;
     pcUi.open = true;
     pcUi.err = "";
-    // Make room: the orb moves to your left, still in reach, until the PC closes.
+    // This panel is this PC: its pictures, clicks, scrolls, Stop and spoken
+    // tasks all go to the PC it opened on, even if another is chosen meanwhile.
+    pcUi.target = api.pc.current();
     stepAside("pc");
     const my = ++pcUi.gen;
-    drawScreenMessage("Connecting to " + api.pc.name() + "…");
+    drawScreenMessage("Connecting to " + (pcUi.target?.name || api.pc.name()) + "…");
     drawBar();
     void pcLoop(my);
     void statusLoop(my);
@@ -1432,6 +1434,8 @@ export async function start({ mode, session, api, tint }) {
     pin,
     comeHere,
     pcOpen,
+    /** The PC the panel shows (null when it's closed). */
+    pcTarget: () => (pcUi.open ? pcUi.target : null),
     pcClose,
     pcShown: () => pcUi.open,
     pcFrame,

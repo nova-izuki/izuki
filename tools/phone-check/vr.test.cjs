@@ -383,6 +383,25 @@ test("with the PC on the big screen, something to do is done on the PC; question
   assert.deepEqual(plain(off), { said: "open Spotify" }, "PC not showing: the usual way");
 });
 
+test("everything for the PC on the panel goes to that PC, even with another chosen", async () => {
+  const home = { name: "Home PC", link: "https://home.example/", pass: "h" };
+  const work = { name: "Work PC", link: "https://work.example/", pass: "w" };
+  const b = browser({ pcs: [work, home], pcAnswers: { talk: { text: "Done." }, remote: { ok: true }, "remote/status": { ok: true } } });
+  // The panel opened on the home PC; the chosen one (first in the list) is the work PC.
+  b.scene.shown = true;
+  b.scene.pcTarget = () => home;
+  await b.vr.gate("open Spotify");
+  const api = b.vr.api();
+  await api.pc.send({ op: "click", button: "left" }, home);
+  await api.pc.status(home);
+  const urls = b.calls.filter((c) => c[0] === "fetch").map((c) => c[1]);
+  assert.ok(urls.length >= 3);
+  assert.ok(urls.every((u) => u.startsWith(home.link)), "never the chosen work PC: " + urls.join(" "));
+  // With no PC named, calls go to the chosen one, as before.
+  await api.pc.status();
+  assert.ok(b.calls.filter((c) => c[0] === "fetch").pop()[1].startsWith(work.link));
+});
+
 test("\"Hey Nova\" in the room: only what's said to Izuki is answered", async () => {
   const b = browser();
   b.vr.handsFree(true);

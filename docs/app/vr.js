@@ -353,8 +353,9 @@
      * One request to the PC, its body read by `read(response)` inside the
      * same 8-second limit (a stalled download counts as no answer too).
      */
-    async call(path, init = {}, read = (r) => r.json().catch(() => ({})), ms = 8000) {
-      const p = this.current();
+    async call(path, init = {}, read = (r) => r.json().catch(() => ({})), ms = 8000, target = null) {
+      // A given PC (the one the room's panel shows), else the chosen one.
+      const p = target || this.current();
       if (!p) return { error: PC_WORDS.pair };
       const base = p.link.endsWith("/") ? p.link : p.link + "/";
       const ctl = new AbortController();
@@ -368,20 +369,20 @@
     },
     explain(text) { const k = String(text || "").trim(); return PC_WORDS[k] || (k ? "Your PC said: " + k.slice(0, 120) : "Your PC didn't answer."); },
     /** The PC's screen now: { blob } or { error }. */
-    async shot(w = 1280) {
+    async shot(w = 1280, target = null) {
       const picture = (r) => r.ok && /^image\//.test(r.headers.get("content-type") || "image/");
-      const { r, body, error } = await this.call("remote/screen?w=" + w, {}, (res) => (picture(res) ? res.blob() : res.text().catch(() => "")));
+      const { r, body, error } = await this.call("remote/screen?w=" + w, {}, (res) => (picture(res) ? res.blob() : res.text().catch(() => "")), undefined, target);
       if (error) return { error };
       if (r.status === 401) return { error: PC_WORDS.pair };
       return picture(r) ? { blob: body } : { error: this.explain(body) };
     },
-    async send(body) {
-      const { body: v, error } = await this.call("remote", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    async send(body, target = null) {
+      const { body: v, error } = await this.call("remote", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }, undefined, undefined, target);
       if (error) return { ok: false, error };
       return v.ok ? v : { ok: false, error: this.explain(v.error) };
     },
-    async status() {
-      const { body: v, error } = await this.call("remote/status");
+    async status(target = null) {
+      const { body: v, error } = await this.call("remote/status", {}, undefined, undefined, target);
       if (error) return { error };
       if (v.ok === false) return { error: this.explain(v.error) };
       return { doing: String(v.doing || ""), busy: !!v.busy };
@@ -405,8 +406,8 @@
      * A job for Izuki on the PC (the phone Remote's "Ask Izuki"): it works on
      * the PC's screen, under the PC's own approval rules, and says what it did.
      */
-    async talk(text) {
-      const { r, body, error } = await this.call("talk", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }) }, undefined, 90000);
+    async talk(text, target = null) {
+      const { r, body, error } = await this.call("talk", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }) }, undefined, 90000, target);
       if (error) return { error };
       if (!r.ok) return { error: "Your PC didn't take that just now." };
       return { text: String(body.text || body.reply || "") };
@@ -534,7 +535,7 @@
         vr.scene?.orb("thinking");
         try {
           // The PC's answer is kept even if you left the room meanwhile (the window shows it).
-          const v = await pc.talk(s);
+          const v = await pc.talk(s, vr.scene?.pcTarget?.());
           return done(v.error || v.text || "Done on your PC.");
         } finally {
           if (vr.active && visit === epoch) vr.scene?.orb(appState);

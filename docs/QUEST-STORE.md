@@ -77,7 +77,7 @@ Filled in and saved by Claude in the owner's signed-in dashboard: Name, Categori
 Answer them yourself, truthfully; what's true today:
 - No violence, no gambling, no purchases, no ads, no account, no chat between people.
 - An AI answers in its own words, and with "show my PC" the person can see and use any website on their own PC. If the age-rating form asks about unrestricted web access or AI-made content, the answer is yes.
-- Data: the microphone (the person's voice goes to the speech-to-text service they chose, Groq or Google), Izuki's spoken replies (their words go to Gemini's voice, or Groq's when Gemini's rests), the camera (one photo, only when they ask "what's this?" and allow it, to their AI), and their PC's screen and folders (from their own paired PC). Nothing goes to us, and nothing from their Meta account is used.
+- Data: the microphone (the person's voice goes to the speech-to-text service they chose, Groq or Google), Izuki's spoken replies (their words go to Gemini's voice, or to Groq's whenever Gemini's gives no sound and there's a Groq key), the camera (one photo, only when they ask "what's this?" and allow it, to their AI), and their PC's screen and folders (from their own paired PC; a PC photo or screen picture goes to their AI when they ask about it). Nothing goes to us, and nothing from their Meta account is used.
 
 ## Uploading (names in the dashboard may differ slightly)
 
