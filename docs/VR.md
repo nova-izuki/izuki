@@ -19,6 +19,11 @@ install.
 | **Look and ask** | "What's this?", "how do I fix this?", "what does this say?". On browsers that share the headset camera (Quest Browser on Quest 3/3S, after the person allows it), one photo goes to the person's own AI. Izuki answers and draws pen circles with labels on the photo. Graded quizzes and tests get coaching, never answers. |
 | **Your PC, big** | "Show my PC": the PC's screen on a 1.6 m panel, a few frames a second. Point and click on it, thumbstick to scroll, and Izuki's status with **Stop**. It uses the phone's Remote pairing; the PC's own approval rules still apply. |
 | **Pin that** | Keeps the last answer as a card in the room. Carry it anywhere, tap it to hear it. Notes come back next time (fanned round you). |
+| **Calling Izuki** | "Hey Nova" any time in the room (it listens hands-free from going in, and answers only when called by name, or a follow-up within 30 s), the orb (trigger or pinch), A/X, or the Talk button. "Stop listening" stops it. |
+| **What's on my screen?** | With the PC on the big screen, Izuki reads that screen (its picture, not the camera) and circles what matters. Something to do ("open Spotify", "click Send", "type…") is done on the PC while you watch, under the PC's own approval rules. Other Quest apps can't be seen or controlled: Meta lets only its own assistant do that. |
+| **Photos and folders** | "Show my photos" opens a gallery of the PC's Pictures (and Up to Desktop, Documents, Downloads, Music, Videos; read-only, the PC's own limits); point at a photo to see it big, then "what's in this photo?". The Quest's own photos aren't reachable from a website. |
+| **Style** | Six looks (Nova, Aurora, Sunset, Ocean, Galaxy, Pearl): the orb's colours and, without passthrough, the sky. The Style button or "change your look". |
+| **Voice** | Gemini's natural voice; when its small free allowance rests, Orpheus on Groq (the Groq key that hears you); the room says why when neither can speak. |
 | **3D preview** | On a normal screen (or with `?vr`), the same room driven by the mouse. |
 
 ## How it fits together

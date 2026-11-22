@@ -162,6 +162,13 @@ const ICONS = {
   pin(x) { x.beginPath(); x.moveTo(50, 86); x.lineTo(50, 60); x.stroke(); x.beginPath(); x.moveTo(30, 60); x.lineTo(70, 60); x.lineTo(62, 44); x.lineTo(62, 22); x.lineTo(38, 22); x.lineTo(38, 44); x.closePath(); x.stroke(); },
   leave(x) { x.beginPath(); x.moveTo(30, 30); x.lineTo(70, 70); x.moveTo(70, 30); x.lineTo(30, 70); x.stroke(); },
   think(x) { for (let i = 0; i < 3; i++) { x.beginPath(); x.arc(30 + i * 20, 50, 6, 0, Math.PI * 2); x.fill(); } },
+  photos(x) { x.beginPath(); rr(x, 16, 24, 68, 52, 8); x.stroke(); x.beginPath(); x.moveTo(22, 70); x.lineTo(42, 48); x.lineTo(56, 62); x.lineTo(66, 54); x.lineTo(80, 70); x.stroke(); x.beginPath(); x.arc(64, 38, 5, 0, Math.PI * 2); x.fill(); },
+  style(x) {
+    const star = (cx, cy, r) => { x.beginPath(); x.moveTo(cx, cy - r); x.quadraticCurveTo(cx, cy, cx + r, cy); x.quadraticCurveTo(cx, cy, cx, cy + r); x.quadraticCurveTo(cx, cy, cx - r, cy); x.quadraticCurveTo(cx, cy, cx, cy - r); x.fill(); };
+    star(44, 54, 26); star(74, 28, 12); star(76, 76, 9);
+  },
+  folder(x) { x.beginPath(); x.moveTo(14, 30); x.lineTo(40, 30); x.lineTo(48, 38); x.lineTo(86, 38); x.lineTo(86, 78); x.lineTo(14, 78); x.closePath(); x.fill(); },
+  doc(x) { x.beginPath(); x.moveTo(28, 14); x.lineTo(60, 14); x.lineTo(76, 30); x.lineTo(76, 86); x.lineTo(28, 86); x.closePath(); x.stroke(); x.beginPath(); x.moveTo(38, 50); x.lineTo(66, 50); x.moveTo(38, 62); x.lineTo(66, 62); x.moveTo(38, 74); x.lineTo(56, 74); x.stroke(); },
 };
 
 // ---------------------------------------------------------------------------
@@ -187,12 +194,27 @@ export async function start({ mode, session, api, tint }) {
   const disposables = [];
   const track = (o) => { disposables.push(o); return o; };
 
-  // ---- the palette: IZUKI NOVA, leaning to the person's own orb colour --------
-  const base = { a: new Color(0.18, 0.83, 0.75), b: new Color(0.55, 0.36, 0.96), c: new Color(0.96, 0.45, 0.71) };
-  if (tint) {
-    const h = parseInt(tint.slice(1), 16);
-    const t = new Color(((h >> 16) & 255) / 255, ((h >> 8) & 255) / 255, (h & 255) / 255);
-    base.a.lerp(t, 0.6); base.b.lerp(t, 0.35); base.c.lerp(t, 0.45);
+  // ---- the palette: the room's look (THEMES); the first, IZUKI NOVA's own,
+  // leans to the person's orb colour when they picked one ----------------------
+  const base = { a: new Color(), b: new Color(), c: new Color() };
+  let themeAt = 0, haloIdle = 0x7dd3fc;
+  try { themeAt = Math.max(0, THEMES.findIndex((t) => t.name === localStorage.getItem("izuki.vr.theme"))); } catch {}
+  function applyTheme(i) {
+    const t = THEMES[i];
+    base.a.setRGB(...t.orb[0]); base.b.setRGB(...t.orb[1]); base.c.setRGB(...t.orb[2]);
+    if (i === 0 && tint) {
+      const h = parseInt(tint.slice(1), 16);
+      const c = new Color(((h >> 16) & 255) / 255, ((h >> 8) & 255) / 255, (h & 255) / 255);
+      base.a.lerp(c, 0.6); base.b.lerp(c, 0.35); base.c.lerp(c, 0.45);
+    }
+    haloIdle = t.halo;
+    space?.set(t);
+  }
+  function nextTheme() {
+    themeAt = (themeAt + 1) % THEMES.length;
+    applyTheme(themeAt);
+    try { localStorage.setItem("izuki.vr.theme", THEMES[themeAt].name); } catch {}
+    return "This is " + THEMES[themeAt].name + (passthrough ? "." : ", with its own sky.") + " Say “change your look” again for the next one.";
   }
 
   // ---- the orb, its words and its buttons: one group that stays with you ----
@@ -239,16 +261,31 @@ export async function start({ mode, session, api, tint }) {
       write(ctx, ellipsize(ctx, "You: " + view.you, w - padX * 2), padX, (y += 50), 32, "#aab6d6", 400);
     }
     const body = view.reply || (!view.you ? view.hint : "");
+    const measure = (s, size) => { ctx.font = `500 ${size}px ${FONT}`; return ctx.measureText(s).width; };
+    // A note (why the voice is quiet, a new look) sits at the bottom, in amber.
+    const note = view.notice ? util.fitLines(view.notice, w - padX * 2, 2, 28, 24, measure) : null;
+    const noteH = note ? note.lines.length * note.size * 1.25 + 16 : 0;
     if (body) {
-      const room = h - y - 30;
-      const measure = (s, size) => { ctx.font = `500 ${size}px ${FONT}`; return ctx.measureText(s).width; };
+      const room = h - y - 30 - noteH;
       const maxLines = Math.max(1, Math.floor(room / (30 * 1.28)));
       const fit = util.fitLines(body, w - padX * 2, Math.min(maxLines, 5), 48, 30, measure);
       const lh = fit.size * 1.28;
       y += 14;
       for (const line of fit.lines) write(ctx, line, padX, (y += lh), fit.size, view.reply ? "#ffffff" : "#d6def5", 500);
     }
+    if (note) {
+      let ny = h - 26 - (note.lines.length - 1) * note.size * 1.25;
+      for (const line of note.lines) { write(ctx, line, padX, ny, note.size, "#fcd34d", 500); ny += note.size * 1.25; }
+    }
     caption.update();
+  }
+  let noticeTimer = 0;
+  /** A short note under the words for a while. */
+  function notice(text, ms = 12000) {
+    view.notice = String(text || "");
+    clearTimeout(noticeTimer);
+    noticeTimer = setTimeout(() => { view.notice = ""; drawCaption(); }, ms);
+    drawCaption();
   }
 
   // Buttons along the bottom.
@@ -290,7 +327,9 @@ export async function start({ mode, session, api, tint }) {
   }
   function layoutButtons() {
     const shown = buttons.filter((b) => b.shown);
-    shown.forEach((b, i) => { b.c.mesh.visible = true; b.c.mesh.position.set((i - (shown.length - 1) / 2) * 0.1, -0.375, 0.02); });
+    // Up to eight buttons in one row under the words.
+    const gap = shown.length > 6 ? 0.088 : 0.1;
+    shown.forEach((b, i) => { b.c.mesh.visible = true; b.c.mesh.position.set((i - (shown.length - 1) / 2) * gap, -0.375, 0.02); });
     for (const b of buttons) if (!b.shown) b.c.mesh.visible = false;
   }
 
@@ -407,7 +446,8 @@ export async function start({ mode, session, api, tint }) {
       throw e;
     }
   }
-  if (!passthrough) addSpace(scene, floorY);
+  const space = passthrough ? null : addSpace(scene, floorY);
+  applyTheme(themeAt);
 
   // The mouse (and touch) on a normal screen.
   const mouse = new Vector2(), mouseP = flat ? pointer("mouse", null) : null;
@@ -472,8 +512,16 @@ export async function start({ mode, session, api, tint }) {
   const lookB = button("eye", "Look", () => { showLookWaiting(); api.look(); });
   const togglePc = () => { if (pcUi.open) pcClose(); else void pcOpen().then((why) => { if (why) api.speak(why); }); };
   const pinLast = () => { const t = api.lastReply(); if (t) pin(t); else api.speak("There's nothing to pin yet. Ask me something first."); };
+  const togglePhotos = () => {
+    if (filesUi.open) return filesClose();
+    if (!api.pc.current()) return notice("Your photos are on your PC: pair this headset with it once (leave the room, Remote, Pair).");
+    void filesOpen("Pictures").then((why) => { if (why) notice(why); });
+  };
+  const restyle = () => notice(nextTheme(), 5000);
+  button("photos", "Photos", togglePhotos);
   button("pc", "My PC", togglePc);
   button("pin", "Pin", pinLast);
+  button("style", "Style", restyle);
   button("leave", "Leave", () => stop());
   endB.shown = false;
   lookB.shown = false;
@@ -719,11 +767,7 @@ export async function start({ mode, session, api, tint }) {
     pcUi.open = true;
     pcUi.err = "";
     // Make room: the orb moves to your left, still in reach, until the PC closes.
-    if (!rig.userData.placed) {
-      const a = headYaw + 0.62;
-      goal = { x: headPos.x - Math.sin(a) * 0.7, y: headPos.y - 0.12, z: headPos.z - Math.cos(a) * 0.7 };
-      rig.userData.placed = "pc";
-    }
+    stepAside("pc");
     const my = ++pcUi.gen;
     drawScreenMessage("Connecting to " + api.pc.name() + "…");
     drawBar();
@@ -733,7 +777,16 @@ export async function start({ mode, session, api, tint }) {
   }
   function pcClose() {
     pcUi.open = false; pcUi.gen++; pcUi.group.visible = false;
-    if (rig.userData.placed === "pc") comeHere();
+    if (rig.userData.placed === "pc") { if (filesUi?.open) rig.userData.placed = "files"; else comeHere(); }
+  }
+  /** The orb steps aside to your left (for the PC's screen or the gallery), unless you placed it yourself. */
+  function stepAside(why) {
+    if (rig.userData.placed === true) return;
+    if (!rig.userData.placed) {
+      const a = headYaw + 0.62;
+      goal = { x: headPos.x - Math.sin(a) * 0.7, y: headPos.y - 0.12, z: headPos.z - Math.cos(a) * 0.7 };
+    }
+    rig.userData.placed = why;
   }
 
   // A small ring where you clicked on the PC.
@@ -746,6 +799,184 @@ export async function start({ mode, session, api, tint }) {
     m.renderOrder = 998;
     scene.add(m);
     rings.push({ m, t0: performance.now() });
+  }
+
+  // ---- your PC's folders and photos -----------------------------------------------
+  // The phone Remote's read-only folder access (Desktop, Documents, Downloads,
+  // Pictures, Music, Videos), as a gallery: four by three tiles a page, photos
+  // as thumbnails, folders to open, "Up" and page arrows. A photo opens big.
+  const FILES_W = 1.0, FILES_H = 0.74, COLS = 4, ROWS = 3, PAGE = COLS * ROWS, HEAD = 0.12;
+  const filesUi = { group: new Group(), card: card(FILES_W, FILES_H), handle: card(0.3, 0.035), open: false, gen: 0, path: "", up: "", items: [], page: 0, title: "", err: "", loading: false, thumbs: new Map(), btns: [] };
+  filesUi.group.visible = false;
+  scene.add(filesUi.group);
+  filesUi.group.add(filesUi.card.mesh, filesUi.handle.mesh);
+  filesUi.handle.mesh.position.set(0, FILES_H / 2 + 0.035, 0);
+  track(filesUi.card.tex); track(filesUi.handle.tex);
+  {
+    const { ctx, w, h } = filesUi.handle;
+    rr(ctx, 4, 4, w - 8, h - 8, (h - 8) / 2);
+    ctx.fillStyle = "rgba(220,230,255,.55)"; ctx.fill();
+    filesUi.handle.update();
+  }
+  ui(filesUi.handle.mesh, { drag: () => filesUi.group });
+  const pageItems = () => filesUi.items.slice(filesUi.page * PAGE, filesUi.page * PAGE + PAGE);
+  const pageCount = () => Math.max(1, Math.ceil(filesUi.items.length / PAGE));
+  const thumbKey = (it) => filesUi.path + "|" + it.name;
+  function tileRect(i) {
+    const { w, h } = filesUi.card;
+    const top = h * HEAD, pad = w * 0.018;
+    const cw = (w - pad * (COLS + 1)) / COLS, ch = (h - top - pad * (ROWS + 1)) / ROWS;
+    return { x: pad + (i % COLS) * (cw + pad), y: top + pad + Math.floor(i / COLS) * (ch + pad), w: cw, h: ch };
+  }
+  function drawFiles() {
+    const { ctx, w, h } = filesUi.card;
+    glass(ctx, w, h, 40);
+    const hh = h * HEAD;
+    // The header: where you are, then the buttons right to left.
+    filesUi.btns = [];
+    let bx = w - 30;
+    const pill = (label, act, color = "rgba(255,255,255,.14)") => {
+      ctx.font = `650 40px ${FONT}`;
+      const bw = Math.max(110, ctx.measureText(label).width + 56);
+      bx -= bw;
+      rr(ctx, bx, hh * 0.18, bw, hh * 0.64, hh * 0.32); ctx.fillStyle = color; ctx.fill();
+      write(ctx, label, bx + bw / 2, hh * 0.18 + hh * 0.64 / 2 + 14, 40, "#ffffff", 650, "center");
+      filesUi.btns.push({ x0: bx, x1: bx + bw, act });
+      bx -= 16;
+    };
+    pill("✕", () => filesClose(), "rgba(239,68,68,.55)");
+    if (filesUi.page + 1 < pageCount()) pill("Next ›", () => { filesUi.page++; drawFiles(); loadThumbs(filesUi.gen); });
+    if (filesUi.page > 0) pill("‹ Back", () => { filesUi.page--; drawFiles(); loadThumbs(filesUi.gen); });
+    if (filesUi.path) pill("Up", () => { void filesGo(filesUi.up, ""); });
+    ctx.font = `650 44px ${FONT}`;
+    const pageNote = pageCount() > 1 ? `  ·  ${filesUi.page + 1}/${pageCount()}` : "";
+    write(ctx, ellipsize(ctx, (filesUi.title || "Your folders") + pageNote, bx - 50), 40, hh * 0.62, 44, "#e6ecff", 650);
+    if (filesUi.loading || filesUi.err || !filesUi.items.length) {
+      const say = filesUi.loading ? "Opening…" : filesUi.err || "This folder is empty.";
+      ctx.font = `500 46px ${FONT}`;
+      const lines = util.wrapLines(say, w * 0.8, (t) => ctx.measureText(t).width);
+      lines.forEach((l, i) => write(ctx, l, w / 2, h * 0.55 + (i - (lines.length - 1) / 2) * 60, 46, filesUi.err ? "#fcd34d" : "#d6def5", 500, "center"));
+      filesUi.card.update();
+      return;
+    }
+    pageItems().forEach((it, i) => {
+      const r = tileRect(i);
+      ctx.save();
+      rr(ctx, r.x, r.y, r.w, r.h, 22); ctx.fillStyle = "rgba(255,255,255,.06)"; ctx.fill(); ctx.clip();
+      const bmp = filesUi.thumbs.get(thumbKey(it));
+      if (bmp) {
+        // Cover the tile, keeping the photo's shape.
+        const s = Math.max(r.w / bmp.width, r.h / bmp.height);
+        ctx.drawImage(bmp, r.x + (r.w - bmp.width * s) / 2, r.y + (r.h - bmp.height * s) / 2, bmp.width * s, bmp.height * s);
+      } else {
+        ctx.save();
+        const s = Math.min(r.w, r.h) * 0.42 / 100;
+        ctx.translate(r.x + r.w / 2 - 50 * s, r.y + r.h * 0.42 - 50 * s);
+        ctx.scale(s, s);
+        ctx.fillStyle = it.dir ? "#7dd3fc" : "#c4b5fd"; ctx.strokeStyle = ctx.fillStyle; ctx.lineWidth = 6; ctx.lineJoin = "round";
+        ICONS[it.dir ? "folder" : api.isPicture(it.name) ? "photos" : "doc"](ctx);
+        ctx.restore();
+      }
+      // Its name on a dark band at the bottom.
+      ctx.fillStyle = "rgba(6,8,20,.72)"; ctx.fillRect(r.x, r.y + r.h - 56, r.w, 56);
+      ctx.font = `500 30px ${FONT}`;
+      write(ctx, ellipsize(ctx, it.name, r.w - 24), r.x + 12, r.y + r.h - 18, 30, "#ffffff", 500);
+      ctx.restore();
+    });
+    filesUi.card.update();
+  }
+  /** Small pictures for the photos on this page, one at a time. */
+  async function loadThumbs(my) {
+    for (const it of pageItems()) {
+      if (my !== filesUi.gen || !filesUi.open) return;
+      if (it.dir || !api.isPicture(it.name) || filesUi.thumbs.has(thumbKey(it))) continue;
+      const bmp = await api.thumb(filesUi.path, it);
+      if (my !== filesUi.gen || !filesUi.open) { bmp?.close?.(); return; }
+      filesUi.thumbs.set(thumbKey(it), bmp || null);
+      if (bmp) drawFiles();
+    }
+  }
+  function dropThumbs() {
+    for (const b of filesUi.thumbs.values()) b?.close?.();
+    filesUi.thumbs.clear();
+  }
+  /** Open a folder (or, with no path, the list of your folders). "" when it opened, else why not. */
+  async function filesGo(path, title) {
+    const my = ++filesUi.gen;
+    dropThumbs();
+    Object.assign(filesUi, { loading: true, err: "", items: [], page: 0, title: title || filesUi.title });
+    drawFiles();
+    let r;
+    if (path) r = await api.pc.list(path);
+    else {
+      const roots = await api.pc.roots();
+      r = roots.error ? roots : { path: "", up: "", items: roots.roots.map((x) => ({ name: x.name, dir: true, at: x.path })) };
+    }
+    if (my !== filesUi.gen || !filesUi.open) return "";
+    filesUi.loading = false;
+    if (r.error) { filesUi.err = r.error; drawFiles(); return r.error; }
+    Object.assign(filesUi, { path: r.path, up: r.up, items: r.items });
+    if (!title) filesUi.title = r.path ? String(r.path).split(/[\\/]/).filter(Boolean).slice(-2).join(" › ") : "Your folders";
+    drawFiles();
+    void loadThumbs(my);
+    return "";
+  }
+  ui(filesUi.card.mesh, {
+    tap: (hit) => {
+      if (!hit?.uv) return;
+      const { w, h } = filesUi.card;
+      const x = hit.uv.x * w, y = (1 - hit.uv.y) * h;
+      if (y < h * HEAD) { filesUi.btns.find((b) => x >= b.x0 && x <= b.x1)?.act(); return; }
+      const i = pageItems().findIndex((_, k) => { const r = tileRect(k); return x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h; });
+      const it = pageItems()[i];
+      if (!it) return;
+      if (it.dir) void filesGo(it.at || api.joinPath(filesUi.path, it.name), it.name);
+      else void api.openPhoto(filesUi.path, it).then((why) => { if (why) notice(why); });
+    },
+    // The wheel or thumbstick turns the pages.
+    scroll: (n) => {
+      const next = Math.max(0, Math.min(pageCount() - 1, filesUi.page + Math.sign(n)));
+      if (next !== filesUi.page) { filesUi.page = next; drawFiles(); void loadThumbs(filesUi.gen); }
+    },
+  });
+  /** Show the gallery: a folder by name ("Pictures"), or the list of your folders. */
+  async function filesOpen(folder) {
+    if (!filesUi.open) {
+      // In front of you (to the right when the PC's screen has the middle),
+      // and the orb steps aside to your left meanwhile, as it does for the PC.
+      const a = headYaw - (pcUi.open ? 0.85 : 0.05), d = 1.15;
+      filesUi.group.position.set(headPos.x - Math.sin(a) * d, headPos.y - 0.04, headPos.z - Math.cos(a) * d);
+      faceHead(filesUi.group);
+      stepAside("files");
+    }
+    filesUi.open = true;
+    filesUi.group.visible = true;
+    if (!folder) return filesGo("", "Your folders");
+    const roots = await api.pc.roots();
+    if (!filesUi.open) return "";
+    if (roots.error) { filesUi.err = roots.error; drawFiles(); return roots.error; }
+    const r = roots.roots.find((x) => String(x.name).toLowerCase() === folder.toLowerCase());
+    if (!r) { await filesGo("", "Your folders"); return "I couldn't find a " + folder + " folder on your PC, so here are all your folders."; }
+    return filesGo(r.path, r.name);
+  }
+  function filesClose() {
+    filesUi.open = false;
+    filesUi.gen++;
+    filesUi.group.visible = false;
+    dropThumbs();
+    if (rig.userData.placed === "files") { if (pcUi.open) rig.userData.placed = "pc"; else comeHere(); }
+  }
+
+  /** A picture of the PC's screen as it shows now (for "what's on my screen?"), or null. */
+  function pcFrame() {
+    if (!pcUi.open || !pcUi.live) return null;
+    const s = pcUi.screen;
+    const scale = Math.min(1, 1600 / Math.max(s.w, s.h));
+    const c = document.createElement("canvas");
+    c.width = Math.max(1, Math.round(s.w * scale)); c.height = Math.max(1, Math.round(s.h * scale));
+    c.getContext("2d").drawImage(s.canvas, 0, 0, c.width, c.height);
+    const url = c.toDataURL("image/jpeg", 0.85);
+    return { b64: url.slice(url.indexOf(",") + 1), url, w: c.width, h: c.height };
   }
 
   // ---- pinned answers -------------------------------------------------------------
@@ -857,7 +1088,7 @@ export async function start({ mode, session, api, tint }) {
     const s = (1 + Math.sin(t * 1.7) * 0.012 + view.energy * 0.1) * (view.hovered ? 1.06 : 1);
     orb.scale.setScalar(s);
     haloMat.opacity = 0.2 + view.energy * 0.45;
-    haloMat.color.setHex(HALO[view.state] || 0x7dd3fc);
+    haloMat.color.setHex(HALO[view.state] || haloIdle);
     halo.scale.setScalar(0.4 + view.energy * 0.12);
     const ringOn = view.state === "listening" || view.state === "thinking";
     ringMat.opacity += ((ringOn ? 0.6 : 0) - ringMat.opacity) * Math.min(1, dt * 6);
@@ -973,6 +1204,8 @@ export async function start({ mode, session, api, tint }) {
     if (stopped) return;
     stopped = true;
     pcClose();
+    filesClose();
+    clearTimeout(noticeTimer);
     renderer.setAnimationLoop(null);
     if (!flat) { try { session.end(); } catch {} }
     for (const off of cleanups) { try { off(); } catch {} }
@@ -1009,27 +1242,38 @@ export async function start({ mode, session, api, tint }) {
     },
     level(v) { view.mic = Math.max(0, Math.min(1, Number(v) || 0)); },
     showLook,
+    lookShown: () => lookUi.group.visible,
     pin,
     comeHere,
     pcOpen,
     pcClose,
     pcShown: () => pcUi.open,
+    pcFrame,
+    filesOpen,
+    filesClose,
+    nextTheme,
+    notice,
     stop,
   };
 }
 
-// The calm space for headsets without passthrough (and the 3D preview).
+// The space for headsets without passthrough (and the 3D preview): a sky,
+// stars and a soft floor glow, coloured by the theme (setTheme).
 function addSpace(scene, floorY) {
+  const skyU = {
+    uLow: { value: new Color(0.02, 0.025, 0.06) }, uMid: { value: new Color(0.07, 0.08, 0.19) },
+    uTop: { value: new Color(0.1, 0.06, 0.2) }, uBand: { value: new Color(0.05, 0.18, 0.17) }, uBandAmt: { value: 0.6 },
+  };
   const sky = new Mesh(new SphereGeometry(40, 32, 16), new ShaderMaterial({
-    side: BackSide, depthWrite: false,
+    side: BackSide, depthWrite: false, uniforms: skyU,
     vertexShader: "varying vec3 vW; void main(){ vW = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }",
     fragmentShader: `varying vec3 vW;
+      uniform vec3 uLow; uniform vec3 uMid; uniform vec3 uTop; uniform vec3 uBand; uniform float uBandAmt;
       void main(){
         float h = vW.y;
-        vec3 low = vec3(0.02, 0.025, 0.06), mid = vec3(0.07, 0.08, 0.19), top = vec3(0.10, 0.06, 0.20);
-        vec3 c = h < 0.0 ? mix(mid, low, clamp(-h * 3.0, 0.0, 1.0)) : mix(mid, top, clamp(h * 1.5, 0.0, 1.0));
+        vec3 c = h < 0.0 ? mix(uMid, uLow, clamp(-h * 3.0, 0.0, 1.0)) : mix(uMid, uTop, clamp(h * 1.5, 0.0, 1.0));
         float band = exp(-pow((h - 0.18) * 7.0, 2.0)) * (0.5 + 0.5 * sin(atan(vW.z, vW.x) * 3.0));
-        c += vec3(0.05, 0.18, 0.17) * band * 0.6;
+        c += uBand * band * uBandAmt;
         gl_FragColor = vec4(c, 1.0);
       }`,
   }));
@@ -1062,4 +1306,31 @@ function addSpace(scene, floorY) {
   floor.rotation.x = -Math.PI / 2;
   floor.position.y = floorY;
   scene.add(floor);
+  return {
+    set(t) {
+      skyU.uLow.value.setRGB(...t.low); skyU.uMid.value.setRGB(...t.mid); skyU.uTop.value.setRGB(...t.top);
+      skyU.uBand.value.setRGB(...t.band); skyU.uBandAmt.value = t.bandAmt;
+      stars.material.opacity = t.stars;
+      stars.visible = t.stars > 0.02;
+      floor.material.color.setRGB(...t.floor);
+    },
+  };
 }
+
+// Looks for the room, in order: the orb's three colours and, where you see a
+// space rather than your room, its sky (low/mid/top), a band of light, stars
+// and the floor glow. Picked with the Style button or "change your look".
+const THEMES = [
+  { name: "Nova", orb: [[0.18, 0.83, 0.75], [0.55, 0.36, 0.96], [0.96, 0.45, 0.71]], halo: 0x7dd3fc,
+    low: [0.02, 0.025, 0.06], mid: [0.07, 0.08, 0.19], top: [0.1, 0.06, 0.2], band: [0.05, 0.18, 0.17], bandAmt: 0.6, stars: 0.8, floor: [1, 1, 1] },
+  { name: "Aurora", orb: [[0.2, 0.9, 0.55], [0.2, 0.7, 0.95], [0.6, 0.3, 0.95]], halo: 0x6ee7b7,
+    low: [0.01, 0.02, 0.04], mid: [0.03, 0.06, 0.1], top: [0.04, 0.03, 0.12], band: [0.1, 0.65, 0.4], bandAmt: 1.4, stars: 0.9, floor: [0.6, 1, 0.8] },
+  { name: "Sunset", orb: [[1.0, 0.55, 0.2], [0.95, 0.35, 0.55], [1.0, 0.8, 0.3]], halo: 0xfdba74,
+    low: [0.08, 0.04, 0.07], mid: [0.5, 0.22, 0.22], top: [0.16, 0.09, 0.28], band: [0.45, 0.25, 0.1], bandAmt: 0.8, stars: 0.25, floor: [1, 0.7, 0.5] },
+  { name: "Ocean", orb: [[0.15, 0.45, 0.95], [0.1, 0.8, 0.8], [0.85, 0.95, 1.0]], halo: 0x93c5fd,
+    low: [0.0, 0.04, 0.09], mid: [0.04, 0.22, 0.36], top: [0.02, 0.09, 0.22], band: [0.1, 0.35, 0.4], bandAmt: 0.7, stars: 0.15, floor: [0.6, 0.9, 1] },
+  { name: "Galaxy", orb: [[0.45, 0.2, 0.85], [0.9, 0.25, 0.75], [0.2, 0.3, 0.9]], halo: 0xc4b5fd,
+    low: [0.02, 0.0, 0.05], mid: [0.08, 0.03, 0.16], top: [0.12, 0.04, 0.22], band: [0.35, 0.12, 0.45], bandAmt: 0.9, stars: 1, floor: [0.85, 0.6, 1] },
+  { name: "Pearl", orb: [[0.86, 0.88, 0.96], [0.7, 0.76, 0.92], [0.96, 0.86, 0.92]], halo: 0xe2e8f0,
+    low: [0.36, 0.38, 0.44], mid: [0.62, 0.65, 0.72], top: [0.78, 0.8, 0.88], band: [0.3, 0.3, 0.35], bandAmt: 0.2, stars: 0, floor: [1, 1, 1] },
+];

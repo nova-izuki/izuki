@@ -62,16 +62,60 @@
   const PIN = whole(String.raw`(?:pin|keep|stick|save)\s+(?:that|this|it|the\s+answer|your\s+answer)(?:\s+(?:here|there|in\s+(?:my|the)\s+room|on\s+the\s+wall|for\s+later))?`);
   const COME = whole(String.raw`come\s+(?:here|back|closer)|over\s+here|follow\s+me|where\s+are\s+you`);
   const EXIT = whole(String.raw`(?:exit|leave|quit|close|end|stop)\s+(?:vr|virtual\s+reality|mixed\s+reality|the\s+headset(?:\s+view)?|immersive(?:\s+mode)?)`);
+  // Something to do (rather than to ask): with your PC on the big screen, it's done there.
+  const DO = new RegExp(LEAD + "(?:" + [
+    String.raw`open|launch|start|close|quit|exit|click|double[-\s]?click|right[-\s]?click|press|tap|hit|type|write|enter|fill\s+in`,
+    String.raw`scroll|go\s+(?:to|back|forward|home)|search(?:\s+for)?|google|look\s+up|play|pause|resume|skip|next\s+(?:song|track|video)|previous`,
+    String.raw`mute|unmute|turn\s+(?:the\s+)?(?:volume\s+)?(?:up|down|on|off)|volume|maximi[sz]e|minimi[sz]e|switch\s+to|select|copy|paste|undo|redo|save`,
+    String.raw`find|move|drag|zoom\s+(?:in|out)|refresh|reload|rename|download|upload|send|reply|sign\s+in|log\s+in|install|show\s+me\s+(?!my\s+(?:pc|computer|laptop|photos|pictures|pics|files|folders))`,
+  ].join("|") + String.raw`)\b`, "i");
+  /** Was Izuki called by name? { called, rest } (rest: what was said after the name). */
+  function named(s, personName) {
+    const names = ["nova", "izuki", "izzy"].concat(personName ? [String(personName).toLowerCase()] : []).map((x) => x.replace(/[^a-z]/g, "")).filter(Boolean);
+    const alt = names.join("|");
+    const lead = new RegExp(String.raw`^(?:(?:hey|hi|hello|ok|okay|yo)[\s,]+)?(?:${alt})\b[\s,.!?:-]*`, "i");
+    const inside = new RegExp(String.raw`\b(?:hey|hi|ok|okay)\s+(?:${alt})\b[\s,.!?:-]*`, "i");
+    if (lead.test(s)) return { called: true, rest: s.replace(lead, "").trim() };
+    if (inside.test(s)) return { called: true, rest: s.replace(inside, " ").replace(/\s+/g, " ").trim() };
+    return { called: false, rest: s };
+  }
+  /** Is this for the PC? Something to do, or anything said "on my PC". */
+  const onPc = (s) => DO.test(s) || /\b(?:on|in)\s+(?:my|the)\s+(?:pc|computer|laptop)\b/i.test(s);
+  const SLEEP = whole(String.raw`(?:stop|quit)\s+listening|go\s+to\s+sleep|(?:you\s+can\s+)?stop\s+listening\s+now|don'?t\s+listen`);
+  // Your PC's folders (the same ones the phone's Remote can open).
+  const WHAT = String.raw`(photos|pictures|pics|images|gallery|files|folders|documents|docs|downloads|desktop|music|songs|videos)`;
+  const FILES = whole(String.raw`(?:show|open|go\s+(?:in)?to|take\s+me\s+to|let\s+me\s+see|browse|look\s+(?:in|at|through)|bring\s+up)\s+(?:me\s+)?(?:my|the)\s+` + WHAT +
+    String.raw`(?:\s+and\s+(?:my\s+)?(?:photos|pictures|files|folders|documents|downloads))?(?:\s+folders?)?(?:\s+(?:on|from|in)\s+(?:my|the)\s+(?:pc|computer|laptop))?`);
+  const FILES_HIDE = whole(String.raw`(?:close|hide|put\s+away)\s+(?:my|the)\s+(?:photos|pictures|pics|gallery|files|folders)`);
+  const PHOTO_ASK = whole(String.raw`what(?:'s|\s+is)\s+in\s+(?:this|that|the)\s+(?:photo|picture|pic|image)|(?:describe|explain)\s+(?:this|that|the)\s+(?:photo|picture|pic|image)|who(?:'s|\s+is)\s+in\s+(?:this|that|the)\s+(?:photo|picture|pic)|tell\s+me\s+about\s+(?:this|that|the)\s+(?:photo|picture|pic|image)`);
+  // A screen: your PC's (shown in the room), or a real one the camera sees.
+  const SCREEN = new RegExp(LEAD + "(?:" + [
+    String.raw`what(?:'s|\s+is)\s+(?:on|in)\s+(?:my|the|this)\s+(?:pc\s+|computer\s+|laptop\s+)?screen`,
+    String.raw`what(?:'s|\s+is)\s+the\s+answer\s+(?:on|to|in)\s+(?:my|the|this)\s+(?:pc\s+|computer\s+)?screen`,
+    String.raw`(?:read|explain|check|describe|look\s+at)\s+(?:my|the|this)\s+(?:pc\s+|computer\s+|laptop\s+)?screen`,
+    String.raw`help\s+me\s+with\s+(?:my|the|this)\s+(?:pc\s+|computer\s+)?screen`,
+    String.raw`what\s+does\s+(?:my|the|this)\s+(?:pc\s+|computer\s+)?screen\s+say`,
+  ].join("|") + String.raw`)\b`, "i");
+  const FOLDER_OF = { photos: "Pictures", pictures: "Pictures", pics: "Pictures", images: "Pictures", gallery: "Pictures", documents: "Documents", docs: "Documents", downloads: "Downloads", desktop: "Desktop", music: "Music", songs: "Music", videos: "Videos" };
+  // The room's look: the orb's colours and (without passthrough) the space around you.
+  const STYLE = whole(String.raw`(?:change|switch|new)\s+(?:your|the)\s+(?:look|colou?rs?|style|orb)|(?:change|switch)\s+(?:the|my)\s+(?:room|space|background|scene|world)|(?:a\s+)?new\s+(?:look|room|space|background)`);
 
   /** A headset-only command in what was said, or null (then it goes to the brain). */
   function command(said) {
     const s = String(said || "").trim();
     if (!s) return null;
     if (EXIT.test(s)) return { kind: "exit" };
+    if (SLEEP.test(s)) return { kind: "sleep" };
     if (PC_HIDE.test(s)) return { kind: "pc-hide" };
     if (PC_SHOW.test(s)) return { kind: "pc" };
     if (PIN.test(s)) return { kind: "pin" };
     if (COME.test(s)) return { kind: "come" };
+    if (FILES_HIDE.test(s)) return { kind: "files-hide" };
+    const f = s.match(FILES);
+    if (f) return { kind: "files", folder: FOLDER_OF[String(f[1]).toLowerCase()] || "" };
+    if (PHOTO_ASK.test(s)) return { kind: "photo-ask" };
+    if (SCREEN.test(s)) return { kind: "screen" };
+    if (STYLE.test(s)) return { kind: /room|space|background|scene|world/i.test(s) ? "space" : "look-style" };
     if (LOOK_WHOLE.test(s) || LOOK_START.test(s)) return { kind: "look" };
     return null;
   }
@@ -188,7 +232,7 @@
     return { nx: c(u), ny: c(1 - v) };
   }
 
-  const util = { command, parseLook, wrapLines, fitLines, followTarget, pcPoint, angleGap, LOOK_SYSTEM, lookPrompt };
+  const util = { command, onPc, named, parseLook, wrapLines, fitLines, followTarget, pcPoint, angleGap, LOOK_SYSTEM, lookPrompt };
   if (typeof module !== "undefined" && module.exports) { module.exports = util; return; }
 
   // ===========================================================================
@@ -305,12 +349,12 @@
      * One request to the PC, its body read by `read(response)` inside the
      * same 8-second limit (a stalled download counts as no answer too).
      */
-    async call(path, init = {}, read = (r) => r.json().catch(() => ({}))) {
+    async call(path, init = {}, read = (r) => r.json().catch(() => ({})), ms = 8000) {
       const p = this.current();
       if (!p) return { error: PC_WORDS.pair };
       const base = p.link.endsWith("/") ? p.link : p.link + "/";
       const ctl = new AbortController();
-      const t = setTimeout(() => ctl.abort(), 8000);
+      const t = setTimeout(() => ctl.abort(), ms);
       try {
         const r = await fetch(base + path, { ...init, cache: "no-store", signal: ctl.signal, headers: { ...(init.headers || {}), Authorization: "Bearer " + p.pass } });
         return { r, body: await read(r) };
@@ -338,7 +382,80 @@
       if (v.ok === false) return { error: this.explain(v.error) };
       return { doing: String(v.doing || ""), busy: !!v.busy };
     },
+    // Your folders, read-only: Desktop, Documents, Downloads, Pictures, Music
+    // and Videos (the PC refuses anything outside them, see rtools.rs).
+    async roots() {
+      const { r, body, error } = await this.call("remote/files/roots");
+      if (error) return { error };
+      if (r.status === 401) return { error: PC_WORDS.pair };
+      return { roots: (Array.isArray(body.roots) ? body.roots : []).filter((x) => x && x.name && x.path) };
+    },
+    async list(path) {
+      const { r, body, error } = await this.call("remote/files/list?p=" + encodeURIComponent(path));
+      if (error) return { error };
+      if (r.status === 401) return { error: PC_WORDS.pair };
+      if (body.ok === false) return { error: this.explain(body.error) };
+      return { path: String(body.path || path), up: String(body.up || ""), items: (Array.isArray(body.items) ? body.items : []).filter((x) => x && x.name) };
+    },
+    /**
+     * A job for Izuki on the PC (the phone Remote's "Ask Izuki"): it works on
+     * the PC's screen, under the PC's own approval rules, and says what it did.
+     */
+    async talk(text) {
+      const { r, body, error } = await this.call("talk", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }) }, undefined, 90000);
+      if (error) return { error };
+      if (!r.ok) return { error: "Your PC didn't take that just now." };
+      return { text: String(body.text || body.reply || "") };
+    },
+    /** A file's bytes: { blob } or { error }. Photos can take a while over the link. */
+    async file(path, ms = 30000) {
+      const { r, body, error } = await this.call("remote/files/get?p=" + encodeURIComponent(path), {}, (res) => (res.ok ? res.blob() : res.json().catch(() => ({}))), ms);
+      if (error) return { error };
+      if (r.status === 401) return { error: PC_WORDS.pair };
+      if (!r.ok) return { error: this.explain(body?.error) };
+      return { blob: body };
+    },
   };
+  /** Pictures a browser can show (HEIC can't be). */
+  const isPicture = (name) => /\.(jpe?g|png|webp|gif|bmp|avif)$/i.test(String(name || ""));
+  const joinPath = (dir, name) => String(dir).replace(/[\\/]+$/, "") + (String(dir).includes("/") && !String(dir).includes("\\") ? "/" : "\\") + name;
+
+  /** The photo open in the room (from the PC), so "what's in this photo?" knows which. */
+  let photo = null;
+  async function openPhoto(dir, item) {
+    if (!isPicture(item.name)) return "I can show pictures here. " + item.name + " isn't one; ask me to open it on your PC.";
+    if (Number(item.size) > 25e6) return "That picture is too big to bring over (over 25 MB).";
+    const r = await pc.file(joinPath(dir, item.name));
+    if (r.error) return r.error;
+    let bmp = null;
+    try { bmp = await createImageBitmap(r.blob); } catch { return "I can't show that kind of picture here."; }
+    // Big photos are made smaller: easier to show, and to send when you ask about one.
+    const scale = Math.min(1, 1600 / Math.max(bmp.width, bmp.height));
+    const c = document.createElement("canvas");
+    c.width = Math.max(1, Math.round(bmp.width * scale)); c.height = Math.max(1, Math.round(bmp.height * scale));
+    c.getContext("2d").drawImage(bmp, 0, 0, c.width, c.height);
+    bmp.close?.();
+    const url = c.toDataURL("image/jpeg", 0.86);
+    photo = { b64: url.slice(url.indexOf(",") + 1), url, w: c.width, h: c.height, name: item.name };
+    vr.scene?.showLook({ url, w: c.width, h: c.height, marks: [], say: item.name + ' · say "what\'s in this photo?"' });
+    return "";
+  }
+  /** A small picture for the gallery (or null): big files are skipped. */
+  async function thumb(dir, item) {
+    if (!isPicture(item.name) || Number(item.size) > 12e6) return null;
+    const r = await pc.file(joinPath(dir, item.name), 20000);
+    if (r.error) return null;
+    try { return await createImageBitmap(r.blob, { resizeWidth: 320, resizeQuality: "medium" }); }
+    catch { try { return await createImageBitmap(r.blob); } catch { return null; } }
+  }
+  const PHOTO_SYSTEM = LOOK_SYSTEM.replace(
+    /^You are Izuki, looking through the camera[^\n]*/,
+    "You are Izuki, looking at one of the person's own photos (from their PC) together with them, in their VR headset.",
+  );
+  const SCREEN_SYSTEM = LOOK_SYSTEM.replace(
+    /^You are Izuki, looking through the camera[^\n]*/,
+    "You are Izuki, looking at a picture of the person's PC screen, shown big in their VR headset. Read what's on it and help with what they asked; point at the buttons, words or parts that matter.",
+  );
 
   // ---- pinned notes ---------------------------------------------------------
   const notes = {
@@ -349,6 +466,13 @@
 
   // ---- the hooks the app calls ----------------------------------------------
   let lastReply = "";
+  /** Listening hands-free since going in (only what's said to Izuki is answered). */
+  let heyNova = false;
+  /** A tap (the orb, A/X, Talk): the next thing said is for Izuki, no name needed. */
+  let armed = false;
+  /** When Izuki last answered: a follow-up needs no name for a while. */
+  let spokeAt = 0;
+  const FOLLOW_ON_MS = 30000;
   /** The orb state the app last set: a look borrows "thinking" and gives it back. */
   let appState = "";
   /** Which visit to VR this is: a look from an earlier one never shows or speaks in a later one. */
@@ -361,12 +485,38 @@
     scene: null,
     support: () => support,
     async gate(said) {
-      const s = String(said || "").trim();
+      let s = String(said || "").trim();
+      // "Hey Nova" in the room: the call listens all the time, but only what's
+      // said to Izuki counts (its name, a tap first, or a follow-up just after it spoke).
+      const n = named(s, g.IzukiCore?.name?.());
+      if (heyNova && !armed && Date.now() - spokeAt > FOLLOW_ON_MS) {
+        if (!n.called) return null;
+        if (!n.rest) return { done: true, said: s, say: "Mhm?" };
+      }
+      armed = false;
+      if (n.called && n.rest) s = n.rest;
       const c = command(s);
-      if (!c) return { said: s };
       const done = (say) => ({ done: true, said: s, say });
+      // Your PC on the big screen: something to do is done there while you watch.
+      if (!c && vr.scene?.pcShown?.() && onPc(s)) {
+        const visit = epoch;
+        vr.scene?.orb("thinking");
+        try {
+          // The PC's answer is kept even if you left the room meanwhile (the window shows it).
+          const v = await pc.talk(s);
+          return done(v.error || v.text || "Done on your PC.");
+        } finally {
+          if (vr.active && visit === epoch) vr.scene?.orb(appState);
+        }
+      }
+      if (!c) return { said: s };
       try {
         if (c.kind === "exit") { setTimeout(() => vr.scene?.stop(), 1800); return done("Okay, see you outside."); }
+        if (c.kind === "sleep") {
+          heyNova = false;
+          setTimeout(() => g.IzukiCore?.stopCall?.(), 1500);
+          return done("Okay, I've stopped listening. Tap me when you need me.");
+        }
         if (c.kind === "come") { vr.scene?.comeHere(); return done("Here I am."); }
         if (c.kind === "pin") {
           if (!lastReply) return done("There's nothing to pin yet. Ask me something first.");
@@ -375,16 +525,18 @@
         }
         if (c.kind === "pc-hide") { vr.scene?.pcClose(); return done("Okay, I put your PC away."); }
         if (c.kind === "pc") return done((await vr.scene?.pcOpen()) || "Here's " + pc.name() + ".");
-        if (c.kind === "look") {
+        if (c.kind === "files-hide") { vr.scene?.filesClose(); return done("Okay, I put them away."); }
+        if (c.kind === "files") {
+          if (!pc.current()) return done("Your photos and folders live on your PC. Pair this headset with your PC once (leave the room, open Remote in Izuki, then Pair) and I'll open them right here. Your Quest's own photos are kept by Meta, and websites can't open those.");
+          return done((await vr.scene?.filesOpen(c.folder)) || (c.folder ? "Here's your " + c.folder + " folder. Point at a picture to see it big." : "Here are your folders."));
+        }
+        if (c.kind === "look-style" || c.kind === "space") return done(vr.scene?.nextTheme?.() || "There, a new look.");
+        if (c.kind === "photo-ask" || c.kind === "screen" || c.kind === "look") {
           const visit = epoch;
-          const hasCamera = await cam.has();
+          const source = await lookSource(c.kind);
           if (!vr.active || visit !== epoch) return done(lookTrouble(closedError()));
-          if (!hasCamera) {
-            // No camera here: with the PC open, "what's this?" is about the PC.
-            if (vr.scene?.pcShown?.()) return { said: s };
-            return done("I can't see through this headset's cameras from here. On a Quest 3 or 3S, allow the camera for this site and ask again. You can still ask me anything, or show me your PC.");
-          }
-          return done(await look(s, visit));
+          if (typeof source === "string") return done(source);
+          return done(await look(s, visit, source));
         }
       } catch (e) {
         return done(lookTrouble(e));
@@ -395,10 +547,15 @@
     heard(t) { vr.scene?.heard(t); },
     said(t) { vr.scene?.said(t); },
     line(who, t, opts) {
+      if (who === "izuki" && t && !opts?.thinking) spokeAt = Date.now();
       if (who === "izuki" && t && !opts?.thinking && !opts?.error) lastReply = String(t);
       vr.scene?.line(who, t, opts);
     },
     level(v) { vr.scene?.level(v); },
+    /** No voice right now: the room says why (the page's Retry can't be seen in a headset). */
+    quiet(t) { vr.scene?.notice?.(t); },
+    /** "Hey Nova" in the room: listen hands-free (only a call by name is answered). */
+    handsFree(on) { heyNova = !!on; },
     homeCard,
     enter,
   };
@@ -413,17 +570,41 @@
     return "I couldn't look just now: " + String(e?.message || e || "something went wrong").slice(0, 120);
   }
 
-  async function look(question, visit = epoch) {
+  /**
+   * What a look looks at: { take: () => picture, system }, or the words to say
+   * when there's nothing to look at.
+   *   photo-ask  the photo from your PC that's open, else the camera
+   *   screen     your PC's screen when it's showing; otherwise it says how
+   *              (the camera only sees the real room, not the headset's own
+   *              windows, and Meta lets only its own assistant see those)
+   *   look       the camera, else your PC's screen when it's showing
+   */
+  async function lookSource(kind) {
+    const pcFrame = () => { const f = vr.scene?.pcFrame?.(); if (!f) throw new Error("Your PC's picture isn't showing yet."); return f; };
+    const camera = { take: () => cam.frame(), system: LOOK_SYSTEM };
+    const screen = { take: pcFrame, system: SCREEN_SYSTEM };
+    if (kind === "photo-ask" && photo && vr.scene?.lookShown?.()) return { take: () => photo, system: PHOTO_SYSTEM };
+    const pcOn = !!vr.scene?.pcShown?.();
+    if (kind === "screen") {
+      if (pcOn) return screen;
+      return "Show me your PC (say \"show my PC\") and ask again, and I'll read its screen with you. For a real screen in front of you, look at it and ask \"what's this?\". I can't see inside other Quest apps: Meta doesn't let websites do that.";
+    }
+    if (await cam.has()) return camera;
+    if (pcOn) return screen;
+    return "I can't see through this headset's cameras from here. On a Quest 3 or 3S, allow the camera for this site and ask again. You can still ask me anything, or show me your PC.";
+  }
+
+  async function look(question, visit = epoch, source = { take: () => cam.frame(), system: LOOK_SYSTEM }) {
     const core = g.IzukiCore;
     if (!core?.see) throw new Error("Izuki isn't ready yet.");
     const current = () => vr.active && visit === epoch;
     vr.scene?.orb("thinking");
     try {
-      const shot = await cam.frame();
+      const shot = await source.take();
       // Left VR while the photo was being taken: nothing is sent.
       if (!current()) throw closedError();
       vr.scene?.showLook({ url: shot.url, w: shot.w, h: shot.h, marks: [], say: "Looking…" });
-      const reply = await core.see(lookPrompt(question), shot.b64, "image/jpeg", LOOK_SYSTEM);
+      const reply = await core.see(lookPrompt(question), shot.b64, "image/jpeg", source.system);
       // Left (or left and came back) while the AI looked: the answer is dropped.
       if (!current()) throw closedError();
       const { say, marks } = parseLook(reply);
@@ -440,6 +621,7 @@
     const core = g.IzukiCore;
     if (!core) return;
     if (!core.ready?.()) { vr.scene?.line("izuki", "Add a free AI key in Settings first (Gemini or Groq), then I can hear you and answer."); return; }
+    armed = true;
     if (!core.calling?.()) core.startCall?.();
     else core.tap?.();
   }
@@ -456,9 +638,16 @@
     look: () => g.IzukiCore?.ask?.("What am I looking at?"),
     pc,
     notes,
+    openPhoto,
+    thumb,
+    isPicture,
+    joinPath,
     lastReply: () => lastReply,
     exited() {
       epoch++;
+      photo = null;
+      heyNova = false;
+      armed = false;
       vr.active = false;
       vr.scene = null;
       cam.close();
@@ -507,6 +696,13 @@
       throw e;
     }
     for (const n of notes.list()) vr.scene.pin(n.text, n.at, true);
+    // "Hey Nova" in the room: listening hands-free from the start, like a
+    // headset's own assistant; only what's said to Izuki is answered.
+    const core = g.IzukiCore;
+    if (mode !== "flat" && core?.ready?.() && core.canHear?.() && store.get("heyNova", true) !== false) {
+      heyNova = true;
+      try { core.startCall?.(); } catch {}
+    }
   }
 
   const tint = () => { try { const t = localStorage.getItem("izuki.orbTint") || ""; return /^#[0-9a-f]{6}$/i.test(t) ? t : ""; } catch { return ""; } };
@@ -579,9 +775,9 @@
       : "This browser has no headset, so you get a 3D preview here. Open izukinova.ai/vr in your headset's browser (Meta Quest, Pico, Android XR, Vision Pro) for the real thing.";
     const steps = mk("ol", "guide-steps");
     for (const s of [
-      "Point at the orb and pull the trigger (or pinch it) to talk. Do it again when you're done; I answer out loud.",
-      "Say “what's this?” and I look through the headset camera and circle the answer on the photo (on headsets that share their camera, after your yes).",
-      "Say “show my PC” to see your PC's screen big, click on it, and watch me work on it.",
+      "Say “Hey Nova” any time in the room, or point at the orb and pull the trigger (or pinch it), or press A/X. I answer out loud.",
+      "Say “what's this?” and I look through the headset camera and circle the answer on the photo (on headsets that share their camera, after your yes). “What's on my screen?” reads your PC's screen.",
+      "Say “show my PC” to see your PC's screen big and watch me work on it, or “show my photos” for your PC's pictures. “Change your look” gives the room a new style.",
     ]) steps.appendChild(mk("li", "", s));
     panel.append(head, mk("p", "guide-what", what), steps);
 
