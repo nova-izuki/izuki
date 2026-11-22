@@ -20,7 +20,7 @@ const test = (name, fn) => tests.push([name, fn]);
 
 // The pure helpers (vr.js hands them to module.exports when there's a module).
 const helpers = (() => { const ctx = { module: { exports: {} } }; vm.runInNewContext(src, ctx); return ctx.module.exports; })();
-const { command, parseLook, wrapLines, fitLines, followTarget, pcPoint, LOOK_SYSTEM } = helpers;
+const { command, parseLook, parseHolo, HOLO_SYSTEM, wrapLines, fitLines, followTarget, pcPoint, LOOK_SYSTEM } = helpers;
 
 test("headset commands are recognised, whole and polite", () => {
   const cases = {
@@ -64,11 +64,18 @@ test("what goes to the PC (with its screen showing), and calling Izuki by name",
   assert.deepEqual(plain(named("ok so hey sophie can you help", "Sophie")), { called: true, rest: "ok so can you help" });
   assert.equal(named("what time is it").called, false);
   assert.equal(named("I like supernovas").called, false, "a word that only contains the name isn't a call");
+  // Shouted or said fast, speech-to-text mishears the name: right after a greeting it still counts.
+  assert.deepEqual(plain(named("Hey Noah, what's the time?")), { called: true, rest: "what's the time?" });
+  assert.equal(named("Hey Nava!").called, true);
+  assert.equal(named("hey isuki open spotify").rest, "open spotify");
+  assert.equal(named("Hey, Nover.").called, true);
+  assert.equal(named("Noah is coming over").called, false, "a name on its own isn't a call");
+  assert.equal(named("hey novak").called, false);
 });
 
 test("everything else goes on to the brain as usual", () => {
   for (const s of ["what is this week's weather", "what's that song called", "open my PC's downloads", "on my PC open Spotify", "show my PC's battery",
-    "what is the capital of France", "pin my tabs on the PC", "come here tomorrow at 5", "remind me to look at the oven", "look up the news",
+    "what is the capital of France", "pin my tabs on the PC", "come here tomorrow at 5", "remind me to look at the oven", "tell me the news",
     "what does my calendar say", "how do I fix my wifi", "what can you do about my wifi", "help me write an email", "explain quantum physics", "close Spotify on my PC", "", "   "]) {
     assert.equal(command(s), null, `"${s}" is not a headset command`);
   }
@@ -139,7 +146,7 @@ test("a point on the PC panel becomes the same point on the PC", () => {
 });
 
 // ---- the browser side, with a pretend headset -------------------------------
-function browser({ camera = false, see = async () => "{}", denied = false, pcs = [], playFails = false, xr = null, ua = "Mozilla/5.0 (X11; Linux x86_64; Quest 3) OculusBrowser/40.0", facing = "", pcAnswers = {}, bitmap = async () => {} } = {}) {
+function browser({ camera = false, see = async () => "{}", denied = false, pcs = [], playFails = false, xr = null, ua = "Mozilla/5.0 (X11; Linux x86_64; Quest 3) OculusBrowser/40.0", facing = "", pcAnswers = {}, bitmap = async () => {}, think = async () => "{}" } = {}) {
   const local = new Map([["izuki.remotePcs", JSON.stringify(pcs)]]);
   const calls = [];
   let stopped = 0, opens = 0;
@@ -154,6 +161,10 @@ function browser({ camera = false, see = async () => "{}", denied = false, pcs =
     lookShown: () => scene.lookOpen,
     filesOpen: async (folder) => { calls.push(["filesOpen", folder]); return ""; }, filesClose() { calls.push(["filesClose"]); },
     nextTheme: () => "This is Aurora.", notice(t) { calls.push(["notice", t]); },
+    holo: false,
+    webSearch: async (q) => { calls.push(["webSearch", q]); return "Here's what Google found."; }, webClose() { calls.push(["webClose"]); },
+    holoBuilding(t) { calls.push(["holoBuilding", t]); }, holoShow(spec) { calls.push(["holoShow", spec]); scene.holo = true; },
+    holoFocus(f, i) { calls.push(["holoFocus", f, i]); }, holoClose() { calls.push(["holoClose"]); scene.holo = false; }, holoShown() { return scene.holo; },
   };
   // The paired PC: each path answers from pcAnswers (JSON), and every request is kept.
   const fetch = async (url, init = {}) => {
@@ -176,7 +187,10 @@ function browser({ camera = false, see = async () => "{}", denied = false, pcs =
       },
       xr,
     },
-    IzukiCore: { see: async (prompt, b64, type, system) => { calls.push(["see", { prompt, b64, type, system }]); return see(); }, name: () => "Nova" },
+    IzukiCore: {
+      see: async (prompt, b64, type, system) => { calls.push(["see", { prompt, b64, type, system }]); return see(); }, name: () => "Nova",
+      think: async (prompt, system) => { calls.push(["think", prompt, system]); return think(); }, ready: () => true,
+    },
   };
   const ctx = {
     window, document: { createElement: el, head: { appendChild() {} }, getElementById: () => null },
@@ -406,12 +420,45 @@ test("\"Hey Nova\" in the room: only what's said to Izuki is answered", async ()
   const b = browser();
   b.vr.handsFree(true);
   assert.equal(await b.vr.gate("so what do you want for dinner"), null, "talk in the room isn't for Izuki");
+  assert.equal(await b.vr.gate("ok see you later then"), null);
+  assert.equal(await b.vr.gate("yeah that sounds good to me"), null);
   assert.deepEqual(plain(await b.vr.gate("Hey Nova, what's the time?")), { said: "what's the time?" });
   assert.equal((await b.vr.gate("hey nova")).say, "Mhm?");
   b.vr.line("izuki", "It's five o'clock.");
   assert.deepEqual(plain(await b.vr.gate("and in Tokyo?")), { said: "and in Tokyo?" }, "a follow-up right after needs no name");
   b.vr.handsFree(false);
   assert.deepEqual(plain(await b.vr.gate("what's the weather")), { said: "what's the weather" }, "after a tap (not hands-free) anything counts");
+});
+
+test("no name needed for a real question or a call for help (hands-free in the room)", async () => {
+  const { forIzuki } = helpers;
+  for (const s of ["how tall is Mount Everest?", "what's the weather tomorrow", "I'm stuck, how do I export this video", "can you help me with my homework",
+    "do you know when the shop closes", "help me plan my week", "explain how vaccines work", "where's the nearest pharmacy"]) assert.ok(forIzuki(s), `"${s}" is for Izuki`);
+  for (const s of ["so what do you want for dinner", "are you coming tonight?", "what", "lol", "I think we should go now", "see you later", "did you see that"]) assert.ok(!forIzuki(s), `"${s}" isn't for Izuki`);
+  const b = browser();
+  b.vr.handsFree(true);
+  assert.deepEqual(plain(await b.vr.gate("how tall is Mount Everest?")), { said: "how tall is Mount Everest?" });
+});
+
+test("timers by the orb, and breathing together", async () => {
+  const { timerWords } = helpers;
+  const cases = { "set a timer for 10 minutes": 600000, "timer for 30 seconds": 30000, "set a timer for an hour": 3600000, "start a timer for five minutes": 300000,
+    "5 minute timer": 300000, "set a timer for half an hour": 1800000, "Hey Nova, set a timer for 2 hours please": 7200000 };
+  for (const [s, ms] of Object.entries(cases)) { const c = command(s); assert.equal(c?.kind, "timer", s); assert.equal(c.ms, ms, s); }
+  assert.equal(command("set a timer for 1 second"), null, "too short to be a timer");
+  assert.equal(command("cancel the timer").kind, "timer-stop");
+  assert.equal(timerWords(5400000), "1 hour 30 minutes");
+  assert.equal(timerWords(60000), "1 minute");
+  for (const s of ["help me relax", "breathing exercise", "I'm so stressed", "let's breathe", "calm down"]) assert.equal(command(s)?.kind, "breathe", s);
+  assert.equal(command("stop the breathing").kind, "breathe-stop");
+  const b = browser();
+  const calls = [];
+  Object.assign(b.scene, { timerStart: (ms, w) => calls.push(["timer", ms, w]), timerStop: () => true, breathe: (n) => calls.push(["breathe", n]), breatheStop: () => calls.push(["breathe-stop"]) });
+  assert.equal((await b.vr.gate("set a timer for 10 minutes")).say, "Timer set for 10 minutes. It's floating by me.");
+  assert.deepEqual(calls[0], ["timer", 600000, "10 minutes"]);
+  assert.equal((await b.vr.gate("cancel the timer")).say, "Okay, timer cancelled.");
+  assert.match((await b.vr.gate("help me relax")).say, /breathe together/);
+  assert.deepEqual(calls[1], ["breathe", 4]);
 });
 
 test("\"stop listening\" works hands-free even without the name", async () => {
@@ -479,6 +526,140 @@ test("izukinova.ai/vr opens the VR card", () => {
   const page = read("docs/vr/index.html");
   assert.match(page, /\.\.\/app\/\?vr/);
   assert.match(page, /noindex/);
+});
+
+
+test("the room's browser: what's a search, and what it searches for", () => {
+  const web = {
+    "search the web for cheap flights to Lagos": "cheap flights to Lagos", "google the best VR games": "the best VR games",
+    "look up the news": "the news", "Hey Nova, search for pizza near me": "pizza near me",
+    "can you look up how tall Everest is online": "how tall Everest is", "search google for weather in Paris": "weather in Paris",
+    "look the score up": "the score",
+  };
+  for (const [s, q] of Object.entries(web)) {
+    const c = command(s);
+    assert.equal(c?.kind, "web", `"${s}" is a search`);
+    assert.equal(c.q, q, `"${s}" searches for "${q}"`);
+  }
+  assert.equal(command("open the browser").kind, "web");
+  assert.equal(command("open the browser").q, "");
+  assert.equal(command("look it up").q, "", "nothing to search for yet: it asks");
+  assert.equal(command("close the browser").kind, "web-hide");
+  assert.equal(command("search for cats in the browser").here, true);
+});
+
+test("teach me in 3D: what builds a hologram, and what stays a look or a question", () => {
+  for (const s of ["teach me how the heart works", "show me the solar system", "visualize the French revolution", "explain photosynthesis in 3D",
+    "build me a model of an atom", "walk me through how a bill becomes law", "show me how a car engine works", "make a timeline of the Roman empire",
+    "Hey Nova, can you teach me about black holes", "simulate a volcano erupting", "map out the causes of World War 1"]) {
+    assert.equal(command(s)?.kind, "holo", `"${s}" builds a hologram`);
+  }
+  assert.equal(command("teach me about plants that live in deserts")?.kind, "holo", "a relative \"that\" isn't something in front of you");
+  assert.equal(command("search the web for cats in the browser").q, "cats");
+  for (const s of ["show me how this works", "teach me about this", "explain quantum physics", "what is the capital of France", "show my photos", "show me what you can do"]) {
+    assert.notEqual(command(s)?.kind, "holo", `"${s}" isn't a hologram`);
+  }
+  assert.equal(command("show me what you can do").kind, "help");
+  assert.equal(command("next").kind, "holo-next");
+  assert.equal(command("go back").kind, "holo-back");
+  assert.equal(command("say that again").kind, "holo-again");
+  assert.equal(command("close the hologram").kind, "holo-hide");
+});
+
+test("a hologram from the AI: checked and trimmed, never code, no loops", () => {
+  const h = parseHolo('```json\n{"title":"The solar system","kind":"model","say":"Here is our solar system.","items":[{"label":"Sun","size":5,"color":"amber","orbit":-1},{"label":"Earth","note":"our home","size":2,"color":"sky","orbit":0},{"label":"Moon","size":1,"color":"white","orbit":1},{"label":"Mars","size":2,"color":"rose","orbit":0,"link":[9,1,3]}],"steps":[{"say":"The Sun is in the middle.","focus":[0,7]}]}\n```');
+  assert.equal(h.kind, "model");
+  assert.equal(h.items.length, 4);
+  assert.equal(h.items[2].orbit, 1, "the Moon circles the Earth");
+  assert.deepEqual(plain(h.items[3].link), [1], "links only to real, other parts");
+  assert.deepEqual(plain(h.steps[0].focus), [0]);
+  // A part with no name is dropped, and references still mean the same parts.
+  const gap = parseHolo('{"kind":"model","items":[{"label":"Sun"},{"label":""},{"label":"Earth","orbit":0},{"label":"Moon","orbit":2,"link":[1,0]}],"steps":[{"say":"Moon","focus":[3,1]}]}');
+  assert.deepEqual(plain(gap.items.map((x) => x.label)), ["Sun", "Earth", "Moon"]);
+  assert.equal(gap.items[2].orbit, 1, "the Moon still circles the Earth");
+  assert.deepEqual(plain(gap.items[2].link), [0], "a link to the dropped part goes, not to another");
+  assert.deepEqual(plain(gap.steps[0].focus), [2]);
+  assert.equal(parseHolo('{"items":[{"label":{"x":1}},{"label":"A"},{"label":"B"}]}').items.length, 2, "a name that isn't text isn't a part");
+  const loop = parseHolo('{"kind":"model","items":[{"label":"A","orbit":1},{"label":"B","orbit":0}]}');
+  assert.equal(loop.items[0].orbit, -1, "only an earlier part can be circled: no loops");
+  assert.equal(loop.items[1].orbit, 0);
+  const many = parseHolo(JSON.stringify({ kind: "galaxy", items: Array.from({ length: 12 }, (_, i) => ({ label: "Idea " + i, color: "neon", size: 99 })) }));
+  assert.equal(many.kind, "map", "an unknown kind becomes a map");
+  assert.equal(many.items.length, 8, "eight parts at most");
+  assert.ok(many.items.every((x) => x.color !== "neon" && x.size === 5));
+  assert.equal(parseHolo('{"kind":"chart","items":[{"label":"A"},{"label":"B"}]}'), null, "a chart needs numbers");
+  for (const junk of ["", "plain words", "{broken", '{"items":[]}', '{"items":[{"label":"only one"}]}']) assert.equal(parseHolo(junk), null, `"${junk}" isn't a hologram`);
+  assert.ok(!/[{}`*]/.test(parseHolo('{"say":"**Hi** `x`","items":[{"label":"A"},{"label":"B"}]}').say));
+  assert.match(HOLO_SYSTEM, /never give the answer/);
+  assert.match(HOLO_SYSTEM, /Never invent facts/);
+});
+
+test("search the web: the room's browser opens; with your PC up, the PC searches", async () => {
+  const b = browser({ pcs: [{ name: "My PC", link: "https://pc.example/", pass: "p" }], pcAnswers: { talk: { text: "Searched on your PC." } } });
+  let r = await b.vr.gate("search the web for cheap flights");
+  assert.deepEqual(plain(b.calls.filter((c) => c[0] === "webSearch")), [["webSearch", "cheap flights"]]);
+  assert.equal(r.say, "Here's what Google found.");
+  b.scene.shown = true;
+  r = await b.vr.gate("search for cats");
+  assert.equal(r.say, "Searched on your PC.", "with the PC on the big screen, it searches there");
+  r = await b.vr.gate("search for cats in the browser");
+  assert.deepEqual(plain(b.calls.filter((c) => c[0] === "webSearch").pop()), ["webSearch", "cats"], "unless you say in the browser");
+  await b.vr.gate("close the browser");
+  assert.ok(b.calls.some((c) => c[0] === "webClose"));
+});
+
+test("teach me in 3D: the AI's design is built, next walks the lesson; elsewhere next is just words", async () => {
+  const design = {
+    title: "How the heart pumps", kind: "steps", say: "Your heart is two pumps side by side.",
+    items: [{ label: "Right atrium" }, { label: "Right ventricle" }, { label: "Lungs" }],
+    steps: [{ say: "Blood comes back from the body.", focus: [0] }, { say: "It's pushed to the lungs.", focus: [1, 2] }],
+  };
+  const b = browser({ think: async () => JSON.stringify(design) });
+  let r = await b.vr.gate("next");
+  assert.deepEqual(plain(r), { said: "next" }, "no hologram up: next goes to the brain");
+  r = await b.vr.gate("teach me how the heart works");
+  const think = b.calls.find((c) => c[0] === "think");
+  assert.equal(think[2], HOLO_SYSTEM);
+  assert.ok(b.calls.some((c) => c[0] === "holoBuilding"));
+  assert.equal(b.calls.find((c) => c[0] === "holoShow")[1].title, "How the heart pumps");
+  assert.match(r.say, /^Your heart is two pumps side by side\. Say next/);
+  assert.equal((await b.vr.gate("next")).say, "Blood comes back from the body.");
+  assert.deepEqual(plain(b.calls.filter((c) => c[0] === "holoFocus").pop()), ["holoFocus", [0], 0]);
+  assert.equal((await b.vr.gate("next")).say, "It's pushed to the lungs.");
+  assert.match((await b.vr.gate("next")).say, /last step/);
+  assert.equal((await b.vr.gate("go back")).say, "Blood comes back from the body.");
+  assert.equal((await b.vr.gate("say that again")).say, "Blood comes back from the body.");
+  // Hands-free, long after Izuki spoke: a lesson's "next" still needs no name.
+  b.vr.handsFree(true);
+  b.vr.line("izuki", "Blood comes back from the body.");
+  await new Promise((r) => setTimeout(r, 5));
+  assert.equal((await b.vr.gate("next")).say, "It's pushed to the lungs.");
+  b.vr.handsFree(false);
+  await b.vr.gate("close the hologram");
+  assert.ok(b.calls.some((c) => c[0] === "holoClose"));
+});
+
+test("a hologram closed (or replaced) while it's designed never comes back", async () => {
+  let release;
+  const slow = new Promise((r) => { release = r; });
+  const b = browser({ think: () => slow.then(() => JSON.stringify({ title: "Old", kind: "map", say: "Old one.", items: [{ label: "A" }, { label: "B" }] })) });
+  const pending = b.vr.gate("show me the solar system");
+  await new Promise((r) => setTimeout(r, 5));
+  b.vr.api().holoClosed();
+  release();
+  const r = await pending;
+  assert.ok(!b.calls.some((c) => c[0] === "holoShow"), "the closed one isn't built");
+  assert.notEqual(r.say, "Old one. Point at any part to hear more.");
+});
+
+test("a hologram the AI couldn't design: its words are said (never code), and nothing is left up", async () => {
+  let b = browser({ think: async () => "The heart has four chambers." });
+  let r = await b.vr.gate("teach me how the heart works");
+  assert.equal(r.say, "The heart has four chambers.");
+  assert.ok(b.calls.some((c) => c[0] === "holoClose"));
+  b = browser({ think: async () => '{"title": "broken' });
+  r = await b.vr.gate("show me the solar system");
+  assert.ok(!/[{}"]/.test(r.say), r.say);
 });
 
 test("vr-scene.js is built from vr-scene.src.js (run node tools/build-vr.cjs)", () => {
