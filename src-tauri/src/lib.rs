@@ -9,6 +9,7 @@ pub mod attachments;
 pub mod briefing;
 pub mod browser;
 pub mod bugs;
+pub mod agent_notes;
 /// The Smart Vision Developer Observer — owner-only, compiled in only via
 /// `--features devvision` so release builds never carry it (milestone §5).
 #[cfg(feature = "devvision")]
