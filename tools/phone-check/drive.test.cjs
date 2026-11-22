@@ -224,6 +224,14 @@ const fix = (lat, lon, speed, at) => ({ coords: { latitude: lat, longitude: lon,
   ok(back.state === 'rest' && back.text === '', 'orb: back in the app, the orb stops claiming a drive');
   document.visibilityState = 'hidden';
 
+  // the line lands with the route, not at the next five-second check
+  const beforeLanding = orbs.length;
+  say('take me to walmart');
+  await settle();
+  await settle();
+  ok(orbs.slice(beforeLanding).some((o) => o.state === 'trip' && /to walmart/.test(o.text)), 'orb: the line lands with the route, not a minute later');
+  document.visibilityState = 'visible';
+
   // no route: no line, rather than a made-up time
   mode = 'noroute';
   say('take me to blorptown');
