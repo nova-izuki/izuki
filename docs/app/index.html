@@ -890,6 +890,8 @@
   const bug = (message, extra) => { try { window.izukiBugs?.report(message, extra); } catch {} };
   /** Note what just happened, to go with a later report. */
   const note = (message) => { try { window.izukiBugs?.crumb(message, "voice"); } catch {} };
+  // A standing fact for the copy ("why didn't it search?"), not a report.
+  const fact = (name, value) => { try { window.izukiBugs?.fact(name, value); } catch {} };
 
   // ------------------------------------------------------------ storage
   const store = {
@@ -1854,6 +1856,7 @@
           noToolsUntil = Date.now() + 3600000;
           store.set("noToolsUntil", noToolsUntil);
           if (turnMeta) { turnMeta.search.offered = false; turnMeta.search.why = "Web search: Google refused it for this answer."; }
+          fact("search", "Gemini refused the tools (400)");
           return gemini(contents, onText, model, true, system);
         }
       }
@@ -1863,6 +1866,7 @@
         noToolsUntil = Date.now() + 3600000;
         store.set("noToolsUntil", noToolsUntil);
         if (turnMeta) { turnMeta.search.offered = false; turnMeta.search.why = "Web search: today's search allowance is used up."; }
+        fact("search", "search allowance used up (429)");
         return gemini(contents, onText, model, true, system);
       }
       if ((res.status === 429 || res.status === 503) && model === MODEL) {

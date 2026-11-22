@@ -1,13 +1,23 @@
 const fs = require('fs');
 const src = fs.readFileSync(require('path').join(__dirname, '../../docs/app/drive.js'), 'utf8');
 const store = {};
+// The error callback Drive mode hands the browser, so a refusal can be played.
+let geoFail = null;
 const el = () => ({ classList: { add() {}, remove() {}, toggle() {} }, setAttribute() {}, insertBefore() {}, querySelector() { return null; }, addEventListener() {}, style: {}, textContent: '', hidden: false });
 global.window = { IzukiCore: { calling: () => true, startCall() {}, busy: () => false, speak: async () => {} } };
+// The note channel the page already has (shared/bugs.js), kept here as plain
+// lists so a check can see what would have been written down.
+const facts = {}, problems = [], crumbs = [];
+window.izukiBugs = {
+  fact: (k, v) => { facts[k] = v; },
+  report: (m) => problems.push(String(m)),
+  crumb: (m, c) => crumbs.push(c + ": " + m),
+};
 // Node 26 has its own read-only `navigator`, so it has to be defined, not set.
 Object.defineProperty(globalThis, 'navigator', {
   configurable: true,
   writable: true,
-  value: { language: 'en-US', geolocation: { watchPosition: () => 1, clearWatch() {} } },
+  value: { language: 'en-US', geolocation: { watchPosition: (ok, bad) => { geoFail = bad; return 1; }, clearWatch() {} } },
 });
 global.localStorage = { getItem: (k) => (k in store ? store[k] : null), setItem: (k, v) => (store[k] = v) };
 global.document = { getElementById: () => el(), createElement: () => ({ ...el(), innerHTML: '' }), head: { appendChild() {} }, addEventListener() {}, visibilityState: 'visible' };
@@ -264,6 +274,46 @@ const fix = (lat, lon, speed, at) => ({ coords: { latitude: lat, longitude: lon,
   eval(src);
   window.IzukiDrive.resume();
   ok(window.IzukiDrive.trip === null && store['izuki.drive.trip'] === 'null', 'persist: a trip from hours ago is not picked back up');
+
+  // ---- what used to fail in silence now says so ---------------------------
+  const D3 = window.IzukiDrive;   // the copy the last check left behind
+  mode = 'ok';
+  D3.start();
+  ok(typeof geoFail === 'function', 'notes: the location watch has an error handler');
+  geoFail({ code: 1, message: 'User denied Geolocation' });
+  ok(facts['location'] === 'denied', 'notes: a refused location is written down');
+  geoFail({ code: 1, message: 'User denied Geolocation' });
+  ok(problems.filter((p) => /location denied/.test(p)).length === 1, 'notes: the same refusal is not written twice');
+  geoFail({ code: 3, message: 'timeout' });
+  ok(facts['location'] === 'timed out' && problems.filter((p) => /location timed out/.test(p)).length === 1, 'notes: a different reason is written down once too');
+
+  // a lookup that fails on every source keeps why
+  mode = 'offline';
+  D3.gate('take me to costco');
+  await settle();
+  await settle();
+  ok(/offline|http/.test(facts['place lookup'] || ''), 'notes: a place lookup that failed keeps its reason');
+
+  // the router refusing is the difference between a stale line and no line
+  mode = 'ok';
+  D3.gate('take me to walmart');
+  await settle();
+  await settle();
+  D3.track(fix(43.0000, -79.0000, 13, Date.now()));
+  mode = 'offline';
+  delete facts.route;
+  await D3.routeNow();
+  ok(/offline|http/.test(facts.route || ''), 'notes: a route the router refused keeps its reason');
+
+  // and whether Android took the orb line at all
+  mode = 'ok';
+  window.IzukiNative = { orb: () => Promise.reject(new Error('refused')) };
+  document.visibilityState = 'hidden';
+  await D3.routeNow();
+  await settle();
+  ok(facts.orb === 'Android refused the orb', 'notes: an orb the phone refused is written down');
+  document.visibilityState = 'visible';
+  delete window.IzukiNative;
 
   let bad = 0;
   for (const [c, w] of cases) { if (!c) { bad++; console.log('FAIL', w); } }
