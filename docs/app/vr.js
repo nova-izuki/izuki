@@ -221,7 +221,13 @@
     stream: null, video: null, idle: 0,
     /** Bumped by close(): a camera that opens after you left VR is shut at once. */
     gen: 0,
+    /**
+     * Only a headset's own cameras count: on a PC (a tethered headset or the
+     * 3D preview) the only camera is a webcam facing the person, and a
+     * photo of their face isn't "what's in front of me".
+     */
     async has() {
+      if (!HEADSET_UA.test(UA)) return false;
       try {
         const list = await nav.mediaDevices?.enumerateDevices?.();
         return !!list?.some((d) => d.kind === "videoinput");
@@ -233,12 +239,16 @@
       const md = nav.mediaDevices;
       let stream;
       try {
-        stream = await md.getUserMedia({ video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 960 } }, audio: false });
+        stream = await md.getUserMedia({ video: { facingMode: { exact: "environment" }, width: { ideal: 1280 }, height: { ideal: 960 } }, audio: false });
       } catch (e) {
         if (e?.name !== "OverconstrainedError" && e?.name !== "NotFoundError") throw e;
-        stream = await md.getUserMedia({ video: true, audio: false });
+        // Headset browsers don't always label their cameras: any camera, but never one facing the person.
+        stream = await md.getUserMedia({ video: { width: { ideal: 1280 }, height: { ideal: 960 } }, audio: false });
       }
       const stop = () => { try { stream.getTracks().forEach((t) => t.stop()); } catch {} };
+      let facing = "";
+      try { facing = stream.getVideoTracks?.()[0]?.getSettings?.().facingMode || ""; } catch {}
+      if (facing === "user") { stop(); throw Object.assign(new Error("That camera faces you, not the room."), { name: "NotFoundError", facing: true }); }
       if (my !== this.gen) { stop(); throw closedError(); }
       const v = document.createElement("video");
       v.muted = true; v.playsInline = true; v.srcObject = stream;
@@ -286,7 +296,11 @@
   const pc = {
     current() { const list = pcs(); const want = store.get("pc", ""); return list.find((p) => p.link === want) || list[0] || null; },
     name() { return this.current()?.name || "your PC"; },
-    async call(path, init = {}) {
+    /**
+     * One request to the PC, its body read by `read(response)` inside the
+     * same 8-second limit (a stalled download counts as no answer too).
+     */
+    async call(path, init = {}, read = (r) => r.json().catch(() => ({}))) {
       const p = this.current();
       if (!p) return { error: PC_WORDS.pair };
       const base = p.link.endsWith("/") ? p.link : p.link + "/";
@@ -294,7 +308,7 @@
       const t = setTimeout(() => ctl.abort(), 8000);
       try {
         const r = await fetch(base + path, { ...init, cache: "no-store", signal: ctl.signal, headers: { ...(init.headers || {}), Authorization: "Bearer " + p.pass } });
-        return { r };
+        return { r, body: await read(r) };
       } catch {
         return { error: "I can't reach your PC. Is Izuki open there, with the phone link on?" };
       } finally { clearTimeout(t); }
@@ -302,22 +316,20 @@
     explain(text) { const k = String(text || "").trim(); return PC_WORDS[k] || (k ? "Your PC said: " + k.slice(0, 120) : "Your PC didn't answer."); },
     /** The PC's screen now: { blob } or { error }. */
     async shot(w = 1280) {
-      const { r, error } = await this.call("remote/screen?w=" + w);
+      const picture = (r) => r.ok && /^image\//.test(r.headers.get("content-type") || "image/");
+      const { r, body, error } = await this.call("remote/screen?w=" + w, {}, (res) => (picture(res) ? res.blob() : res.text().catch(() => "")));
       if (error) return { error };
       if (r.status === 401) return { error: PC_WORDS.pair };
-      if (!r.ok || !/^image\//.test(r.headers.get("content-type") || "image/")) return { error: this.explain(await r.text().catch(() => "")) };
-      return { blob: await r.blob() };
+      return picture(r) ? { blob: body } : { error: this.explain(body) };
     },
     async send(body) {
-      const { r, error } = await this.call("remote", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      const { body: v, error } = await this.call("remote", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       if (error) return { ok: false, error };
-      const v = await r.json().catch(() => ({}));
       return v.ok ? v : { ok: false, error: this.explain(v.error) };
     },
     async status() {
-      const { r, error } = await this.call("remote/status");
+      const { body: v, error } = await this.call("remote/status");
       if (error) return { error };
-      const v = await r.json().catch(() => ({}));
       if (v.ok === false) return { error: this.explain(v.error) };
       return { doing: String(v.doing || ""), busy: !!v.busy };
     },
@@ -334,6 +346,8 @@
   let lastReply = "";
   /** The orb state the app last set: a look borrows "thinking" and gives it back. */
   let appState = "";
+  /** Which visit to VR this is: a look from an earlier one never shows or speaks in a later one. */
+  let epoch = 0;
   let sceneP = null;
   const sceneModule = () => (sceneP ||= import("./vr-scene.js").catch((e) => { sceneP = null; throw e; }));
 
@@ -357,12 +371,15 @@
         if (c.kind === "pc-hide") { vr.scene?.pcClose(); return done("Okay, I put your PC away."); }
         if (c.kind === "pc") return done((await vr.scene?.pcOpen()) || "Here's " + pc.name() + ".");
         if (c.kind === "look") {
-          if (!(await cam.has())) {
+          const visit = epoch;
+          const hasCamera = await cam.has();
+          if (!vr.active || visit !== epoch) return done(lookTrouble(closedError()));
+          if (!hasCamera) {
             // No camera here: with the PC open, "what's this?" is about the PC.
             if (vr.scene?.pcShown?.()) return { said: s };
             return done("I can't see through this headset's cameras from here. On a Quest 3 or 3S, allow the camera for this site and ask again. You can still ask me anything, or show me your PC.");
           }
-          return done(await look(s));
+          return done(await look(s, visit));
         }
       } catch (e) {
         return done(lookTrouble(e));
@@ -384,27 +401,31 @@
 
   function lookTrouble(e) {
     const n = e?.name || "";
+    if (e?.facing) return "The only camera I can use here faces you, not the room, so I can't see what you mean. On a Quest 3 or 3S, allow the headset camera for this site and ask again.";
     if (n === "NotAllowedError" || n === "SecurityError") return "I need your yes to use the headset camera. Allow the camera for this site, then ask again.";
     if (n === "NotFoundError" || n === "NotReadableError") return "The headset camera isn't free right now. Close other apps using it and ask again.";
     if (n === "AbortError") return String(e.message || "Okay, I stopped looking.");
     return "I couldn't look just now: " + String(e?.message || e || "something went wrong").slice(0, 120);
   }
 
-  async function look(question) {
+  async function look(question, visit = epoch) {
     const core = g.IzukiCore;
     if (!core?.see) throw new Error("Izuki isn't ready yet.");
+    const current = () => vr.active && visit === epoch;
     vr.scene?.orb("thinking");
     try {
       const shot = await cam.frame();
       // Left VR while the photo was being taken: nothing is sent.
-      if (!vr.active) throw closedError();
+      if (!current()) throw closedError();
       vr.scene?.showLook({ url: shot.url, w: shot.w, h: shot.h, marks: [], say: "Looking…" });
       const reply = await core.see(lookPrompt(question), shot.b64, "image/jpeg", LOOK_SYSTEM);
+      // Left (or left and came back) while the AI looked: the answer is dropped.
+      if (!current()) throw closedError();
       const { say, marks } = parseLook(reply);
       vr.scene?.showLook({ url: shot.url, w: shot.w, h: shot.h, marks, say });
       return say;
     } finally {
-      vr.scene?.orb(appState);
+      if (current()) vr.scene?.orb(appState);
     }
   }
 
@@ -432,6 +453,7 @@
     notes,
     lastReply: () => lastReply,
     exited() {
+      epoch++;
       vr.active = false;
       vr.scene = null;
       cam.close();
@@ -462,6 +484,7 @@
       sessionP?.then((s) => s.end().catch(() => {}), () => {});
       throw e;
     }
+    epoch++;
     vr.active = true;
     try { g.IzukiCore?.preferRecorder?.(true); } catch {}
     try {

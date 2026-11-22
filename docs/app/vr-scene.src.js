@@ -184,25 +184,6 @@ export async function start({ mode, session, api, tint }) {
   camera.position.set(0, 1.6, 0);
   scene.add(camera);
 
-  let floorY = 0;
-  if (!flat) {
-    try {
-      renderer.xr.enabled = true;
-      let ref = "local-floor";
-      try { await session.requestReferenceSpace("local-floor"); } catch { ref = "local"; floorY = -1.6; }
-      renderer.xr.setReferenceSpaceType(ref);
-      await renderer.xr.setSession(session);
-      try { renderer.xr.setFoveation(1); } catch {}
-    } catch (e) {
-      // Couldn't go in: leave nothing behind (vr.js says why).
-      canvas.remove();
-      renderer.dispose();
-      try { await session.end(); } catch {}
-      throw e;
-    }
-  }
-  if (!passthrough) addSpace(scene, floorY);
-
   const disposables = [];
   const track = (o) => { disposables.push(o); return o; };
 
@@ -394,6 +375,30 @@ export async function start({ mode, session, api, tint }) {
     }
   }
 
+  // Into the session only now, with nothing awaited before it: the controllers
+  // above already listen, so one that connects the moment the session starts
+  // is never missed.
+  let floorY = 0;
+  if (!flat) {
+    try {
+      renderer.xr.enabled = true;
+      const feats = session.enabledFeatures;
+      const ref = !feats || feats.includes("local-floor") ? "local-floor" : "local";
+      if (ref === "local") floorY = -1.6;
+      renderer.xr.setReferenceSpaceType(ref);
+      await renderer.xr.setSession(session);
+      try { renderer.xr.setFoveation(1); } catch {}
+    } catch (e) {
+      // Couldn't go in: leave nothing behind (vr.js says why).
+      for (const off of cleanups) { try { off(); } catch {} }
+      canvas.remove();
+      renderer.dispose();
+      try { await session.end(); } catch {}
+      throw e;
+    }
+  }
+  if (!passthrough) addSpace(scene, floorY);
+
   // The mouse (and touch) on a normal screen.
   const mouse = new Vector2(), mouseP = flat ? pointer("mouse", null) : null;
   // The preview starts looking a little down, so the buttons under the orb are in view.
@@ -417,6 +422,8 @@ export async function start({ mode, session, api, tint }) {
       canvas.setPointerCapture?.(e.pointerId);
     });
     on(canvas, "pointerup", (e) => { toNdc(e); looking = null; aim(mouseP); release(mouseP); });
+    // Cancelled (the browser took the gesture): nothing is tapped or dropped.
+    on(canvas, "pointercancel", () => { looking = null; mouseP.press = null; });
     on(canvas, "wheel", (e) => { const u = mouseP.hit?.object.userData.ui; if (u?.scroll) { e.preventDefault(); u.scroll(Math.sign(e.deltaY) * Math.min(5, Math.ceil(Math.abs(e.deltaY) / 60))); } }, { passive: false });
     on(window, "keydown", (e) => {
       if (e.key === "Escape") stop();
@@ -464,7 +471,7 @@ export async function start({ mode, session, api, tint }) {
   void api.hasCamera().then((yes) => { lookB.shown = !!yes; layoutButtons(); });
 
   // ---- what Izuki looked at -----------------------------------------------------
-  const lookUi = { group: new Group(), photo: null, text: card(0.5, 0.15), img: null, url: "", marks: [], say: "", t0: 0, anim: false, close: card(0.05, 0.05) };
+  const lookUi = { group: new Group(), photo: null, text: card(0.5, 0.15), img: null, url: "", want: "", closed: "", seq: 0, marks: [], say: "", t0: 0, anim: false, close: card(0.05, 0.05) };
   // In the room, not on the orb: it opens in view, a little to your right, so
   // it doesn't cover the thing you're asking about. Carry it anywhere.
   lookUi.group.visible = false;
@@ -479,7 +486,9 @@ export async function start({ mode, session, api, tint }) {
     ctx.beginPath(); ctx.moveTo(w * 0.34, h * 0.34); ctx.lineTo(w * 0.66, h * 0.66); ctx.moveTo(w * 0.66, h * 0.34); ctx.lineTo(w * 0.34, h * 0.66); ctx.stroke();
     lookUi.close.update();
   }
-  ui(lookUi.close.mesh, { tap: () => { lookUi.group.visible = false; } });
+  // Closed means closed: a photo still decoding, or this look's answer
+  // arriving later, doesn't bring it back. A new look opens it again.
+  ui(lookUi.close.mesh, { tap: () => { lookUi.seq++; lookUi.closed = lookUi.want; lookUi.group.visible = false; } });
 
   function drawLookText() {
     const { ctx, w, h } = lookUi.text;
@@ -525,10 +534,14 @@ export async function start({ mode, session, api, tint }) {
     lookUi.say = "Looking…"; drawLookText();
   }
   async function showLook({ url, w, h, marks, say }) {
+    if (url === lookUi.closed) return;
+    const my = ++lookUi.seq;
+    lookUi.want = url;
     if (url !== lookUi.url) {
       const img = new Image();
       img.src = url;
       try { await img.decode(); } catch { return; }
+      if (my !== lookUi.seq) return;
       lookUi.img = img; lookUi.url = url;
       // At most 0.5 m wide and 0.42 m tall, keeping the photo's shape.
       const aspect = h / Math.max(1, w);
@@ -556,7 +569,7 @@ export async function start({ mode, session, api, tint }) {
   }
 
   // ---- your PC, big -------------------------------------------------------------
-  const pcUi = { group: new Group(), open: false, gen: 0, err: "", doing: "", busy: false, screen: null, bar: card(1.6, 0.09), handle: card(0.32, 0.035), aspect: 9 / 16 };
+  const pcUi = { group: new Group(), open: false, live: false, gen: 0, err: "", doing: "", busy: false, screen: null, bar: card(1.6, 0.09), handle: card(0.32, 0.035), aspect: 9 / 16 };
   pcUi.group.visible = false;
   scene.add(pcUi.group);
   track(pcUi.bar.tex); track(pcUi.handle.tex);
@@ -574,13 +587,15 @@ export async function start({ mode, session, api, tint }) {
     pcUi.bar.mesh.position.set(0, -half - 0.06, 0);
     pcUi.handle.mesh.position.set(0, half + 0.04, 0);
     ui(s.mesh, {
+      // Only on a real picture of the PC: never click blind through
+      // "Connecting…" or an error message.
       tap: (hit) => {
-        if (!hit?.uv) return;
+        if (!hit?.uv || !pcUi.live) return;
         const { nx, ny } = util.pcPoint(hit.uv.x, hit.uv.y);
         clickRing(hit.point);
         void api.pc.send({ op: "point", nx, ny }).then((r) => { if (r?.ok !== false) return api.pc.send({ op: "click", button: "left" }); pcUi.err = r.error || ""; drawBar(); });
       },
-      scroll: (n) => { void api.pc.send({ op: "scroll", dy: n }); },
+      scroll: (n) => { if (pcUi.live) void api.pc.send({ op: "scroll", dy: n }); },
     });
     return s;
   }
@@ -596,6 +611,7 @@ export async function start({ mode, session, api, tint }) {
   ui(pcUi.handle.mesh, { drag: () => pcUi.group });
 
   function drawScreenMessage(text) {
+    pcUi.live = false;
     const s = pcUi.screen, { ctx, w, h } = s;
     glass(ctx, w, h, 24);
     ctx.font = `500 ${Math.round(h * 0.05)}px ${FONT}`;
@@ -608,6 +624,7 @@ export async function start({ mode, session, api, tint }) {
     const s = pcUi.screen;
     s.ctx.drawImage(bmp, 0, 0, s.w, s.h);
     s.update();
+    pcUi.live = true;
   }
   function drawBar() {
     const { ctx, w, h } = pcUi.bar;
@@ -644,7 +661,7 @@ export async function start({ mode, session, api, tint }) {
           bmp = await createImageBitmap(r.blob);
           if (current()) { drawScreen(bmp); if (pcUi.err) { pcUi.err = ""; drawBar(); } }
         } catch {
-          if (current()) { pcUi.err = "A picture from your PC didn't come through."; drawBar(); }
+          if (current()) { pcUi.err = "A picture from your PC didn't come through."; drawScreenMessage(pcUi.err); drawBar(); }
         } finally { bmp?.close?.(); }
       } else {
         pcUi.err = r.error || "Your PC didn't answer.";
@@ -783,7 +800,7 @@ export async function start({ mode, session, api, tint }) {
       rig.position.x += (goal.x - rig.position.x) * k;
       rig.position.y += (goal.y - rig.position.y) * k;
       rig.position.z += (goal.z - rig.position.z) * k;
-      if (Math.hypot(goal.x - rig.position.x, goal.z - rig.position.z) < 0.02) goal = null;
+      if (Math.hypot(goal.x - rig.position.x, goal.y - rig.position.y, goal.z - rig.position.z) < 0.02) goal = null;
     }
     faceHead(rig);
   }

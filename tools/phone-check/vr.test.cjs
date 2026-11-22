@@ -110,7 +110,7 @@ test("a point on the PC panel becomes the same point on the PC", () => {
 });
 
 // ---- the browser side, with a pretend headset -------------------------------
-function browser({ camera = false, see = async () => "{}", denied = false, pcs = [], playFails = false, xr = null } = {}) {
+function browser({ camera = false, see = async () => "{}", denied = false, pcs = [], playFails = false, xr = null, ua = "Mozilla/5.0 (X11; Linux x86_64; Quest 3) OculusBrowser/40.0", facing = "" } = {}) {
   const local = new Map([["izuki.remotePcs", JSON.stringify(pcs)]]);
   const calls = [];
   let stopped = 0;
@@ -127,10 +127,10 @@ function browser({ camera = false, see = async () => "{}", denied = false, pcs =
   const window = {
     location: { search: "" },
     navigator: {
-      userAgent: "Mozilla/5.0 (X11; Linux x86_64; Quest 3) OculusBrowser/40.0",
+      userAgent: ua,
       mediaDevices: {
         enumerateDevices: async () => (camera ? [{ kind: "videoinput" }] : [{ kind: "audioinput" }]),
-        getUserMedia: async () => { if (denied) { const e = new Error("no"); e.name = "NotAllowedError"; throw e; } return { getTracks: () => [{ stop() { stopped++; } }] }; },
+        getUserMedia: async () => { if (denied) { const e = new Error("no"); e.name = "NotAllowedError"; throw e; } const track = { stop() { stopped++; }, getSettings: () => (facing ? { facingMode: facing } : {}) }; return { getTracks: () => [track], getVideoTracks: () => [track] }; },
       },
       xr,
     },
@@ -163,6 +163,31 @@ test("leaving VR while the photo is taken: nothing is sent", async () => {
   const r = await pending;
   assert.match(r.say, /left VR/);
   assert.ok(!b.calls.some((c) => c[0] === "see"), "the photo never went to the AI");
+});
+
+test("on a PC (tethered headset or preview) the webcam is never used to look", async () => {
+  const b = browser({ camera: true, ua: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/140.0" });
+  const r = await b.vr.gate("what's this?");
+  assert.match(r.say, /can't see through this headset's cameras/);
+  assert.ok(!b.calls.some((c) => c[0] === "see"));
+});
+
+test("a camera facing the person is refused and closed", async () => {
+  const b = browser({ camera: true, facing: "user" });
+  const r = await b.vr.gate("what's this?");
+  assert.match(r.say, /faces you, not the room/);
+  assert.equal(b.stopped(), 1);
+  assert.ok(!b.calls.some((c) => c[0] === "see"));
+});
+
+test("an answer that arrives after you left VR is dropped, and the orb is left alone", async () => {
+  let b;
+  b = browser({ camera: true, see: async () => { b.vr.active = false; return '{"say":"A lamp."}'; } });
+  b.vr.orb("listening");
+  const r = await b.vr.gate("what's this?");
+  assert.match(r.say, /left VR/);
+  assert.equal(b.calls.filter((c) => c[0] === "showLook").length, 1, "only the photo; no stale answer drawn");
+  assert.deepEqual(plain(b.scene.states), ["listening", "thinking"], "the orb isn't touched after leaving");
 });
 
 test("if the 3D room can't load, the headset session is ended, not left empty", async () => {
