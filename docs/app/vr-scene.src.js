@@ -26,9 +26,27 @@ import {
   TorusGeometry, Vector2, Vector3, WebGLRenderer,
 } from "three";
 
-const FONT = `"Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`;
-const TEAL = "#5eead4", VIOLET = "#a78bfa", PINK = "#f472b6";
-const LABEL = { listening: "Listening…", thinking: "Thinking…", speaking: "Izuki" };
+// The room's type: IZUKI NOVA's own faces (the site's self-hosted Sora for
+// labels, Manrope for words), loaded before the first card is drawn.
+const DISPLAY = `"Sora", "Manrope", system-ui, sans-serif`;
+const FONT = `"Manrope", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`;
+// Calm precision: graphite panels, two steps of white, one accent (the orb's
+// teal) for what's live or on, amber only for a warning.
+const INK = "#F4F6FA", INK2 = "#A7B0C0", TEAL = "#5EEAD4", WARN = "#FBBF24";
+const LABEL = { listening: "Listening", thinking: "Thinking" };
+/** The sharpest texture filtering this headset offers (set once the renderer exists). */
+let ANISO = 1;
+
+async function loadFonts() {
+  if (typeof FontFace === "undefined" || !document.fonts) return;
+  const faces = [
+    new FontFace("Sora", "url(../fonts/sora.woff2)", { weight: "300 800" }),
+    new FontFace("Manrope", "url(../fonts/manrope.woff2)", { weight: "400 700" }),
+  ];
+  const load = Promise.all(faces.map(async (f) => { await f.load(); document.fonts.add(f); }));
+  // Never hold the room up for long: the system face stands in if the fonts are slow.
+  await Promise.race([load, new Promise((r) => setTimeout(r, 2500))]).catch(() => {});
+}
 
 const NOISE = `
 float hash3(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
@@ -80,13 +98,15 @@ void main() {
 
 // ---------------------------------------------------------------------------
 // Cards: a canvas drawn in 2D, shown on a flat panel in the room.
-function card(wM, hM, px = 2000) {
+function card(wM, hM, px = 2400) {
   const canvas = document.createElement("canvas");
   canvas.width = Math.max(8, Math.round(wM * px));
   canvas.height = Math.max(8, Math.round(hM * px));
   const ctx = canvas.getContext("2d");
   const tex = new CanvasTexture(canvas);
   tex.colorSpace = SRGBColorSpace;
+  // Text stays sharp when a panel is seen at an angle.
+  tex.anisotropy = ANISO;
   const mat = new MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false });
   const mesh = new Mesh(new PlaneGeometry(wM, hM), mat);
   return { canvas, ctx, tex, mesh, w: canvas.width, h: canvas.height, update() { tex.needsUpdate = true; } };
@@ -103,30 +123,41 @@ function rr(ctx, x, y, w, h, r) {
   ctx.closePath();
 }
 
-/** The glass every card shares: deep navy, a teal-violet-pink rim. */
+/**
+ * The panel every card shares: dark graphite, nearly opaque (it has to read
+ * over a real room), a hairline edge, and its top edge catching the light.
+ * hot: the accent edge (pointed at, or on).
+ */
 function glass(ctx, w, h, r, opts = {}) {
   ctx.clearRect(0, 0, w, h);
-  const pad = Math.max(2, h * 0.012);
+  const line = 3, pad = line;
   rr(ctx, pad, pad, w - pad * 2, h - pad * 2, r);
-  ctx.fillStyle = opts.fill || "rgba(10, 13, 30, 0.86)";
+  const fill = ctx.createLinearGradient(0, 0, 0, h);
+  fill.addColorStop(0, opts.fill0 || "rgba(24, 27, 36, 0.94)");
+  fill.addColorStop(1, opts.fill1 || "rgba(13, 15, 21, 0.95)");
+  ctx.fillStyle = fill;
   ctx.fill();
-  if (opts.rim !== false) {
-    const g = ctx.createLinearGradient(0, 0, w, h);
-    g.addColorStop(0, opts.hot ? "rgba(94,234,212,1)" : "rgba(94,234,212,.7)");
-    g.addColorStop(0.55, opts.hot ? "rgba(167,139,250,1)" : "rgba(167,139,250,.55)");
-    g.addColorStop(1, opts.hot ? "rgba(244,114,182,1)" : "rgba(244,114,182,.55)");
-    ctx.strokeStyle = g;
-    ctx.lineWidth = pad * (opts.hot ? 1.6 : 1);
-    ctx.stroke();
+  ctx.lineWidth = opts.hot ? line * 1.6 : line;
+  ctx.strokeStyle = opts.hot ? "rgba(94, 234, 212, 0.9)" : "rgba(255, 255, 255, 0.13)";
+  ctx.stroke();
+  if (!opts.hot) {
+    const lit = ctx.createLinearGradient(pad + r, 0, w - pad - r, 0);
+    lit.addColorStop(0, "rgba(255,255,255,0)");
+    lit.addColorStop(0.5, "rgba(255,255,255,0.34)");
+    lit.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.fillStyle = lit;
+    ctx.fillRect(pad + r, pad - line / 2, w - 2 * (pad + r), line);
   }
 }
 
-function write(ctx, s, x, y, size, color, weight = 500, align = "left") {
-  ctx.font = `${weight} ${size}px ${FONT}`;
+function write(ctx, s, x, y, size, color, weight = 500, align = "left", family = FONT, tracking = "0px") {
+  ctx.font = `${weight} ${size}px ${family}`;
   ctx.fillStyle = color;
   ctx.textAlign = align;
   ctx.textBaseline = "alphabetic";
+  if ("letterSpacing" in ctx) ctx.letterSpacing = tracking;
   ctx.fillText(s, x, y);
+  if ("letterSpacing" in ctx) ctx.letterSpacing = "0px";
 }
 
 function ellipsize(ctx, s, width) {
@@ -151,36 +182,66 @@ function glowTexture() {
   return t;
 }
 
-// Icons, drawn into a 100×100 box.
+// Icons: one family, outlines in a single stroke (set by the caller), drawn
+// into a 100×100 box. No text glyphs stand in for icons.
 const ICONS = {
-  mic(x) { x.beginPath(); x.roundRect ? x.roundRect(38, 18, 24, 42, 12) : rr(x, 38, 18, 24, 42, 12); x.stroke(); x.beginPath(); x.arc(50, 50, 22, 0.15 * Math.PI, 0.85 * Math.PI); x.stroke(); x.beginPath(); x.moveTo(50, 72); x.lineTo(50, 84); x.moveTo(38, 84); x.lineTo(62, 84); x.stroke(); },
-  done(x) { x.beginPath(); x.moveTo(26, 52); x.lineTo(43, 69); x.lineTo(75, 34); x.stroke(); },
-  quiet(x) { x.beginPath(); rr(x, 33, 33, 34, 34, 6); x.fill(); },
-  end(x) { x.beginPath(); x.moveTo(18, 58); x.quadraticCurveTo(50, 30, 82, 58); x.lineTo(74, 68); x.lineTo(62, 60); x.lineTo(62, 52); x.quadraticCurveTo(50, 46, 38, 52); x.lineTo(38, 60); x.lineTo(26, 68); x.closePath(); x.fill(); },
-  eye(x) { x.beginPath(); x.moveTo(14, 50); x.quadraticCurveTo(50, 14, 86, 50); x.quadraticCurveTo(50, 86, 14, 50); x.stroke(); x.beginPath(); x.arc(50, 50, 12, 0, Math.PI * 2); x.stroke(); },
+  mic(x) { x.beginPath(); rr(x, 39, 16, 22, 42, 11); x.stroke(); x.beginPath(); x.arc(50, 48, 22, 0.12 * Math.PI, 0.88 * Math.PI); x.stroke(); x.beginPath(); x.moveTo(50, 70); x.lineTo(50, 84); x.stroke(); },
+  done(x) { x.beginPath(); x.moveTo(27, 52); x.lineTo(43, 68); x.lineTo(74, 35); x.stroke(); },
+  quiet(x) { x.beginPath(); rr(x, 32, 32, 36, 36, 7); x.stroke(); },
+  end(x) { x.beginPath(); x.moveTo(20, 60); x.quadraticCurveTo(50, 32, 80, 60); x.lineTo(72, 69); x.lineTo(61, 61); x.lineTo(61, 53); x.quadraticCurveTo(50, 48, 39, 53); x.lineTo(39, 61); x.lineTo(28, 69); x.closePath(); x.stroke(); },
+  eye(x) { x.beginPath(); x.moveTo(14, 50); x.quadraticCurveTo(50, 16, 86, 50); x.quadraticCurveTo(50, 84, 14, 50); x.stroke(); x.beginPath(); x.arc(50, 50, 11, 0, Math.PI * 2); x.stroke(); },
   pc(x) { x.beginPath(); rr(x, 16, 22, 68, 44, 6); x.stroke(); x.beginPath(); x.moveTo(36, 82); x.lineTo(64, 82); x.moveTo(50, 66); x.lineTo(50, 82); x.stroke(); },
-  pin(x) { x.beginPath(); x.moveTo(50, 86); x.lineTo(50, 60); x.stroke(); x.beginPath(); x.moveTo(30, 60); x.lineTo(70, 60); x.lineTo(62, 44); x.lineTo(62, 22); x.lineTo(38, 22); x.lineTo(38, 44); x.closePath(); x.stroke(); },
-  leave(x) { x.beginPath(); x.moveTo(30, 30); x.lineTo(70, 70); x.moveTo(70, 30); x.lineTo(30, 70); x.stroke(); },
-  think(x) { for (let i = 0; i < 3; i++) { x.beginPath(); x.arc(30 + i * 20, 50, 6, 0, Math.PI * 2); x.fill(); } },
-  photos(x) { x.beginPath(); rr(x, 16, 24, 68, 52, 8); x.stroke(); x.beginPath(); x.moveTo(22, 70); x.lineTo(42, 48); x.lineTo(56, 62); x.lineTo(66, 54); x.lineTo(80, 70); x.stroke(); x.beginPath(); x.arc(64, 38, 5, 0, Math.PI * 2); x.fill(); },
+  pin(x) { x.beginPath(); x.moveTo(50, 86); x.lineTo(50, 62); x.stroke(); x.beginPath(); x.moveTo(31, 62); x.lineTo(69, 62); x.lineTo(62, 46); x.lineTo(62, 20); x.lineTo(38, 20); x.lineTo(38, 46); x.closePath(); x.stroke(); },
+  leave(x) { x.beginPath(); x.moveTo(32, 32); x.lineTo(68, 68); x.moveTo(68, 32); x.lineTo(32, 68); x.stroke(); },
+  think(x) { for (let i = 0; i < 3; i++) { x.beginPath(); x.arc(30 + i * 20, 50, 4.5, 0, Math.PI * 2); x.stroke(); } },
+  photos(x) { x.beginPath(); rr(x, 16, 24, 68, 52, 8); x.stroke(); x.beginPath(); x.moveTo(23, 69); x.lineTo(42, 49); x.lineTo(56, 62); x.lineTo(65, 54); x.lineTo(78, 69); x.stroke(); x.beginPath(); x.arc(64, 38, 5, 0, Math.PI * 2); x.stroke(); },
   style(x) {
-    const star = (cx, cy, r) => { x.beginPath(); x.moveTo(cx, cy - r); x.quadraticCurveTo(cx, cy, cx + r, cy); x.quadraticCurveTo(cx, cy, cx, cy + r); x.quadraticCurveTo(cx, cy, cx - r, cy); x.quadraticCurveTo(cx, cy, cx, cy - r); x.fill(); };
-    star(44, 54, 26); star(74, 28, 12); star(76, 76, 9);
+    // Two four-point stars, outlined.
+    const star = (cx, cy, r) => { x.beginPath(); x.moveTo(cx, cy - r); x.quadraticCurveTo(cx, cy, cx + r, cy); x.quadraticCurveTo(cx, cy, cx, cy + r); x.quadraticCurveTo(cx, cy, cx - r, cy); x.quadraticCurveTo(cx, cy, cx, cy - r); x.stroke(); };
+    star(44, 56, 26); star(74, 28, 12);
   },
-  folder(x) { x.beginPath(); x.moveTo(14, 30); x.lineTo(40, 30); x.lineTo(48, 38); x.lineTo(86, 38); x.lineTo(86, 78); x.lineTo(14, 78); x.closePath(); x.fill(); },
+  folder(x) { x.beginPath(); x.moveTo(14, 30); x.lineTo(40, 30); x.lineTo(48, 38); x.lineTo(86, 38); x.lineTo(86, 78); x.lineTo(14, 78); x.closePath(); x.stroke(); },
   doc(x) { x.beginPath(); x.moveTo(28, 14); x.lineTo(60, 14); x.lineTo(76, 30); x.lineTo(76, 86); x.lineTo(28, 86); x.closePath(); x.stroke(); x.beginPath(); x.moveTo(38, 50); x.lineTo(66, 50); x.moveTo(38, 62); x.lineTo(66, 62); x.moveTo(38, 74); x.lineTo(56, 74); x.stroke(); },
+  close(x) { x.beginPath(); x.moveTo(34, 34); x.lineTo(66, 66); x.moveTo(66, 34); x.lineTo(34, 66); x.stroke(); },
+  back(x) { x.beginPath(); x.moveTo(58, 30); x.lineTo(38, 50); x.lineTo(58, 70); x.stroke(); },
+  next(x) { x.beginPath(); x.moveTo(42, 30); x.lineTo(62, 50); x.lineTo(42, 70); x.stroke(); },
+  up(x) { x.beginPath(); x.moveTo(30, 56); x.lineTo(50, 36); x.lineTo(70, 56); x.moveTo(50, 36); x.lineTo(50, 74); x.stroke(); },
 };
+/** A small round control on its own card: graphite, a hairline ring, one icon. */
+function roundButton(c, name) {
+  const { ctx, w, h } = c;
+  ctx.clearRect(0, 0, w, h);
+  ctx.beginPath(); ctx.arc(w / 2, h / 2, w / 2 - 4, 0, Math.PI * 2);
+  ctx.fillStyle = "rgba(20, 23, 31, 0.95)"; ctx.fill();
+  ctx.lineWidth = 3; ctx.strokeStyle = "rgba(255,255,255,0.18)"; ctx.stroke();
+  icon(ctx, name, w / 2, h / 2, w * 0.62, INK, 7);
+  c.update();
+}
+/** An icon at (cx, cy), `size` pixels across, in one stroke. */
+function icon(ctx, name, cx, cy, size, color = INK, weight = 6) {
+  ctx.save();
+  const s = size / 100;
+  ctx.translate(cx - 50 * s, cy - 50 * s);
+  ctx.scale(s, s);
+  ctx.strokeStyle = color; ctx.fillStyle = color;
+  ctx.lineWidth = weight; ctx.lineCap = "round"; ctx.lineJoin = "round";
+  ICONS[name]?.(ctx);
+  ctx.restore();
+}
 
 // ---------------------------------------------------------------------------
 export async function start({ mode, session, api, tint }) {
   const flat = mode === "flat";
   const passthrough = mode === "immersive-ar";
   const util = api.util;
+  // The brand faces first, so no card is drawn in a stand-in font.
+  await loadFonts();
 
   const renderer = new WebGLRenderer({ antialias: true, alpha: true, powerPreference: "high-performance" });
   renderer.setClearColor(0x000000, 0);
   renderer.outputColorSpace = SRGBColorSpace;
   renderer.setPixelRatio(flat ? Math.min(2, window.devicePixelRatio || 1) : 1);
+  ANISO = Math.max(1, renderer.capabilities.getMaxAnisotropy?.() || 1);
   renderer.setSize(window.innerWidth, window.innerHeight);
   const canvas = renderer.domElement;
   Object.assign(canvas.style, { position: "fixed", inset: "0", width: "100vw", height: "100vh", zIndex: "2147483000", touchAction: "none", display: flat ? "block" : "none" });
@@ -198,6 +259,8 @@ export async function start({ mode, session, api, tint }) {
   // leans to the person's orb colour when they picked one ----------------------
   const base = { a: new Color(), b: new Color(), c: new Color() };
   let themeAt = 0, haloIdle = 0x7dd3fc;
+  /** A light sky behind the buttons (Pearl, without passthrough): their labels go dark. */
+  let lightRoom = false;
   try { themeAt = Math.max(0, THEMES.findIndex((t) => t.name === localStorage.getItem("izuki.vr.theme"))); } catch {}
   function applyTheme(i) {
     const t = THEMES[i];
@@ -209,6 +272,8 @@ export async function start({ mode, session, api, tint }) {
     }
     haloIdle = t.halo;
     space?.set(t);
+    const light = !!t.light && !!space;
+    if (light !== lightRoom) { lightRoom = light; for (const b of buttons) b.draw(); }
   }
   function nextTheme() {
     themeAt = (themeAt + 1) % THEMES.length;
@@ -251,32 +316,40 @@ export async function start({ mode, session, api, tint }) {
 
   function drawCaption() {
     const { ctx, w, h } = caption;
-    glass(ctx, w, h, 44);
-    const padX = 40;
-    const label = LABEL[view.state] || (view.stage ? view.stage : view.you || view.reply ? "Izuki" : "IZUKI NOVA");
-    write(ctx, label, padX, 62, 32, TEAL, 650);
-    let y = 62;
+    glass(ctx, w, h, 52);
+    const padX = 56;
+    let y = 30;
+    // What's happening right now (listening, thinking, or the step it's on),
+    // with a live dot. Nothing when there's nothing to say about it.
+    const state = LABEL[view.state] || view.stage || "";
+    if (state) {
+      ctx.beginPath(); ctx.arc(padX + 9, y + 34, 9, 0, Math.PI * 2); ctx.fillStyle = TEAL; ctx.fill();
+      ctx.font = `600 30px ${DISPLAY}`;
+      write(ctx, ellipsize(ctx, state, w - padX * 2 - 40), padX + 34, y + 45, 30, TEAL, 600, "left", DISPLAY, "0.02em");
+      y += 62;
+    } else y += 14;
     if (view.you) {
-      ctx.font = `400 32px ${FONT}`;
-      write(ctx, ellipsize(ctx, "You: " + view.you, w - padX * 2), padX, (y += 50), 32, "#aab6d6", 400);
+      ctx.font = `500 34px ${FONT}`;
+      write(ctx, ellipsize(ctx, view.you, w - padX * 2), padX, (y += 40), 34, INK2, 500);
+      y += 10;
     }
     const body = view.reply || (!view.you ? view.hint : "");
     const measure = (s, size) => { ctx.font = `500 ${size}px ${FONT}`; return ctx.measureText(s).width; };
-    // A note (why the voice is quiet, a new look) sits at the bottom, in amber.
-    const note = view.notice ? util.fitLines(view.notice, w - padX * 2, 2, 28, 24, measure) : null;
-    const noteH = note ? note.lines.length * note.size * 1.25 + 16 : 0;
+    // A note (why the voice is quiet: amber; a new look: quiet grey) sits at the bottom.
+    const note = view.notice ? util.fitLines(view.notice, w - padX * 2, 2, 30, 26, measure) : null;
+    const noteH = note ? note.lines.length * note.size * 1.3 + 22 : 0;
     if (body) {
-      const room = h - y - 30 - noteH;
-      const maxLines = Math.max(1, Math.floor(room / (30 * 1.28)));
-      const fit = util.fitLines(body, w - padX * 2, Math.min(maxLines, 5), 48, 30, measure);
-      const lh = fit.size * 1.28;
-      y += 14;
-      for (const line of fit.lines) write(ctx, line, padX, (y += lh), fit.size, view.reply ? "#ffffff" : "#d6def5", 500);
+      const room = h - y - 36 - noteH;
+      const maxLines = Math.max(1, Math.floor(room / (32 * 1.32)));
+      const fit = util.fitLines(body, w - padX * 2, Math.min(maxLines, 5), 50, 32, measure);
+      const lh = fit.size * 1.32;
+      y += 6;
+      for (const line of fit.lines) write(ctx, line, padX, (y += lh), fit.size, view.reply ? INK : INK2, 500);
     }
     announce(view.notice || view.reply);
     if (note) {
-      let ny = h - 26 - (note.lines.length - 1) * note.size * 1.25;
-      for (const line of note.lines) { write(ctx, line, padX, ny, note.size, "#fcd34d", 500); ny += note.size * 1.25; }
+      let ny = h - 32 - (note.lines.length - 1) * note.size * 1.3;
+      for (const line of note.lines) { write(ctx, line, padX, ny, note.size, view.noticeWarn ? WARN : INK2, 500); ny += note.size * 1.3; }
     }
     caption.update();
   }
@@ -284,9 +357,10 @@ export async function start({ mode, session, api, tint }) {
   let spoken = null, spokenReady = false;
   const announce = (t) => { if (spokenReady && spoken && t && spoken.textContent !== t) spoken.textContent = t; };
   let noticeTimer = 0;
-  /** A short note under the words for a while. */
-  function notice(text, ms = 12000) {
+  /** A short note under the words for a while; `warn` for trouble (amber), else quiet grey. */
+  function notice(text, ms = 12000, warn = false) {
     view.notice = String(text || "");
+    view.noticeWarn = !!warn;
     clearTimeout(noticeTimer);
     noticeTimer = setTimeout(() => { view.notice = ""; drawCaption(); }, ms);
     drawCaption();
@@ -294,37 +368,36 @@ export async function start({ mode, session, api, tint }) {
 
   // Buttons along the bottom.
   const buttons = [];
-  function button(icon, label, onTap) {
+  function button(iconName, label, onTap) {
     const c = card(0.088, 0.112, 2400);
     track(c.tex); track(c.mesh.material); track(c.mesh.geometry);
-    const b = { c, icon, label, hot: false, shown: true };
+    // hot: pointed at; on: what it opens is open (Photos, My PC).
+    const b = { c, icon: iconName, label, hot: false, on: false, shown: true };
     b.draw = () => {
       const { ctx, w, h } = c;
       ctx.clearRect(0, 0, w, h);
-      const r = w * 0.4, cx = w / 2, cy = r + 8;
+      const r = w * 0.38, cx = w / 2, cy = r + 10;
       ctx.beginPath();
       ctx.arc(cx, cy, r, 0, Math.PI * 2);
-      ctx.fillStyle = b.hot ? "rgba(40, 52, 96, 0.95)" : "rgba(14, 18, 40, 0.9)";
+      const fill = ctx.createLinearGradient(0, cy - r, 0, cy + r);
+      fill.addColorStop(0, b.hot ? "rgba(44, 50, 64, 0.97)" : "rgba(26, 29, 38, 0.95)");
+      fill.addColorStop(1, b.hot ? "rgba(26, 30, 40, 0.97)" : "rgba(14, 16, 22, 0.95)");
+      ctx.fillStyle = fill;
       ctx.fill();
-      const g = ctx.createLinearGradient(0, 0, w, w);
-      g.addColorStop(0, TEAL); g.addColorStop(0.6, VIOLET); g.addColorStop(1, PINK);
-      ctx.strokeStyle = g;
-      ctx.lineWidth = b.hot ? 7 : 4;
+      ctx.lineWidth = b.hot || b.on ? 5 : 3;
+      ctx.strokeStyle = b.on ? TEAL : b.hot ? "rgba(255,255,255,0.55)" : "rgba(255,255,255,0.16)";
       ctx.stroke();
-      ctx.save();
-      const s = (r * 1.15) / 100;
-      ctx.translate(cx - 50 * s, cy - 50 * s);
-      ctx.scale(s, s);
-      ctx.strokeStyle = "#ffffff"; ctx.fillStyle = "#ffffff";
-      ctx.lineWidth = 7; ctx.lineCap = "round"; ctx.lineJoin = "round";
-      ICONS[b.icon]?.(ctx);
-      ctx.restore();
-      write(ctx, b.label, cx, h - 12, 34, "#e6ecff", 600, "center");
+      icon(ctx, b.icon, cx, cy, r * 1.05, b.on ? TEAL : INK, 6.5);
+      // The label sits on the room itself: ink that reads on this look's sky.
+      const ink = lightRoom ? { on: "#0F766E", hot: "#11151C", rest: "#2A303B" } : { on: TEAL, hot: INK, rest: INK2 };
+      write(ctx, b.label, cx, h - 12, 30, b.on ? ink.on : b.hot ? ink.hot : ink.rest, 600, "center", DISPLAY, "0.01em");
       c.update();
     };
-    b.set = (icon, label) => { if (icon === b.icon && label === b.label) return; b.icon = icon; b.label = label; b.draw(); };
+    b.set = (name, label) => { if (name === b.icon && label === b.label) return; b.icon = name; b.label = label; b.draw(); };
+    b.setOn = (on) => { if (!!on === b.on) return; b.on = !!on; b.draw(); };
     b.draw();
-    ui(c.mesh, { tap: onTap, hover: (on) => { b.hot = on; b.draw(); c.mesh.scale.setScalar(on ? 1.08 : 1); } });
+    // Pointed at: it brightens and comes 6 mm towards you (no jumpy scaling).
+    ui(c.mesh, { tap: onTap, hover: (on) => { b.hot = on; b.draw(); c.mesh.position.z = on ? 0.026 : 0.02; } });
     rig.add(c.mesh);
     buttons.push(b);
     return b;
@@ -429,8 +502,11 @@ export async function start({ mode, session, api, tint }) {
       const ref = !feats || feats.includes("local-floor") ? "local-floor" : "local";
       if (ref === "local") floorY = -1.6;
       renderer.xr.setReferenceSpaceType(ref);
+      // Crisp: a quarter more pixels than the headset's default (the room is
+      // light to draw), and only light foveation, so text at the sides stays sharp.
+      try { renderer.xr.setFramebufferScaleFactor(1.25); } catch {}
       await renderer.xr.setSession(session);
-      try { renderer.xr.setFoveation(1); } catch {}
+      try { renderer.xr.setFoveation(0.2); } catch {}
       // three.js learns about controllers and hands only from the session's
       // "inputsourceschange" event. One announced while this room was still
       // downloading (before three listened) would never get a pointer: hand
@@ -518,12 +594,12 @@ export async function start({ mode, session, api, tint }) {
   const pinLast = () => { const t = api.lastReply(); if (t) pin(t); else api.speak("There's nothing to pin yet. Ask me something first."); };
   const togglePhotos = () => {
     if (filesUi.open) return filesClose();
-    if (!api.pc.current()) return notice("Your photos are on your PC: pair this headset with it once (leave the room, Remote, Pair).");
-    void filesOpen("Pictures").then((why) => { if (why) notice(why); });
+    if (!api.pc.current()) return notice("Your photos are on your PC: pair this headset with it once (leave the room, Remote, Pair).", 12000, true);
+    void filesOpen("Pictures").then((why) => { if (why) notice(why, 12000, true); });
   };
   const restyle = () => notice(nextTheme(), 5000);
-  button("photos", "Photos", togglePhotos);
-  button("pc", "My PC", togglePc);
+  const photosB = button("photos", "Photos", togglePhotos);
+  const pcB = button("pc", "My PC", togglePc);
   button("pin", "Pin", pinLast);
   button("style", "Style", restyle);
   button("leave", "Leave", () => stop());
@@ -541,24 +617,18 @@ export async function start({ mode, session, api, tint }) {
   ui(lookUi.text.mesh, { drag: () => lookUi.group });
   track(lookUi.text.tex); track(lookUi.close.tex);
   lookUi.group.add(lookUi.text.mesh, lookUi.close.mesh);
-  {
-    const { ctx, w, h } = lookUi.close;
-    ctx.beginPath(); ctx.arc(w / 2, h / 2, w / 2 - 3, 0, Math.PI * 2); ctx.fillStyle = "rgba(14,18,40,.92)"; ctx.fill();
-    ctx.strokeStyle = "#fff"; ctx.lineWidth = 7; ctx.lineCap = "round";
-    ctx.beginPath(); ctx.moveTo(w * 0.34, h * 0.34); ctx.lineTo(w * 0.66, h * 0.66); ctx.moveTo(w * 0.66, h * 0.34); ctx.lineTo(w * 0.34, h * 0.66); ctx.stroke();
-    lookUi.close.update();
-  }
+  roundButton(lookUi.close, "close");
   // Closed means closed: a photo still decoding, or this look's answer
   // arriving later, doesn't bring it back. A new look opens it again.
   ui(lookUi.close.mesh, { tap: () => { lookUi.seq++; lookUi.closed = lookUi.want; lookUi.group.visible = false; } });
 
   function drawLookText() {
     const { ctx, w, h } = lookUi.text;
-    glass(ctx, w, h, 36);
+    glass(ctx, w, h, 44);
     const measure = (s, size) => { ctx.font = `500 ${size}px ${FONT}`; return ctx.measureText(s).width; };
-    const fit = util.fitLines(lookUi.say, w - 60, 4, 34, 22, measure);
-    let y = 18;
-    for (const line of fit.lines) write(ctx, line, 30, (y += fit.size * 1.28), fit.size, "#ffffff", 500);
+    const fit = util.fitLines(lookUi.say, w - 96, 4, 38, 26, measure);
+    let y = 22;
+    for (const line of fit.lines) write(ctx, line, 48, (y += fit.size * 1.32), fit.size, INK, 500);
     lookUi.text.update();
     announce(lookUi.say);
   }
@@ -577,17 +647,18 @@ export async function start({ mode, session, api, tint }) {
       const p = Math.max(0, Math.min(1, progress * n - i));
       if (p <= 0) return;
       const x = (m.x / 1000) * w, y = (m.y / 1000) * h, r = w * 0.065;
+      // The pen: a teal circle drawn round it, lifted off any photo by a soft dark shadow.
       ctx.save();
-      ctx.shadowColor = TEAL; ctx.shadowBlur = 18;
-      ctx.strokeStyle = TEAL; ctx.lineWidth = 7; ctx.lineCap = "round";
+      ctx.shadowColor = "rgba(0,0,0,0.55)"; ctx.shadowBlur = 10; ctx.shadowOffsetY = 3;
+      ctx.strokeStyle = TEAL; ctx.lineWidth = 6; ctx.lineCap = "round";
       ctx.beginPath(); ctx.arc(x, y, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * p); ctx.stroke();
       ctx.restore();
       if (p > 0.85 && m.label) {
-        ctx.font = `600 26px ${FONT}`;
+        ctx.font = `600 28px ${FONT}`;
         const tw = ctx.measureText(m.label).width;
-        const lx = Math.min(w - tw - 36, Math.max(10, x - tw / 2 - 14)), ly = y + r + 12 > h - 46 ? y - r - 52 : y + r + 12;
-        rr(ctx, lx, ly, tw + 28, 40, 20); ctx.fillStyle = "rgba(8,10,24,.82)"; ctx.fill();
-        write(ctx, m.label, lx + 14, ly + 29, 26, "#ffffff", 600);
+        const lx = Math.min(w - tw - 40, Math.max(10, x - tw / 2 - 16)), ly = y + r + 12 > h - 50 ? y - r - 56 : y + r + 12;
+        rr(ctx, lx, ly, tw + 32, 44, 22); ctx.fillStyle = "rgba(14,16,22,0.88)"; ctx.fill();
+        write(ctx, m.label, lx + 16, ly + 31, 28, INK, 600);
       }
     });
     ph.update();
@@ -682,7 +753,7 @@ export async function start({ mode, session, api, tint }) {
     const { ctx, w, h } = pcUi.handle;
     ctx.clearRect(0, 0, w, h);
     rr(ctx, 4, 4, w - 8, h - 8, (h - 8) / 2);
-    ctx.fillStyle = "rgba(220,230,255,.55)"; ctx.fill();
+    ctx.fillStyle = "rgba(255,255,255,0.34)"; ctx.fill();
     pcUi.handle.update();
   }
   ui(pcUi.handle.mesh, { drag: () => pcUi.group });
@@ -693,7 +764,7 @@ export async function start({ mode, session, api, tint }) {
     glass(ctx, w, h, 24);
     ctx.font = `500 ${Math.round(h * 0.05)}px ${FONT}`;
     const lines = util.wrapLines(text, w * 0.7, (t) => ctx.measureText(t).width);
-    lines.forEach((l, i) => write(ctx, l, w / 2, h / 2 + (i - (lines.length - 1) / 2) * h * 0.075, Math.round(h * 0.05), "#e6ecff", 500, "center"));
+    lines.forEach((l, i) => write(ctx, l, w / 2, h / 2 + (i - (lines.length - 1) / 2) * h * 0.075, Math.round(h * 0.05), INK2, 500, "center"));
     s.update();
   }
   function drawScreen(bmp) {
@@ -705,14 +776,20 @@ export async function start({ mode, session, api, tint }) {
   }
   function drawBar() {
     const { ctx, w, h } = pcUi.bar;
-    glass(ctx, w, h, 40);
-    ctx.beginPath(); ctx.arc(60, h / 2, 14, 0, Math.PI * 2); ctx.fillStyle = pcUi.err ? "#fbbf24" : "#34d399"; ctx.fill();
+    glass(ctx, w, h, 48);
+    // Live (teal) or in trouble (amber), then what Izuki is doing there.
+    ctx.beginPath(); ctx.arc(72, h / 2, 13, 0, Math.PI * 2); ctx.fillStyle = pcUi.err ? WARN : TEAL; ctx.fill();
     const line = pcUi.err || (pcUi.doing ? "Izuki: " + pcUi.doing : api.pc.name() + " · point and click, thumbstick to scroll");
-    ctx.font = `500 64px ${FONT}`;
-    write(ctx, ellipsize(ctx, line, w - 760), 100, h / 2 + 22, 64, "#ffffff", 500);
-    const pill = (x, label, color) => { rr(ctx, x, 18, 280, h - 36, (h - 36) / 2); ctx.fillStyle = color; ctx.fill(); write(ctx, label, x + 140, h / 2 + 20, 58, "#fff", 650, "center"); };
-    if (pcUi.busy) pill(w - 620, "Stop", "rgba(239,68,68,.9)");
-    pill(w - 310, "Close", "rgba(255,255,255,.18)");
+    ctx.font = `500 60px ${FONT}`;
+    write(ctx, ellipsize(ctx, line, w - 800), 116, h / 2 + 21, 60, pcUi.err ? WARN : INK, 500);
+    const pill = (x, label, danger) => {
+      rr(ctx, x, 30, 280, h - 60, (h - 60) / 2);
+      ctx.fillStyle = danger ? "rgba(220, 38, 38, 0.82)" : "rgba(255, 255, 255, 0.07)"; ctx.fill();
+      if (!danger) { ctx.lineWidth = 3; ctx.strokeStyle = "rgba(255,255,255,0.16)"; ctx.stroke(); }
+      write(ctx, label, x + 140, h / 2 + 19, 52, INK, 600, "center", DISPLAY, "0.02em");
+    };
+    if (pcUi.busy) pill(w - 620, "Stop", true);
+    pill(w - 310, "Close", false);
     pcUi.bar.update();
   }
   ui(pcUi.bar.mesh, {
@@ -822,7 +899,7 @@ export async function start({ mode, session, api, tint }) {
   {
     const { ctx, w, h } = filesUi.handle;
     rr(ctx, 4, 4, w - 8, h - 8, (h - 8) / 2);
-    ctx.fillStyle = "rgba(220,230,255,.55)"; ctx.fill();
+    ctx.fillStyle = "rgba(255,255,255,0.34)"; ctx.fill();
     filesUi.handle.update();
   }
   ui(filesUi.handle.mesh, { drag: () => filesUi.group });
@@ -837,57 +914,59 @@ export async function start({ mode, session, api, tint }) {
   }
   function drawFiles() {
     const { ctx, w, h } = filesUi.card;
-    glass(ctx, w, h, 40);
+    glass(ctx, w, h, 56);
     const hh = h * HEAD;
-    // The header: where you are, then the buttons right to left.
+    // The header: where you are, then round icon buttons right to left.
     filesUi.btns = [];
-    let bx = w - 30;
-    const pill = (label, act, color = "rgba(255,255,255,.14)") => {
-      ctx.font = `650 40px ${FONT}`;
-      const bw = Math.max(110, ctx.measureText(label).width + 56);
-      bx -= bw;
-      rr(ctx, bx, hh * 0.18, bw, hh * 0.64, hh * 0.32); ctx.fillStyle = color; ctx.fill();
-      write(ctx, label, bx + bw / 2, hh * 0.18 + hh * 0.64 / 2 + 14, 40, "#ffffff", 650, "center");
-      filesUi.btns.push({ x0: bx, x1: bx + bw, act });
-      bx -= 16;
+    const d = hh * 0.62, cy = hh * 0.56;
+    let bx = w - 44;
+    const control = (name, act) => {
+      const cx = bx - d / 2;
+      ctx.beginPath(); ctx.arc(cx, cy, d / 2, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(255,255,255,0.06)"; ctx.fill();
+      ctx.lineWidth = 3; ctx.strokeStyle = "rgba(255,255,255,0.16)"; ctx.stroke();
+      icon(ctx, name, cx, cy, d * 0.62, INK, 7);
+      filesUi.btns.push({ x0: bx - d, x1: bx, act });
+      bx -= d + 20;
     };
-    pill("✕", () => filesClose(), "rgba(239,68,68,.55)");
-    if (filesUi.page + 1 < pageCount()) pill("Next ›", () => { filesUi.page++; drawFiles(); loadThumbs(filesUi.gen); });
-    if (filesUi.page > 0) pill("‹ Back", () => { filesUi.page--; drawFiles(); loadThumbs(filesUi.gen); });
-    if (filesUi.path) pill("Up", () => { void filesGo(filesUi.up, ""); });
-    ctx.font = `650 44px ${FONT}`;
-    const pageNote = pageCount() > 1 ? `  ·  ${filesUi.page + 1}/${pageCount()}` : "";
-    write(ctx, ellipsize(ctx, (filesUi.title || "Your folders") + pageNote, bx - 50), 40, hh * 0.62, 44, "#e6ecff", 650);
+    control("close", () => filesClose());
+    if (filesUi.page + 1 < pageCount()) control("next", () => { filesUi.page++; drawFiles(); loadThumbs(filesUi.gen); });
+    if (filesUi.page > 0) control("back", () => { filesUi.page--; drawFiles(); loadThumbs(filesUi.gen); });
+    if (filesUi.path) control("up", () => { void filesGo(filesUi.up, ""); });
+    ctx.font = `600 50px ${DISPLAY}`;
+    const title = ellipsize(ctx, filesUi.title || "Your folders", bx - 220);
+    write(ctx, title, 56, cy + 18, 50, INK, 600, "left", DISPLAY, "-0.01em");
+    if (pageCount() > 1) {
+      ctx.font = `600 50px ${DISPLAY}`;
+      const tw = ctx.measureText(title).width;
+      write(ctx, `${filesUi.page + 1} / ${pageCount()}`, 56 + tw + 28, cy + 16, 34, INK2, 500);
+    }
     if (filesUi.loading || filesUi.err || !filesUi.items.length) {
       const say = filesUi.loading ? "Opening…" : filesUi.err || "This folder is empty.";
       ctx.font = `500 46px ${FONT}`;
-      const lines = util.wrapLines(say, w * 0.8, (t) => ctx.measureText(t).width);
-      lines.forEach((l, i) => write(ctx, l, w / 2, h * 0.55 + (i - (lines.length - 1) / 2) * 60, 46, filesUi.err ? "#fcd34d" : "#d6def5", 500, "center"));
+      const lines = util.wrapLines(say, w * 0.7, (t) => ctx.measureText(t).width);
+      lines.forEach((l, i) => write(ctx, l, w / 2, h * 0.55 + (i - (lines.length - 1) / 2) * 64, 46, filesUi.err ? WARN : INK2, 500, "center"));
       filesUi.card.update();
       return;
     }
     pageItems().forEach((it, i) => {
       const r = tileRect(i);
       ctx.save();
-      rr(ctx, r.x, r.y, r.w, r.h, 22); ctx.fillStyle = "rgba(255,255,255,.06)"; ctx.fill(); ctx.clip();
+      rr(ctx, r.x, r.y, r.w, r.h, 26); ctx.fillStyle = "rgba(255,255,255,0.045)"; ctx.fill(); ctx.clip();
       const bmp = filesUi.thumbs.get(thumbKey(it));
       if (bmp) {
         // Cover the tile, keeping the photo's shape.
         const s = Math.max(r.w / bmp.width, r.h / bmp.height);
         ctx.drawImage(bmp, r.x + (r.w - bmp.width * s) / 2, r.y + (r.h - bmp.height * s) / 2, bmp.width * s, bmp.height * s);
       } else {
-        ctx.save();
-        const s = Math.min(r.w, r.h) * 0.42 / 100;
-        ctx.translate(r.x + r.w / 2 - 50 * s, r.y + r.h * 0.42 - 50 * s);
-        ctx.scale(s, s);
-        ctx.fillStyle = it.dir ? "#7dd3fc" : "#c4b5fd"; ctx.strokeStyle = ctx.fillStyle; ctx.lineWidth = 6; ctx.lineJoin = "round";
-        ICONS[it.dir ? "folder" : api.isPicture(it.name) ? "photos" : "doc"](ctx);
-        ctx.restore();
+        icon(ctx, it.dir ? "folder" : api.isPicture(it.name) ? "photos" : "doc", r.x + r.w / 2, r.y + r.h * 0.42, Math.min(r.w, r.h) * 0.4, it.dir ? INK : INK2, 4);
       }
-      // Its name on a dark band at the bottom.
-      ctx.fillStyle = "rgba(6,8,20,.72)"; ctx.fillRect(r.x, r.y + r.h - 56, r.w, 56);
+      // Its name, over a soft fade at the bottom.
+      const fade = ctx.createLinearGradient(0, r.y + r.h - 92, 0, r.y + r.h);
+      fade.addColorStop(0, "rgba(10,12,18,0)"); fade.addColorStop(1, "rgba(10,12,18,0.86)");
+      ctx.fillStyle = fade; ctx.fillRect(r.x, r.y + r.h - 92, r.w, 92);
       ctx.font = `500 30px ${FONT}`;
-      write(ctx, ellipsize(ctx, it.name, r.w - 24), r.x + 12, r.y + r.h - 18, 30, "#ffffff", 500);
+      write(ctx, ellipsize(ctx, it.name, r.w - 36), r.x + 18, r.y + r.h - 20, 30, INK, 500);
       ctx.restore();
     });
     filesUi.card.update();
@@ -943,7 +1022,7 @@ export async function start({ mode, session, api, tint }) {
       const it = pageItems()[i];
       if (!it) return;
       if (it.dir) void filesGo(it.at || api.joinPath(filesUi.path, it.name), it.name);
-      else void api.openPhoto(filesUi.path, it).then((why) => { if (why) notice(why); });
+      else void api.openPhoto(filesUi.path, it).then((why) => { if (why) notice(why, 12000, true); });
     },
     // The wheel or thumbstick turns the pages.
     scroll: (n) => {
@@ -1015,18 +1094,15 @@ export async function start({ mode, session, api, tint }) {
     const x = card(0.04, 0.04);
     {
       const { ctx, w, h } = c;
-      glass(ctx, w, h, 36, { fill: "rgba(18, 16, 40, 0.9)" });
-      write(ctx, "Pinned", 34, 58, 28, PINK, 650);
+      glass(ctx, w, h, 44);
+      icon(ctx, "pin", 62, 66, 34, INK2, 7);
+      write(ctx, "Pinned", 88, 76, 28, INK2, 600, "left", DISPLAY, "0.02em");
       const measure = (s, size) => { ctx.font = `500 ${size}px ${FONT}`; return ctx.measureText(s).width; };
-      const fit = util.fitLines(text, w - 68, 6, 32, 20, measure);
-      let y = 66;
-      for (const line of fit.lines) write(ctx, line, 34, (y += fit.size * 1.3), fit.size, "#ffffff", 500);
+      const fit = util.fitLines(text, w - 96, 6, 34, 22, measure);
+      let y = 92;
+      for (const line of fit.lines) write(ctx, line, 48, (y += fit.size * 1.32), fit.size, INK, 500);
       c.update();
-      const xc = x.ctx;
-      xc.beginPath(); xc.arc(x.w / 2, x.h / 2, x.w / 2 - 3, 0, Math.PI * 2); xc.fillStyle = "rgba(14,18,40,.92)"; xc.fill();
-      xc.strokeStyle = "#fff"; xc.lineWidth = 6; xc.lineCap = "round";
-      xc.beginPath(); xc.moveTo(x.w * 0.34, x.h * 0.34); xc.lineTo(x.w * 0.66, x.h * 0.66); xc.moveTo(x.w * 0.66, x.h * 0.34); xc.lineTo(x.w * 0.34, x.h * 0.66); xc.stroke();
-      x.update();
+      roundButton(x, "close");
     }
     x.mesh.position.set(0.135, 0.08, 0.004);
     group.add(c.mesh, x.mesh);
@@ -1101,7 +1177,8 @@ export async function start({ mode, session, api, tint }) {
     orbMat.uniforms.uThink.value = view.think;
     const s = (1 + Math.sin(t * 1.7) * 0.012 + view.energy * 0.1) * (view.hovered ? 1.06 : 1);
     orb.scale.setScalar(s);
-    haloMat.opacity = 0.2 + view.energy * 0.45;
+    // The orb's own light: quiet at rest, rising with a voice.
+    haloMat.opacity = 0.1 + view.energy * 0.36;
     haloMat.color.setHex(HALO[view.state] || haloIdle);
     halo.scale.setScalar(0.4 + view.energy * 0.12);
     const ringOn = view.state === "listening" || view.state === "thinking";
@@ -1120,6 +1197,9 @@ export async function start({ mode, session, api, tint }) {
     else talkB.set("mic", "Talk");
     const calling = !!api.calling?.();
     if (calling !== endB.shown) { endB.shown = calling; layoutButtons(); }
+    // What's open shows on its button.
+    photosB.setOn(filesUi.open);
+    pcB.setOn(pcUi.open);
   }
 
   // ---- the loop -----------------------------------------------------------------------
@@ -1197,15 +1277,16 @@ export async function start({ mode, session, api, tint }) {
     spokenReady = true;
     overlay = document.createElement("div");
     overlay.setAttribute("role", "status");
-    Object.assign(overlay.style, { position: "fixed", top: "max(12px, env(safe-area-inset-top))", left: "50%", transform: "translateX(-50%)", zIndex: "2147483001", display: "flex", gap: "10px", alignItems: "center", padding: "8px 8px 8px 16px", borderRadius: "999px", background: "rgba(10,13,30,.82)", color: "#e6ecff", font: `500 14px ${FONT}`, border: "1px solid rgba(167,139,250,.45)", maxWidth: "calc(100vw - 32px)" });
+    Object.assign(overlay.style, { position: "fixed", top: "max(12px, env(safe-area-inset-top))", left: "50%", transform: "translateX(-50%)", zIndex: "2147483001", display: "flex", gap: "10px", alignItems: "center", padding: "8px 8px 8px 16px", borderRadius: "999px", background: "rgba(18,20,27,.9)", color: INK, font: `500 14px ${FONT}`, border: "1px solid rgba(255,255,255,.14)", maxWidth: "calc(100vw - 32px)" });
     const words = document.createElement("span");
-    words.textContent = "3D preview: click the orb to talk, drag to look around.";
+    words.textContent = "3D preview · click the orb to talk, drag to look";
+    Object.assign(words.style, { whiteSpace: "nowrap", color: INK2 });
     // The same actions as the 3D buttons, reachable with the keyboard too.
     const domButton = (label, act) => {
       const b = document.createElement("button");
       b.type = "button";
       b.textContent = label;
-      Object.assign(b.style, { font: `600 14px ${FONT}`, color: "#fff", background: "rgba(255,255,255,.14)", border: "0", borderRadius: "999px", padding: "8px 14px", cursor: "pointer" });
+      Object.assign(b.style, { font: `600 14px ${FONT}`, color: INK, background: "rgba(255,255,255,.1)", border: "1px solid rgba(255,255,255,.12)", borderRadius: "999px", padding: "8px 14px", cursor: "pointer", whiteSpace: "nowrap" });
       b.onclick = act;
       return b;
     };
@@ -1277,54 +1358,60 @@ export async function start({ mode, session, api, tint }) {
   };
 }
 
-// The space for headsets without passthrough (and the 3D preview): a sky,
-// stars and a soft floor glow, coloured by the theme (setTheme).
+// The space for headsets without passthrough (and the 3D preview), coloured by
+// the theme (set): a dark sky with a soft glow along the horizon, a few faint
+// stars, and fine rings on the floor around you (a quiet sense of space and
+// scale, not decoration).
 function addSpace(scene, floorY) {
   const skyU = {
-    uLow: { value: new Color(0.02, 0.025, 0.06) }, uMid: { value: new Color(0.07, 0.08, 0.19) },
-    uTop: { value: new Color(0.1, 0.06, 0.2) }, uBand: { value: new Color(0.05, 0.18, 0.17) }, uBandAmt: { value: 0.6 },
+    uLow: { value: new Color() }, uMid: { value: new Color() }, uTop: { value: new Color() },
+    uBand: { value: new Color() }, uBandAmt: { value: 0 },
   };
-  const sky = new Mesh(new SphereGeometry(40, 32, 16), new ShaderMaterial({
+  const sky = new Mesh(new SphereGeometry(40, 48, 24), new ShaderMaterial({
     side: BackSide, depthWrite: false, uniforms: skyU,
     vertexShader: "varying vec3 vW; void main(){ vW = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }",
     fragmentShader: `varying vec3 vW;
       uniform vec3 uLow; uniform vec3 uMid; uniform vec3 uTop; uniform vec3 uBand; uniform float uBandAmt;
       void main(){
         float h = vW.y;
-        vec3 c = h < 0.0 ? mix(uMid, uLow, clamp(-h * 3.0, 0.0, 1.0)) : mix(uMid, uTop, clamp(h * 1.5, 0.0, 1.0));
-        // pow() of a negative number is undefined in GLSL: square it by hand.
-        float off = (h - 0.18) * 7.0;
-        float band = exp(-off * off) * (0.5 + 0.5 * sin(atan(vW.z, vW.x) * 3.0));
-        c += uBand * band * uBandAmt;
+        vec3 c = h < 0.0 ? mix(uMid, uLow, clamp(-h * 2.5, 0.0, 1.0)) : mix(uMid, uTop, clamp(h * 1.6, 0.0, 1.0));
+        // The horizon glow: brightest at eye level, fading up and down.
+        c += uBand * exp(-abs(h) * 7.0) * uBandAmt;
         gl_FragColor = vec4(c, 1.0);
       }`,
   }));
   sky.renderOrder = -10;
   scene.add(sky);
 
-  const n = 700, pos = new Float32Array(n * 3);
+  const n = 320, pos = new Float32Array(n * 3);
   for (let i = 0; i < n; i++) {
-    const u = Math.random() * Math.PI * 2, v = Math.random() * 0.9 + 0.05;
+    const u = Math.random() * Math.PI * 2, v = Math.random() * 0.85 + 0.12;
     const r = 30;
     pos[i * 3] = Math.cos(u) * Math.sqrt(1 - v * v) * r;
     pos[i * 3 + 1] = v * r;
     pos[i * 3 + 2] = Math.sin(u) * Math.sqrt(1 - v * v) * r;
   }
-  const stars = new Points(new BufferGeometry().setAttribute("position", new Float32BufferAttribute(pos, 3)), new PointsMaterial({ color: 0xcfe8ff, size: 0.07, transparent: true, opacity: 0.8, depthWrite: false }));
+  const stars = new Points(new BufferGeometry().setAttribute("position", new Float32BufferAttribute(pos, 3)), new PointsMaterial({ color: 0xdfe8f5, size: 0.05, transparent: true, opacity: 0.5, depthWrite: false }));
   scene.add(stars);
 
+  // Rings every 40 cm out to 3.2 m, finer and fainter with distance, over a
+  // faint pool of light under you. White; the theme tints them.
   const c = document.createElement("canvas");
-  c.width = c.height = 256;
+  c.width = c.height = 2048;
   const x = c.getContext("2d");
-  const g = x.createRadialGradient(128, 128, 0, 128, 128, 128);
-  g.addColorStop(0, "rgba(94,234,212,0.35)");
-  g.addColorStop(0.45, "rgba(167,139,250,0.14)");
-  g.addColorStop(1, "rgba(0,0,0,0)");
-  x.fillStyle = g;
-  x.fillRect(0, 0, 256, 256);
+  const mid = 1024, perM = 1024 / 3.2;
+  const pool = x.createRadialGradient(mid, mid, 0, mid, mid, 1024);
+  pool.addColorStop(0, "rgba(255,255,255,0.10)"); pool.addColorStop(0.5, "rgba(255,255,255,0.03)"); pool.addColorStop(1, "rgba(255,255,255,0)");
+  x.fillStyle = pool; x.fillRect(0, 0, 2048, 2048);
+  for (let m = 0.4; m <= 3.2 + 1e-6; m += 0.4) {
+    const k = m / 3.2;
+    x.beginPath(); x.arc(mid, mid, m * perM, 0, Math.PI * 2);
+    x.lineWidth = 2.2 - k; x.strokeStyle = `rgba(255,255,255,${(0.34 * (1 - k) + 0.04).toFixed(3)})`; x.stroke();
+  }
   const tex = new CanvasTexture(c);
   tex.colorSpace = SRGBColorSpace;
-  const floor = new Mesh(new CircleGeometry(3.2, 64), new MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false }));
+  tex.anisotropy = ANISO;
+  const floor = new Mesh(new CircleGeometry(3.2, 128), new MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false }));
   floor.rotation.x = -Math.PI / 2;
   floor.position.y = floorY;
   scene.add(floor);
@@ -1340,19 +1427,18 @@ function addSpace(scene, floorY) {
 }
 
 // Looks for the room, in order: the orb's three colours and, where you see a
-// space rather than your room, its sky (low/mid/top), a band of light, stars
-// and the floor glow. Picked with the Style button or "change your look".
+// space rather than your room, its sky (low/mid/top), the horizon glow, stars
+// and the floor's tint. Calm, dark and low in saturation: the orb carries the
+// colour. Picked with the Style button or "change your look".
 const THEMES = [
   { name: "Nova", orb: [[0.18, 0.83, 0.75], [0.55, 0.36, 0.96], [0.96, 0.45, 0.71]], halo: 0x7dd3fc,
-    low: [0.02, 0.025, 0.06], mid: [0.07, 0.08, 0.19], top: [0.1, 0.06, 0.2], band: [0.05, 0.18, 0.17], bandAmt: 0.6, stars: 0.8, floor: [1, 1, 1] },
-  { name: "Aurora", orb: [[0.2, 0.9, 0.55], [0.2, 0.7, 0.95], [0.6, 0.3, 0.95]], halo: 0x6ee7b7,
-    low: [0.01, 0.02, 0.04], mid: [0.03, 0.06, 0.1], top: [0.04, 0.03, 0.12], band: [0.1, 0.65, 0.4], bandAmt: 1.4, stars: 0.9, floor: [0.6, 1, 0.8] },
-  { name: "Sunset", orb: [[1.0, 0.55, 0.2], [0.95, 0.35, 0.55], [1.0, 0.8, 0.3]], halo: 0xfdba74,
-    low: [0.08, 0.04, 0.07], mid: [0.5, 0.22, 0.22], top: [0.16, 0.09, 0.28], band: [0.45, 0.25, 0.1], bandAmt: 0.8, stars: 0.25, floor: [1, 0.7, 0.5] },
-  { name: "Ocean", orb: [[0.15, 0.45, 0.95], [0.1, 0.8, 0.8], [0.85, 0.95, 1.0]], halo: 0x93c5fd,
-    low: [0.0, 0.04, 0.09], mid: [0.04, 0.22, 0.36], top: [0.02, 0.09, 0.22], band: [0.1, 0.35, 0.4], bandAmt: 0.7, stars: 0.15, floor: [0.6, 0.9, 1] },
-  { name: "Galaxy", orb: [[0.45, 0.2, 0.85], [0.9, 0.25, 0.75], [0.2, 0.3, 0.9]], halo: 0xc4b5fd,
-    low: [0.02, 0.0, 0.05], mid: [0.08, 0.03, 0.16], top: [0.12, 0.04, 0.22], band: [0.35, 0.12, 0.45], bandAmt: 0.9, stars: 1, floor: [0.85, 0.6, 1] },
-  { name: "Pearl", orb: [[0.86, 0.88, 0.96], [0.7, 0.76, 0.92], [0.96, 0.86, 0.92]], halo: 0xe2e8f0,
-    low: [0.36, 0.38, 0.44], mid: [0.62, 0.65, 0.72], top: [0.78, 0.8, 0.88], band: [0.3, 0.3, 0.35], bandAmt: 0.2, stars: 0, floor: [1, 1, 1] },
+    low: [0.008, 0.01, 0.014], mid: [0.03, 0.036, 0.05], top: [0.012, 0.014, 0.022], band: [0.08, 0.2, 0.2], bandAmt: 0.55, stars: 0.5, floor: [0.6, 1, 0.95] },
+  { name: "Midnight", orb: [[0.25, 0.5, 1.0], [0.4, 0.75, 1.0], [0.75, 0.85, 1.0]], halo: 0x93c5fd,
+    low: [0.006, 0.01, 0.02], mid: [0.02, 0.04, 0.08], top: [0.008, 0.014, 0.03], band: [0.1, 0.16, 0.32], bandAmt: 0.6, stars: 0.6, floor: [0.7, 0.82, 1] },
+  { name: "Aurora", orb: [[0.25, 0.92, 0.6], [0.2, 0.75, 0.9], [0.55, 0.45, 0.95]], halo: 0x6ee7b7,
+    low: [0.006, 0.012, 0.012], mid: [0.02, 0.045, 0.045], top: [0.01, 0.018, 0.022], band: [0.08, 0.3, 0.18], bandAmt: 0.7, stars: 0.5, floor: [0.6, 1, 0.8] },
+  { name: "Dawn", orb: [[1.0, 0.7, 0.52], [0.92, 0.55, 0.62], [1.0, 0.86, 0.66]], halo: 0xfed7aa,
+    low: [0.012, 0.009, 0.01], mid: [0.06, 0.04, 0.045], top: [0.02, 0.016, 0.026], band: [0.32, 0.16, 0.1], bandAmt: 0.55, stars: 0.2, floor: [1, 0.85, 0.75] },
+  { name: "Pearl", light: true, orb: [[0.86, 0.88, 0.96], [0.7, 0.76, 0.92], [0.94, 0.88, 0.92]], halo: 0xe2e8f0,
+    low: [0.42, 0.44, 0.48], mid: [0.66, 0.68, 0.73], top: [0.8, 0.81, 0.85], band: [0.06, 0.06, 0.07], bandAmt: 0.4, stars: 0, floor: [0.2, 0.22, 0.28] },
 ];

@@ -563,7 +563,7 @@
     },
     level(v) { vr.scene?.level(v); },
     /** No voice right now: the room says why (the page's Retry can't be seen in a headset). */
-    quiet(t) { vr.scene?.notice?.(t); },
+    quiet(t) { vr.scene?.notice?.(t, 15000, true); },
     /** "Hey Nova" in the room: listen hands-free (only a call by name is answered). */
     handsFree(on) { heyNova = !!on; },
     homeCard,
