@@ -67,6 +67,7 @@
 <script src="touchgrass.js"></script>
 <script src="lecture.js"></script>
 <script type="module" src="tv.js"></script>
+<script src="vr.js"></script>
 <style>
   :root {
     color-scheme: dark;
@@ -1066,23 +1067,27 @@
     window.IzukiEdge?.useNative?.(glowNative);
     if (glowNative || was) syncGlow();
   }
+  /** Tell the TV page and the VR room what's happening; each draws it its own way. */
+  const toViews = (what, ...args) => {
+    for (const v of [window.IzukiTv, window.IzukiVr]) { try { v?.[what]?.(...args); } catch {} }
+  };
   const setOrb = (mode) => {
     orbState = mode || "";
-    try { window.IzukiTv?.orb?.(orbState); } catch {}
+    toViews("orb", orbState);
     orb.className = orbState;
     refreshIsland();
     IzukiOrb.mode(orbState || "idle");
     syncNativeOrb();
     if (!status.textContent) $("live-status").textContent = LIVE_LABEL[orbState] || "";
   };
-  const liveHeard = (t) => { $("live-heard").textContent = t || ""; try { window.IzukiTv?.heard?.(t || ""); } catch {} };
-  const liveSaid = (t) => { $("live-said").textContent = t || ""; try { window.IzukiTv?.said?.(t || ""); } catch {} };
+  const liveHeard = (t) => { $("live-heard").textContent = t || ""; toViews("heard", t || ""); };
+  const liveSaid = (t) => { $("live-said").textContent = t || ""; toViews("said", t || ""); };
   const el = (tag, cls, txt) => { const e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; };
 
   /** The stage words inside a waiting reply bubble ("Asking Gemini…"), if one is showing. */
   let thinkingLabel = null;
   function bubble(who, content, opts = {}) {
-    try { window.IzukiTv?.line?.(who, String(content || "")); } catch {}
+    toViews("line", who, String(content || ""), opts);
     homeView = false;
     log.querySelector(".welcome")?.remove();
     const div = document.createElement("div");
@@ -1181,6 +1186,8 @@
         w.appendChild(resume);
       }
       w.appendChild(setupCard());
+      // In a headset: what the key is for (the card waits until it's added).
+      try { window.IzukiVr?.homeCard?.(w, { auto: false }); } catch {}
       return;
     }
 
@@ -1209,6 +1216,8 @@
     const onIOS = (!!window.IzukiNative?.installed?.() && window.IzukiNative.platform?.() === "ios") || document.documentElement.dataset.os === "ios";
     // What Izuki can do on this phone, each with a short how-to and a real try.
     if (onAndroid || onIOS) phoneFeatures(w, onIOS ? IOS_PHONE_FEATURES : PHONE_FEATURES);
+    // A headset (or ?vr in the address): Izuki in VR.
+    try { window.IzukiVr?.homeCard?.(w); } catch {}
     // A small, visible phone dock: the same actions are still available by
     // voice, but this works before the microphone or model is ready. Folded
     // until opened once (it remembers), so the home stays calm.
@@ -2914,9 +2923,11 @@
     if (turnCtx?.locked && said && !audio) return askLocked(said);
     // On a TV: "Hey Nova" mode only answers when called, and TV requests
     // ("open Netflix", "play the second one") are done on the TV itself.
-    if (said && !audio && !files.length && window.IzukiTv?.active) {
+    // In a headset: "what's this?", "show my PC", "pin that" are done there.
+    const surface = said && !audio && !files.length ? [window.IzukiTv, window.IzukiVr].find((v) => v?.active && v.gate) : null;
+    if (surface) {
       let g = null;
-      try { g = await window.IzukiTv.gate(said); } catch (e) { g = { done: true, say: String(e && e.message || e) }; }
+      try { g = await surface.gate(said); } catch (e) { g = { done: true, say: String(e && e.message || e) }; }
       if (g === null) { if (talking) listen(); return; }
       if (g.done) {
         history.push({ role: "user", text: g.said || said }, { role: "model", text: g.say }); saveAll();
@@ -4001,7 +4012,7 @@
   let captionTimer = 0;
   function followCaption(words, progress) {
     clearInterval(captionTimer);
-    try { window.IzukiTv?.said?.(words); } catch {}
+    toViews("said", words);
     const box = $("live-said");
     const said = el("span", "said"), next = el("span", "next");
     box.replaceChildren(said, next);
@@ -4102,6 +4113,8 @@
   const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
   let talking = false, recog = null, recorder = null;
   let useRecorder = false, missed = 0;
+  /** What useRecorder was before a headset asked for recording (put back on the way out). */
+  let recorderBefore = null;
   /** Anything heard in this listening session? A tap before words is "talk", not "done". */
   let heardInListen = false, listenStartedAt = 0;
 
@@ -4315,6 +4328,7 @@
       flat = v === 0 ? flat + 80 : 0;
       if (flat >= 1500 && !rebuilt) { rebuilt = true; flat = 0; buildMeter(); return; }
       IzukiOrb.level(Math.min(1, v * 9));
+      toViews("level", Math.min(1, v * 9));
       if (took < 350) { floor = Math.max(floor, v); return; }
       if (v > Math.max(0.015, floor * 2.2)) {
         spoke += 80; quiet = 0;
@@ -4456,9 +4470,17 @@
     ask: (t) => ask(String(t || "")),
     think: (prompt, system) => think([{ role: "user", parts: [{ text: String(prompt) }] }], null, system),
     /** Look at a picture (the TV screen) and answer: any brain that sees pictures. */
-    see: (prompt, b64, type = "image/jpeg") => think([{ role: "user", parts: [{ inline_data: { mime_type: type, data: String(b64) } }, { text: String(prompt) }] }], null,
-      "You look at a picture of the user's TV screen and answer briefly, the way a person talks. Never read out passwords or card numbers."),
+    see: (prompt, b64, type = "image/jpeg", system) => think([{ role: "user", parts: [{ inline_data: { mime_type: type, data: String(b64) } }, { text: String(prompt) }] }], null,
+      system || "You look at a picture of the user's TV screen and answer briefly, the way a person talks. Never read out passwords or card numbers."),
     hear: hearClip,
+    /** The same as tapping the call's orb: cut Izuki off, say you're done, or listen again. */
+    tap: () => $("live-orb").click(),
+    /** Record and transcribe with the person's key instead of the browser's
+     *  recognizer (a headset browser's often can't hear). Only with a key. */
+    preferRecorder: (on = true) => {
+      if (on) { if (recorderBefore === null) recorderBefore = useRecorder; if (canHear()) useRecorder = true; }
+      else if (recorderBefore !== null) { useRecorder = recorderBefore; recorderBefore = null; }
+    },
     speak: (t) => speak(String(t || "")),
     hush: () => hush(),
     startCall: () => openLive(),
