@@ -36,6 +36,7 @@
   let active = false, fun = store.get("fun", false), started = 0, watch = null, lock = null, timer = null;
   let speed = null, last = null, overSince = 0, warnedAt = 0, breakAt = 0, batteryTold = false, battery = null, awaiting = null;
   let trip = null, rideAlong = store.get("ride", true), crawlSince = 0, stoppedSince = 0;
+  let ambient = "", ambientAt = 0, savedAt = 0, overMaps = false;
   const rideSaid = {};   // one companion line per trip per moment
 
   // ------------------------------------------------------------ the screen
@@ -152,6 +153,58 @@
     return bits.join(" · ");
   }
 
+  // ------------------------------------------------------- out of sight
+  // Google Maps takes the screen for the drive itself, so the app goes with
+  // it. The orb over Maps is then the only place Izuki can still show what's
+  // left — and it says the same honest numbers the trip line does, never a
+  // guess.
+  function ambientLine() {
+    const r = trip && trip.route;
+    return r ? `${timeText(r.secs)} · ${leftText(r.metres)} to ${trip.place}` : "";
+  }
+  function showAmbient(force) {
+    const native = window.IzukiNative;
+    if (!native || typeof native.orb !== "function") return;
+    // In the app the trip line under the speed already says this.
+    const line = active && document.visibilityState !== "visible" ? ambientLine() : "";
+    const now = Date.now();
+    if (!line) {
+      if (!ambient) return;
+      ambient = ""; ambientAt = 0;
+      // Hand the orb back the way Maps left it.
+      void native.orb("rest", overMaps ? "Maps is driving — tap to talk" : "", 0);
+      return;
+    }
+    // The orb's lease runs out in two minutes and its words go with it, so the
+    // line is renewed while it stands — but re-sent only when it changes,
+    // because a caption that rewrites itself every five seconds is noise at
+    // the wheel.
+    if (!force && line === ambient && now - ambientAt < 50_000) return;
+    ambient = line; ambientAt = now;
+    void native.orb("trip", line, 120_000);
+  }
+
+  // A drive outlives the screen. Leaving for Google Maps is normal; Android
+  // ending the page is not — and neither should cost you the destination. The
+  // place, the minutes and the distance covered are written down as the drive
+  // goes; the route is not, because by the time it came back it would be a
+  // guess, so it is asked for again from wherever the next fix is.
+  function saveTrip() {
+    savedAt = Date.now();
+    store.set("trip", trip
+      ? { place: trip.place, at: trip.at, metres: trip.metres, dest: trip.dest, found: trip.found, why: trip.why, run: active, maps: overMaps }
+      : null);
+  }
+  function resumeTrip() {
+    const s = store.get("trip", null);
+    if (!s || !s.place || !Number.isFinite(s.at)) return;
+    // Written down mid-drive, and recent. Hours later it is somebody else's
+    // errand, not this one.
+    if (!s.run || Date.now() - s.at > 3 * 3600_000) { store.set("trip", null); return; }
+    trip = { place: s.place, at: s.at, metres: Math.max(0, Number(s.metres) || 0), anchor: null, dest: s.dest || null, route: null, found: s.found || "asking", why: s.why || "" };
+    overMaps = Boolean(s.maps);
+  }
+
   function beginTrip(place) {
     // The last fix becomes the starting anchor, so the first stretch counts.
     trip = { place, at: Date.now(), metres: 0, anchor: last ? { lat: last.lat, lon: last.lon, t: last.t } : null, dest: null, route: null, found: "asking", why: "" };
@@ -161,7 +214,10 @@
     crawlSince = 0;
     stoppedSince = 0;
     planning = null;
+    // A new destination is a new drive: nothing from the last one carries over.
+    overMaps = false;
     for (const k of Object.keys(rideSaid)) delete rideSaid[k];
+    saveTrip();
     void findPlace(place);
   }
 
@@ -216,12 +272,13 @@
           if (trip !== t) return;            // a newer destination won
           t.dest = hit;
           t.found = "yes";
+          saveTrip();
           await plan(true);
           return;
         }
       } catch { /* try the next source, then give up honestly */ }
     }
-    if (trip === t) { t.found = "no"; paint(); }
+    if (trip === t) { t.found = "no"; paint(); saveTrip(); }
   }
 
   /** What the router says is left from here — null when it won't say. */
@@ -249,6 +306,11 @@
       if (trip !== t) return null;
       if (r) t.route = r;
       paint();
+      saveTrip();
+      // The route just landed, so say it on the orb now: waiting for the next
+      // five-second check can be a whole minute behind Maps, where background
+      // timers are throttled.
+      if (r) showAmbient(false);
       return t.route || null;
     });
     planning = asked;
@@ -323,7 +385,9 @@
     // Messages app (Capacitor opens anything off the app's own pages there).
     // Keep the glass orb above it so Izuki is still one tap away.
     if (window.Capacitor?.isNativePlatform?.()) {
-      void window.IzukiNative?.orb?.("listen", "");
+      // Keep the glass orb above the app we are leaving for — resting, not
+      // "Listening…", because nothing is listening.
+      void window.IzukiNative?.orb?.("rest", "", 0);
       location.href = url;
       return;
     }
@@ -344,7 +408,12 @@
         if (native?.installed?.() && native.navigate) {
           // navigate() opens turn-by-turn and raises the orb itself. If Android
           // only had a place search, keep the trip going with web directions.
-          void native.navigate(place).then((r) => { if (!r || r.navigation === false) open(web); }).catch(() => open(web));
+          void native.navigate(place).then((r) => {
+            if (!r || r.navigation === false) { open(web); return; }
+            // Maps owns the screen from here: the orb is what still shows.
+            overMaps = true;
+            saveTrip();
+          }).catch(() => open(web));
           return;
         }
         open(web);
@@ -489,6 +558,11 @@
     // What's left, from the router: refreshed as you drive, one request at a
     // time, and never more often than every 90 seconds.
     if (trip && trip.dest && last && (!trip.route || now - trip.route.at > 90_000)) void plan(false);
+    // The trip is written down as it goes, so a reload — or Android ending the
+    // page while Maps has the screen — picks it back up instead of losing it.
+    if (trip && now - savedAt > 15_000) saveTrip();
+    // What's left, on the orb, while the app is out of sight.
+    showAmbient(false);
     // A long stretch at the wheel: every two hours.
     if (now - started >= 2 * 3600_000 && now - breakAt >= 2 * 3600_000) {
       breakAt = now;
@@ -549,7 +623,13 @@
   async function keepAwake() {
     try { lock = await navigator.wakeLock?.request("screen"); } catch { lock = null; }
   }
-  document.addEventListener("visibilitychange", () => { if (active && document.visibilityState === "visible") void keepAwake(); });
+  document.addEventListener("visibilitychange", () => {
+    if (!active) return;
+    if (document.visibilityState === "visible") void keepAwake();
+    // Out from under the app, or back in it: the orb carries the trip line, or
+    // hands it back to the screen.
+    showAmbient(true);
+  });
 
   // ------------------------------------------------------------ on / off
   function start() {
@@ -585,6 +665,9 @@
     alertLine("");
     trip = null;
     planning = null;
+    saveTrip();          // nothing left over to pick up on the next launch
+    showAmbient(true);   // the orb goes back to resting, or to its Maps hint
+    overMaps = false;
     crawlSince = 0;
     stoppedSince = 0;
     for (const k of Object.keys(rideSaid)) delete rideSaid[k];
@@ -683,6 +766,10 @@
     get line() { return tripLine(); },
     /** Ask the router again now (Drive mode's own check does this too). */
     routeNow: () => plan(true),
+    /** The line the glass orb is showing over Maps, if any. */
+    get ambient() { return ambient; },
+    /** Pick the trip back up after a reload (the page calls this at start-up). */
+    resume: resumeTrip,
     /** One of the 5 s checks (the timer calls this; tests do too). */
     tick: check,
     /** Talk on the way: check-ins, a word in traffic, an arrival nudge. */
@@ -693,6 +780,7 @@
     unit,
   };
   document.addEventListener("DOMContentLoaded", () => {
+    resumeTrip();
     const b = $("go-drive");
     if (b) b.onclick = () => { start(); say("Drive mode's on. Where to?"); };
     const w = $("drive-warn");

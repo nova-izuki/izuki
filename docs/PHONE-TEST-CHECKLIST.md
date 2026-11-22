@@ -171,6 +171,14 @@ wake word, lock screen and microphone hand-off. At minimum:
 - [ ] Drive mode opens with large controls and readable contrast. “Take me
       home” / “take me to …” opens Maps navigation without sending a message
       or buying anything.
+- [ ] With the orb on ("Keep the glass orb over other apps"), name a
+      destination and let Maps take the screen. The orb shows what's left
+      ("12 min · 3.9 mi to …") and keeps up as you drive; it sits calm, not
+      pulsing like Listening/Working, and it shows no line at all when the
+      router could not answer.
+- [ ] Force-stop Izuki mid-drive (or let Android end the page), reopen it and
+      start Drive mode: the same destination and the distance covered are still
+      there, and the time left is asked for again rather than the old number.
 - [ ] Rotate the phone and increase the system font size. No control is cut
       off or unreachable.
 

@@ -190,6 +190,81 @@ const fix = (lat, lon, speed, at) => ({ coords: { latitude: lat, longitude: lon,
   ok(/covered/.test((D.gate("we're here") || {}).say || ''), 'left: answering it still ends the drive');
   ok(D.line === '' && D.left === null, 'left: nothing is left over after the drive');
 
+  // ---- the trip outlives the screen: over Maps, and across a reload --------
+  mode = 'ok';
+  const orbs = [];
+  window.IzukiNative = { orb: async (state, text, lease) => { orbs.push({ state, text, lease }); return true; } };
+  D.start();
+  const orbAt = Date.now();
+  D.track(fix(43.0000, -79.0000, 13, orbAt));
+  say('take me to walmart');
+  await settle();
+  D.tick();                                   // in the app: the screen says it
+  ok(!orbs.some((o) => o.state === 'trip'), 'orb: nothing extra while the app is in front');
+  document.visibilityState = 'hidden';        // Google Maps is in front now
+  Date.now = () => orbAt + 60_000;
+  D.tick();
+  const shown = orbs[orbs.length - 1];
+  Date.now = realNow;
+  ok(shown && shown.state === 'trip' && shown.text === '12 min · 3.9 mi to walmart', 'orb: what is left rides over Maps');
+  ok(shown && shown.lease >= 120_000, 'orb: the line is leased, so it cannot hang around for ever');
+  const sent = orbs.length;
+  Date.now = () => orbAt + 62_000;
+  D.tick();
+  const same = orbs.length;
+  Date.now = () => orbAt + 115_000;
+  D.tick();
+  const renewed = orbs.length;
+  Date.now = realNow;
+  ok(same === sent, 'orb: the same line is not rewritten every five seconds');
+  ok(renewed === sent + 1 && orbs[orbs.length - 1].state === 'trip', 'orb: the line is renewed so its lease does not run out');
+  document.visibilityState = 'visible';
+  D.tick();
+  const back = orbs[orbs.length - 1];
+  ok(back.state === 'rest' && back.text === '', 'orb: back in the app, the orb stops claiming a drive');
+  document.visibilityState = 'hidden';
+
+  // the line lands with the route, not at the next five-second check
+  const beforeLanding = orbs.length;
+  say('take me to walmart');
+  await settle();
+  await settle();
+  ok(orbs.slice(beforeLanding).some((o) => o.state === 'trip' && /to walmart/.test(o.text)), 'orb: the line lands with the route, not a minute later');
+  document.visibilityState = 'visible';
+
+  // no route: no line, rather than a made-up time
+  mode = 'noroute';
+  say('take me to blorptown');
+  await settle();
+  const quiet = orbs.length;
+  D.tick();
+  ok(!orbs.slice(quiet).some((o) => o.state === 'trip'), 'orb: no route, no line — it never invents a time');
+  document.visibilityState = 'visible';
+
+  // what an unfinished drive is written down as, and that ending it clears it
+  mode = 'ok';
+  say('take me to walmart');
+  await settle();
+  const written = JSON.parse(store['izuki.drive.trip']);
+  ok(written && written.place === 'walmart' && written.run === true, 'persist: an unfinished drive is written down');
+  D.stop();
+  ok(store['izuki.drive.trip'] === 'null', 'persist: ending the drive clears what was written');
+
+  // a reload — or Android ending the page — picks the destination back up
+  store['izuki.drive.trip'] = JSON.stringify({ place: 'walmart', at: Date.now(), metres: 1200, dest: { lat: 43.79, lon: -79.2 }, found: 'yes', why: '', run: true, maps: true });
+  eval(src);
+  const D2 = window.IzukiDrive;
+  ok(D2.trip === null, 'persist: a fresh page starts with no trip');
+  D2.resume();
+  ok(D2.trip && D2.trip.place === 'walmart' && D2.trip.metres === 1200, 'persist: the destination and the distance come back');
+  ok(D2.left === null && !/left|min/.test(D2.line), 'persist: the old route is not restored as today’s — so no stale time');
+
+  // and a trip from hours ago is somebody else's errand
+  store['izuki.drive.trip'] = JSON.stringify({ place: 'costco', at: Date.now() - 4 * 3600_000, metres: 900, run: true });
+  eval(src);
+  window.IzukiDrive.resume();
+  ok(window.IzukiDrive.trip === null && store['izuki.drive.trip'] === 'null', 'persist: a trip from hours ago is not picked back up');
+
   let bad = 0;
   for (const [c, w] of cases) { if (!c) { bad++; console.log('FAIL', w); } }
   console.log(`Drive mode: ${cases.length - bad} passed, ${bad} failed`);
