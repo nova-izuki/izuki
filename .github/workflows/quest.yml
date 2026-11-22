@@ -82,6 +82,11 @@ jobs:
             echo "name=Izuki-VR-Quest-TEST-ONLY.apk" >> "$GITHUB_OUTPUT"
             echo "::warning::No IZUKI_PREVIEW_KEYSTORE_B64 secret yet (docs/ANDROID-SIGNING.md): this build is TEST-ONLY, signed with a throwaway key the site doesn't vouch for."
           fi
+      - name: A new version number for every build (the store needs it to grow)
+        working-directory: quest
+        run: |
+          node -e "const fs=require('fs'),m=JSON.parse(fs.readFileSync('twa-manifest.json','utf8')),n=Number(process.env.GITHUB_RUN_NUMBER);m.appVersionCode=100+n;m.appVersion='1.0.'+n;fs.writeFileSync('twa-manifest.json',JSON.stringify(m,null,2))"
+          grep -E '"appVersion(Code)?"' twa-manifest.json
       - name: Generate the Android project from quest/twa-manifest.json
         working-directory: quest
         run: |
@@ -103,4 +108,32 @@ jobs:
         with:
           name: izuki-vr-quest
           path: ${{ steps.key.outputs.name }}
+          if-no-files-found: error
+      # The Meta Horizon Store copy: the same package, signed with the store key
+      # (tools/quest-store-key.ps1; main only, never a branch or pull request).
+      - name: The store version (signed with the store key)
+        if: github.ref == 'refs/heads/main'
+        env:
+          STORE_B64: ${{ github.ref == 'refs/heads/main' && secrets.IZUKI_QUEST_STORE_KEYSTORE_B64 || '' }}
+          STORE_PASSWORD: ${{ github.ref == 'refs/heads/main' && secrets.IZUKI_QUEST_STORE_KEYSTORE_PASSWORD || '' }}
+        run: |
+          if [ -z "$STORE_B64" ] || [ -z "$STORE_PASSWORD" ]; then echo "No store key in GitHub yet (tools/quest-store-key.ps1)."; exit 0; fi
+          ks="$RUNNER_TEMP/izuki-quest-store.p12"
+          printf '%s' "$STORE_B64" | base64 -d > "$ks"
+          alias=$(keytool -list -keystore "$ks" -storetype PKCS12 -storepass:env STORE_PASSWORD | sed -n 's/^\([^,]*\),.*PrivateKeyEntry.*/\1/p' | head -1)
+          fp=$(keytool -list -v -keystore "$ks" -storetype PKCS12 -storepass:env STORE_PASSWORD -alias "$alias" | sed -n 's/^[[:space:]]*SHA256: //p' | tr -d '[:space:]')
+          if ! grep -q "\"$fp\"" docs/.well-known/assetlinks.json; then
+            echo "::error::The store key ($fp) isn't one izukinova.ai/.well-known/assetlinks.json vouches for."
+            rm -f "$ks"; exit 1
+          fi
+          tools="$ANDROID_HOME/build-tools/34.0.0"
+          "$tools/apksigner" sign --ks "$ks" --ks-type PKCS12 --ks-pass env:STORE_PASSWORD --ks-key-alias "$alias" --out Izuki-VR-Quest-store.apk quest/app-release-unsigned-aligned.apk
+          rm -f "$ks"
+          "$tools/apksigner" verify --print-certs Izuki-VR-Quest-store.apk
+          echo "STORE_APK=1" >> "$GITHUB_ENV"
+      - uses: actions/upload-artifact@v4
+        if: env.STORE_APK == '1'
+        with:
+          name: izuki-vr-quest-store
+          path: Izuki-VR-Quest-store.apk
           if-no-files-found: error
