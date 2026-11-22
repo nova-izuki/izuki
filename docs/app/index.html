@@ -164,6 +164,8 @@
   .ai-status summary { cursor: pointer; display: inline; opacity: 0.7; font-size: 11.5px; }
   .ai-status summary:hover, .ai-status summary:focus-visible { opacity: 1; }
   .ai-status ul { margin: 6px 0 0; padding-left: 16px; display: grid; gap: 3px; }
+  .ai-status .ai-sources { margin-top: 6px; display: grid; gap: 2px; }
+  .ai-status .ai-sources a { color: inherit; text-decoration: underline; text-underline-offset: 2px; overflow-wrap: anywhere; }
   .chip { border: 1px solid var(--line); background: rgba(0, 0, 0, 0.25); border-radius: 999px; padding: 7px 13px; font-size: 13.5px; text-decoration: none; color: var(--ink); white-space: normal; }
   .face-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); gap: 8px; margin: 4px 0 8px; }
   .face-tile { position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 6px; border-radius: 14px; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.05); color: var(--ink); font-size: 11.5px; }
@@ -1897,7 +1899,10 @@
               const s = turnMeta.search;
               s.offered = true;
               if (Array.isArray(g.webSearchQueries)) s.queries = g.webSearchQueries.filter(Boolean).slice(0, 3);
-              if (Array.isArray(g.groundingChunks)) s.found = Math.max(s.found, g.groundingChunks.length);
+              if (Array.isArray(g.groundingChunks)) {
+                s.found = Math.max(s.found, g.groundingChunks.length);
+                s.sources = groundingSources(g.groundingChunks, s.sources);
+              }
               if (Array.isArray(g.groundingSupports) && g.groundingSupports.length) s.used = true;
             }
             for (const p of v.candidates?.[0]?.content?.parts || []) if (p.text) out += p.text;
@@ -2821,8 +2826,25 @@
   // keys, no prompts, no reasoning.
   let turnMeta = null;
   function newTurnMeta() {
-    turnMeta = { provider: "", model: "", fallback: false, local: false, screen: { device: "", detail: "" }, search: { offered: false, queries: [], found: 0, used: false, why: "" } };
+    turnMeta = { provider: "", model: "", fallback: false, local: false, screen: { device: "", detail: "" }, search: { offered: false, queries: [], found: 0, used: false, why: "", sources: [] } };
     return turnMeta;
+  }
+  /**
+   * The pages Google's grounding named. Which pages came back is Google's own
+   * record, not something the answer says about itself — so a link is shown
+   * only when the search really returned it, never invented as a citation.
+   * Duplicates are dropped, only http(s) is kept, and five is enough.
+   */
+  function groundingSources(chunks, have) {
+    const out = (Array.isArray(have) ? have : []).slice();
+    for (const c of Array.isArray(chunks) ? chunks : []) {
+      const web = c && c.web;
+      const uri = web && typeof web.uri === "string" ? web.uri : "";
+      if (!/^https?:\/\//i.test(uri) || out.some((x) => x.uri === uri)) continue;
+      if (out.length >= 5) break;
+      out.push({ uri, title: typeof web.title === "string" ? web.title : "" });
+    }
+    return out;
   }
   /** The lines under a reply, from that record alone. */
   function statusLines(m) {
@@ -2865,6 +2887,21 @@
     const ul = document.createElement("ul");
     for (const line of lines) ul.appendChild(el("li", "", line));
     box.appendChild(ul);
+    // Where the answer's facts came from: the pages Google actually returned,
+    // each one a working link, under the honest count above.
+    if (s.sources?.length) {
+      const list = document.createElement("div");
+      list.className = "ai-sources";
+      for (const src of s.sources) {
+        const a = document.createElement("a");
+        a.href = src.uri;
+        a.target = "_blank";
+        a.rel = "noopener noreferrer";
+        a.textContent = src.title || src.uri;
+        list.appendChild(a);
+      }
+      box.appendChild(list);
+    }
     return box;
   }
   // ---- end what answered ----

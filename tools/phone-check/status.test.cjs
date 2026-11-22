@@ -11,8 +11,8 @@ const from = html.indexOf('  let turnMeta = null;');
 const end = html.indexOf('  /** The small, quiet, expandable line under a reply. */');
 assert.ok(from > 0 && end > from, 'the what-answered block must be in the page');
 const ctx = vm.createContext({});
-vm.runInContext(html.slice(from, end) + '\nglobalThis.statusLines = statusLines;\nglobalThis.newTurnMeta = newTurnMeta;', ctx);
-const { statusLines, newTurnMeta } = ctx;
+vm.runInContext(html.slice(from, end) + '\nglobalThis.statusLines = statusLines;\nglobalThis.newTurnMeta = newTurnMeta;\nglobalThis.groundingSources = groundingSources;', ctx);
+const { statusLines, newTurnMeta, groundingSources } = ctx;
 
 const meta = (patch) => Object.assign({ provider: 'Google Gemini', model: 'gemini-flash-latest', fallback: false, local: false, screen: { device: '', detail: '' }, search: { offered: false, queries: [], found: 0, used: false, why: '' } }, patch);
 
@@ -81,4 +81,19 @@ const all = JSON.stringify([
 ]);
 assert.equal(/AIza|api[_-]?key|Bearer|sk-/i.test(all), false);
 
-console.log('status: 21 checks passed');
+// Sources are Google's own grounding links: real http(s) pages, no duplicates
+// and no invented citations.
+const chunk = (uri, title) => ({ web: { uri, title } });
+const got = groundingSources([
+  chunk('https://apnews.com/a', 'AP'),
+  chunk('https://apnews.com/a', 'AP again'),
+  chunk('javascript:alert(1)', 'x'),
+  chunk('https://bbc.com/b', 'BBC'),
+], []);
+assert.deepEqual(got.map((s) => s.uri), ['https://apnews.com/a', 'https://bbc.com/b']);
+assert.equal(got[0].title, 'AP');
+assert.equal(groundingSources(Array.from({ length: 9 }, (_, i) => chunk('https://e.com/' + i, 'E' + i)), []).length, 5);
+assert.deepEqual(groundingSources(null, []).length, 0);
+assert.equal(fresh.search.sources.length, 0);
+
+console.log('status: 26 checks passed');
