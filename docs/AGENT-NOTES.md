@@ -52,6 +52,26 @@ useful signal is "this happened 40 times since Tuesday", not 40 lines.
 
   Keep it factual and short. A note is a signpost, not a story.
 
+## On the phone and the website
+
+There is no file to write on a phone, so the same idea lives in the page that
+already loads `shared/bugs.js`:
+
+- `izukiBugs.fact(name, value)` — a standing fact about the device or the last
+  attempt: `location: denied`, `route: offline`, `orb: Android refused the orb`,
+  `search: search allowance used up (429)`. The last twenty are kept, newest
+  last, and a repeat replaces the earlier value instead of piling up.
+- `izukiBugs.report(what)` — something that went wrong, kept with the last
+  problems and the crumbs around them.
+- `izukiBugs.text()` — all of it as one page, which is what Settings →
+  "Something wrong?" copies when reports aren't set up.
+
+Both are scrubbed exactly like a report (keys, emails, phone numbers, link
+secrets) and neither leaves the phone unless the person sends it. Drive mode
+writes them from the places that used to fail in silence — a refused location
+fix, a gazetteer or router that wouldn't answer, and an orb push Android turned
+down — so "the orb showed nothing" arrives with its reason attached.
+
 ## What it is not
 
 Not telemetry, not a crash reporter, not a diary of the person's day. It never

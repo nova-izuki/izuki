@@ -34,6 +34,9 @@ the build being tested.
       returns to Izuki.
 - [ ] Add **Ask Izuki** to Quick Settings and wake it once from another app.
 - [ ] Run **Autopilot → self-test**; it finishes with its Stop control present.
+- [ ] Refuse the location permission, start Drive mode, then use **Something
+      wrong?** (Settings): the copied text has a **Now** block naming the reason
+      (`location: denied`), not just the words you typed.
 - [ ] Ask Nova to speak; sound starts, and Mute/Stop stops it immediately.
 - [ ] The header has six controls; **More** opens the Command Centre with
       Drive, Remote, Lecture and PC Missions, and each one opens.
