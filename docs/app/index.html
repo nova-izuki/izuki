@@ -490,7 +490,7 @@
       <div class="row" style="margin-top: 10px"><a class="chip" href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">1 · Get a free Gemini key ↗</a><button class="chip" id="paste-key" type="button">2 · 📋 Paste my key</button></div>
       <div class="field" style="margin-top: 10px">
         <label for="key">Gemini key</label>
-        <input id="key" type="password" placeholder="AIza…" autocomplete="off" autocapitalize="off" spellcheck="false">
+        <input id="key" type="password" placeholder="AQ.… or AIza…" autocomplete="off" autocapitalize="off" spellcheck="false">
       </div>
       <div class="row" style="margin-top: 10px"><button class="btn" id="save-key" type="button">Save and test</button><span id="key-result"></span></div>
     </section>
@@ -1667,7 +1667,7 @@
     const input = el("input");
     input.id = "setup-key";
     input.type = "password";
-    input.placeholder = "…or paste your key here (it starts with AIza)";
+    input.placeholder = "…or paste your key here (it starts with AQ. or AIza)";
     input.autocomplete = "off";
     input.setAttribute("autocapitalize", "off");
     input.spellcheck = false;
@@ -1677,7 +1677,7 @@
     more.onclick = openSettings;
     paste.onclick = () => pasteKey(input, out);
     input.addEventListener("paste", () => setTimeout(() => {
-      if (/^AIza[0-9A-Za-z_-]{35}$/.test(input.value.trim())) tryKey(input.value.trim(), out);
+      if (/^(?:AIza[0-9A-Za-z_-]{35}|AQ\.[0-9A-Za-z_-]{40,80})$/.test(input.value.trim())) tryKey(input.value.trim(), out);
     }, 50));
     input.addEventListener("keydown", (e) => { if (e.key === "Enter") tryKey(input.value.trim(), out); });
     box.append(get, paste, input, out, more);
@@ -4865,7 +4865,7 @@
   async function pasteKey(input, out) {
     try {
       const t = (await navigator.clipboard.readText()).trim();
-      if (!/^AIza[0-9A-Za-z_-]{35}$/.test(t)) { out.className = "bad"; out.textContent = "That's not a Gemini key yet — copy the key (it starts with AIza), then tap Paste again."; return; }
+      if (!/^(?:AIza[0-9A-Za-z_-]{35}|AQ\.[0-9A-Za-z_-]{40,80})$/.test(t)) { out.className = "bad"; out.textContent = "That's not a Gemini key yet — copy the key (it starts with AQ. or AIza), then tap Paste again."; return; }
       input.value = t;
       tryKey(t, out);
     } catch {
@@ -5968,7 +5968,7 @@
     }
   };  // Pasted straight into the box: save and test it right away.
   $("key").addEventListener("paste", () => setTimeout(() => {
-    if (/^AIza[0-9A-Za-z_-]{35}$/.test($("key").value.trim())) tryKey($("key").value.trim(), $("key-result"));
+    if (/^(?:AIza[0-9A-Za-z_-]{35}|AQ\.[0-9A-Za-z_-]{40,80})$/.test($("key").value.trim())) tryKey($("key").value.trim(), $("key-result"));
   }, 50));
   $("save-key").onclick = () => tryKey($("key").value.trim(), $("key-result"));
   $("speech-language").onchange = () => {
