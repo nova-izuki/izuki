@@ -5889,6 +5889,7 @@
       const away = [];
       for (let s = head.nextElementSibling; s; s = s.nextElementSibling) away.push(s);
       if (!away.length) continue;
+      sec.classList.add("foldable");
       head.classList.add("fold-head");
       head.setAttribute("role", "button");
       head.tabIndex = 0;
@@ -5910,8 +5911,10 @@
   }
 
   function openSettings(focusId = "") {
-    foldSettingsSections();
+    // Notes first: their "How it works" links belong to the card they sit in,
+    // so folding afterwards takes them with it.
     foldNotes();
+    foldSettingsSections();
     try { $("orb-style").value = localStorage.getItem("izuki.orbStyle") || "liquid"; } catch { $("orb-style").value = "liquid"; }
     try { $("orb-response").value = localStorage.getItem("izuki.orbResponse") || "1"; } catch {}
     $("orb-response-value").textContent = Math.round(Number($("orb-response").value)*100)+'%';
