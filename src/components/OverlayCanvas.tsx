@@ -16,6 +16,7 @@ import { CaptionBox } from "./CaptionBox";
 import { FloatingChat } from "./FloatingChat";
 import { ActionHand } from "./ActionHand";
 import { Island, islandPointer } from "./Island";
+import { AskBar, askBarOwnsCaptions } from "./AskBar";
 import { IslandChatWorkspace } from "./IslandChatWorkspace";
 import { Hud } from "./Hud";
 import { TaskStage } from "./TaskStage";
@@ -549,6 +550,8 @@ export function OverlayCanvas() {
         setChatOn(p.follow);
       }),
       on<CaptionPayload>(EV.caption, (p) => {
+        // The ask bar shows its own answer: one place for the words.
+        if (askBarOwnsCaptions()) return;
         const before = captionText.current.trim();
         if (before && before !== p.text.trim() && before.split(/\s+/).length >= 4) {
           setPastReplies((all) => [...all.filter((x) => x !== before), before].slice(-30));
@@ -904,6 +907,7 @@ export function OverlayCanvas() {
         <Hud />
         <TaskStage onActiveChange={setTaskActive} />
         <IslandChatWorkspace />
+        <AskBar />
         {islandOn && <Island
             always={islandAlways}
             free={islandFree}

@@ -189,6 +189,42 @@ pub fn rest_model(cfg: &ProviderConfig, d: Duration) {
     r.retain(|(p, m, _)| !(*p == cfg.id && *m == cfg.model));
     r.push((cfg.id, cfg.model.clone(), Instant::now() + d));
     eprintln!("[free-brains] resting {} for {} s — its siblings carry on", cfg.model, d.as_secs());
+    drop(r);
+    // OpenRouter's ":free" models share busy hosts and an account-wide free
+    // limit. Seen 2026-11-23: 225 "Provider returned error" 429s in one
+    // morning, as each look tried the next free sibling (0.3–2 s each) and
+    // got the same answer. Two busy within two minutes: rest them all.
+    if swamped(cfg) {
+        let mut r = RESTING.lock();
+        let until = Instant::now() + d.max(Duration::from_secs(60));
+        let mut n = 0;
+        for m in siblings(cfg).into_iter().filter(|m| m.ends_with(":free")) {
+            r.retain(|(p, x, _)| !(*p == cfg.id && *x == m));
+            r.push((cfg.id, m, until));
+            n += 1;
+        }
+        eprintln!("[free-brains] OpenRouter's free models are swamped — resting all {} of them for {} s", n + 1, d.max(Duration::from_secs(60)).as_secs());
+    }
+}
+
+/// Recent rate limits on OpenRouter's free models (when).
+static STRIKES: Mutex<Vec<Instant>> = Mutex::new(Vec::new());
+
+/// A second OpenRouter ":free" model rate-limited within two minutes: the
+/// free tier as a whole is swamped, not just that model.
+fn swamped(cfg: &ProviderConfig) -> bool {
+    if cfg.id != ProviderId::Openrouter || !cfg.model.ends_with(":free") {
+        return false;
+    }
+    let mut s = STRIKES.lock();
+    let now = Instant::now();
+    s.retain(|t| now.duration_since(*t) < Duration::from_secs(120));
+    s.push(now);
+    if s.len() >= 2 {
+        s.clear();
+        return true;
+    }
+    false
 }
 
 /// A new key for a provider: its models' rests (a denial for the old key, a
@@ -447,6 +483,19 @@ fn short(m: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn two_busy_free_openrouter_models_mean_the_free_tier_is_swamped() {
+        let free = |m: &str| ProviderConfig { id: ProviderId::Openrouter, label: "t".into(), base_url: "http://unused.invalid".into(), model: m.into(), api_key: String::new(), enabled: true };
+        // Only OpenRouter's ":free" models count; a paid model or Groq never does.
+        assert!(!swamped(&free("izuki-test/paid-model")));
+        assert!(!swamped(&ProviderConfig { id: ProviderId::Groq, ..free("izuki-test/groq:free") }));
+        STRIKES.lock().clear();
+        assert!(!swamped(&free("izuki-test/a:free")), "one busy model is just that model");
+        assert!(swamped(&free("izuki-test/b:free")), "a second within two minutes: all of them");
+        assert!(!swamped(&free("izuki-test/c:free")), "and the count starts again");
+        STRIKES.lock().clear();
+    }
 
     #[test]
     fn exhausted_chain_does_not_resurrect_a_blocked_model() {

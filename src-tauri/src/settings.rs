@@ -177,6 +177,10 @@ pub struct Settings {
     /// and it goes in, tidied. Nothing is sent or submitted.
     #[serde(default = "default_hotkey_dictate")]
     pub hotkey_dictate: String,
+    /// Press anywhere: the ask bar opens near the top of the screen (one box,
+    /// type and Enter) — like the ChatGPT/Gemini/Claude desktop apps.
+    #[serde(default = "default_hotkey_ask")]
+    pub hotkey_ask: String,
     /// Tidy dictation before it's typed: fillers ("um", "you know"), false
     /// starts and repeated words taken out, grammar and punctuation fixed.
     /// Off: exactly the words heard.
@@ -915,6 +919,12 @@ fn default_hotkey_voice() -> String {
     "Ctrl+Super+Space".into()
 }
 
+fn default_hotkey_ask() -> String {
+    // What the ChatGPT, Gemini and Claude desktop apps use. If another app
+    // already holds it (PowerToys Run), the Shortcuts list says so.
+    "Alt+Space".into()
+}
+
 fn default_hotkey_dictate() -> String {
     // Nothing else on Windows uses this, and it's reachable one-handed.
     // NOT Ctrl+Shift+Space: that is the draw key, and two features on one
@@ -1072,13 +1082,14 @@ impl Settings {
     fn unclash_hotkeys(&mut self) {
         let defaults = Settings::default();
         // Most important first: whoever is earlier keeps the chord.
-        let mine: [(fn(&mut Settings) -> &mut String, fn(&Settings) -> &String); 6] = [
+        let mine: [(fn(&mut Settings) -> &mut String, fn(&Settings) -> &String); 7] = [
             (|s| &mut s.hotkey_draw, |d| &d.hotkey_draw),
             (|s| &mut s.hotkey_voice, |d| &d.hotkey_voice),
             (|s| &mut s.hotkey_panic, |d| &d.hotkey_panic),
             (|s| &mut s.hotkey_quickdraw, |d| &d.hotkey_quickdraw),
             (|s| &mut s.hotkey_dictate, |d| &d.hotkey_dictate),
             (|s| &mut s.hotkey_replay, |d| &d.hotkey_replay),
+            (|s| &mut s.hotkey_ask, |d| &d.hotkey_ask),
         ];
         let same = |a: &str, b: &str| a.trim().eq_ignore_ascii_case(b.trim());
         let mut taken: Vec<String> = Vec::new();
@@ -1226,6 +1237,7 @@ impl Default for Settings {
             wake_sensitivity: default_wake_sensitivity(),
             hotkey_quickdraw: default_hotkey_quickdraw(),
             hotkey_dictate: default_hotkey_dictate(),
+            hotkey_ask: default_hotkey_ask(),
             dictate_tidy: true,
             freeze_screen: true,
             magnetic_hand: true,
@@ -1444,6 +1456,7 @@ mod tests {
             ("talk", &s.hotkey_voice),
             ("quickdraw", &s.hotkey_quickdraw),
             ("dictate", &s.hotkey_dictate),
+            ("ask", &s.hotkey_ask),
         ];
         for (i, (name, combo)) in all.iter().enumerate() {
             assert!(!combo.trim().is_empty(), "{name} has no default shortcut");

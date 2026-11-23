@@ -108,6 +108,9 @@ pub fn save_settings(app: AppHandle, mut settings: Settings) -> Settings {
         || saved.hotkey_panic != previous.hotkey_panic
         || saved.hotkey_voice != previous.hotkey_voice
         || saved.hotkey_quickdraw != previous.hotkey_quickdraw
+        // These two were missing: a new dictate (or ask) key did nothing until a restart.
+        || saved.hotkey_dictate != previous.hotkey_dictate
+        || saved.hotkey_ask != previous.hotkey_ask
     {
         crate::hotkey::rebind(&app, &saved);
     }
@@ -721,6 +724,23 @@ pub async fn instant_command(app: AppHandle, said: String) -> Option<String> {
                     Ok(_) => format!("Here are the YouTube results for {q}."),
                     Err(e) => format!("I couldn't open YouTube: {e}"),
                 },
+            }
+        })
+        .await
+        .ok();
+    }
+    // "Search for pizza places near me", "google how tall is Everest": the
+    // results at once, no AI (apps::web_search_request has the story).
+    if let Some(q) = crate::apps::web_search_request(&said) {
+        return blocking(move || {
+            crate::automation::clear_abort();
+            match crate::patience::search(&q) {
+                Ok(done) if done.starts_with("already") => format!("That search is already open: “{q}”."),
+                Ok(_) => {
+                    crate::actlog::record("web", &format!("Searched the web for {q}"));
+                    format!("Here's Google for “{q}”.")
+                }
+                Err(e) => format!("I couldn't open the search: {e}"),
             }
         })
         .await

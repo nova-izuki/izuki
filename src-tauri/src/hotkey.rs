@@ -490,6 +490,7 @@ pub fn rebind(app: &AppHandle, settings: &Settings) {
         (settings.hotkey_voice.clone(), Action::Voice),
         (settings.hotkey_quickdraw.clone(), Action::Quickdraw),
         (settings.hotkey_dictate.clone(), Action::Dictate),
+        (settings.hotkey_ask.clone(), Action::Ask),
     ] {
         // A shortcut left unset is not a failure to report — it's a shortcut
         // nobody asked for.
@@ -597,6 +598,8 @@ enum Action {
     Quickdraw,
     /// Same: both edges matter, so it never reaches `Action::run`.
     Dictate,
+    /// The ask bar (AskBar.tsx): open it, or close it again.
+    Ask,
 }
 
 impl Action {
@@ -618,6 +621,11 @@ impl Action {
                 }
             }
             Action::Panic => stop_everything(app),
+            // The overlay has to be up for the bar to show in it.
+            Action::Ask => {
+                let _ = crate::overlay::show_follow(app);
+                let _ = app.emit(events::ASK_BAR, ());
+            }
             // A one-shot mic capture, no wake word, no window to open first —
             // the config panel's `VoiceEngine` is always mounted (even
             // hidden to tray) and is what actually listens for this. The
