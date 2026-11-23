@@ -875,6 +875,9 @@ test("with a photo open, \"this\" means the photo (seen on a real Quest: it talk
   // Naming the real room still uses the camera.
   const b = await open();
   await b.vr.gate("what am I holding?");
+  const seen = b.calls.filter((c) => c[0] === "see").pop();
+  assert.ok(seen, "it really looked");
+  assert.equal(seen[1].b64, "QUJD", "through the headset camera");
   assert.doesNotMatch(system(b), /own photos/, "the room named: the camera, not the photo");
 });
 
