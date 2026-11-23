@@ -778,6 +778,16 @@ test("dream mode in the room: a world shows, wake up ends it, the prompt stays g
   assert.match(src, /dreamGen\+\+;/, "a world being designed when you leave is dropped");
 });
 
+test("Izuki can float beside your other apps (a room hides them; a window doesn't)", () => {
+  assert.match(src, /"Float beside my apps"/);
+  assert.match(src, /store\.set\("launch", "float"\);[\s\S]{0,80}getElementById\("go-live"\)\?\.click\(\)/, "floating starts the hands-free call in the window");
+  assert.match(src, /if \(support\.headset\) box\.append\(float, floatTip\)/, "only on a headset");
+  assert.match(src, /last === "float"[\s\S]{0,120}goFloat\(\)/, "the app remembers floating");
+  assert.match(src, /if \(ok && !chosen && box\.isConnected\) goFloat\(\)/, "a tap you made first wins over the automatic float");
+  assert.match(src, /last === "room" && can\) void straightIn\(\)/, "and remembers the room");
+  assert.doesNotMatch(src, /openedOnce/, "the old explainer no longer opens under the launcher");
+});
+
 (async () => {
   for (const [name, fn] of tests) {
     try { await fn(); passed++; } catch (e) { console.error(`FAIL ${name}\n  ${e.message}`); process.exitCode = 1; }
