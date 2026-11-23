@@ -40,6 +40,8 @@
   (() => {
     const h = document.documentElement;
     if (h.classList.contains("tv")) return;
+    // Izuki OS: the phone app's own skin (izuki-os.css). A TV is exempt.
+    h.classList.add("izos");
     const ua = navigator.userAgent;
     const os = askedOS === "ios" || askedOS === "android" ? askedOS
       : /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1) ? "ios"
@@ -47,7 +49,7 @@
     if (!os) return;
     h.dataset.os = os;
     // The status bar matches the top bar on Android.
-    if (os === "android") document.querySelector('meta[name="theme-color"]')?.setAttribute("content", "#060811");
+    if (os === "android") document.querySelector('meta[name="theme-color"]')?.setAttribute("content", "#05060d");
   })();
 </script>
 <script src="../shared/bugs.js" data-app="phone" data-version="2.1"></script>
@@ -343,6 +345,7 @@
 <link rel="stylesheet" href="android-glass.css">
 <link rel="stylesheet" href="cockpit.css">
 <link rel="stylesheet" href="pilot.css">
+<link rel="stylesheet" href="izuki-os.css">
 </head>
 <body>
 <h1 class="sr">Izuki — free AI companion for your phone</h1>
@@ -5864,7 +5867,46 @@
     }
   }
 
+  /* Settings was a wall of ~20 identical cards, all open at once. Each one
+     now opens from its title row, so the pane reads as a short list; who
+     your Izuki is and your key stay open, because those are the two you
+     need on day one. Nothing inside the cards changed: same ids, same
+     handlers, same hidden/shown sections. */
+  function foldSettingsSections() {
+    const panel = $("sheet")?.querySelector(".panel");
+    if (!panel || panel.dataset.folded === "1") return;
+    panel.dataset.folded = "1";
+    let open = 0;
+    for (const sec of panel.querySelectorAll(":scope > section")) {
+      const head = sec.querySelector("h3");
+      // A heading nested in its own header block (Phone readiness) is left
+      // alone: folding it would pull the heading over its kicker.
+      if (!head || head.parentElement !== sec) continue;
+      const away = [];
+      for (let s = head.nextElementSibling; s; s = s.nextElementSibling) away.push(s);
+      if (!away.length) continue;
+      head.classList.add("fold-head");
+      head.setAttribute("role", "button");
+      head.tabIndex = 0;
+      const chev = el("span", "fold-chev");
+      chev.setAttribute("aria-hidden", "true");
+      head.appendChild(chev);
+      const setOpen = (isOpen) => {
+        sec.classList.toggle("open", isOpen);
+        head.setAttribute("aria-expanded", String(isOpen));
+        for (const node of away) node.classList.toggle("folded-away", !isOpen);
+      };
+      const toggle = () => setOpen(!sec.classList.contains("open"));
+      head.addEventListener("click", toggle);
+      head.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); }
+      });
+      setOpen(open++ < 2);
+    }
+  }
+
   function openSettings(focusId = "") {
+    foldSettingsSections();
     foldNotes();
     try { $("orb-style").value = localStorage.getItem("izuki.orbStyle") || "liquid"; } catch { $("orb-style").value = "liquid"; }
     try { $("orb-response").value = localStorage.getItem("izuki.orbResponse") || "1"; } catch {}
