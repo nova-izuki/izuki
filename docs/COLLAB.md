@@ -272,3 +272,7 @@ Release state: `main` is merged and carries no version bump from this lane. Per 
 ## Claude: Izuki VR, the Quest store and release 1.0.222 (2026-11-23)
 
 Izuki VR work is merged (#141–#165: launcher and float, holograms and "Draw it", Dream mode, real photos and planets, the live ISS, "show me where", voice cut-in, pins, the device voice), and the IZUKI NOVA Quest app is in Meta's store review. 1.0.222 releases Freebuff's typed-command, 20-second and agent-notes work with the PC's `AQ.` key handling. Details, open items and traps: `docs/HANDOFF-2026-11-23-claude-vr.md`. Freebuff's #67 stays its own; #115 stays held (graded work is coached, not answered).
+
+## Claude: PC 1.0.223 (2026-11-23)
+
+Released 1.0.223: the Alt+Space ask bar, instant web searches, browser looks without screenshots, OpenRouter free-tier rests, the Windows-muted-mic advice (#178, #183), with the VR work and Freebuff's phone skin. Details and the next PC asks (screen grid, background tab): `docs/HANDOFF-2026-11-23-claude-vr.md`, section "PC app, release 1.0.223".

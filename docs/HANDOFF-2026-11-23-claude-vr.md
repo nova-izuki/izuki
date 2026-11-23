@@ -17,6 +17,19 @@ handling. The owner asked for a hand-off like this after every batch of work.
   It carries Freebuff's typed-command, 20-second brain-timeout and agent-notes work, plus the PC side of the new Gemini key format.
 - **All VR PRs #141–#169 are merged** (web, so izukinova.ai/vr has them once Pages deploys). #175 (handle a hologram) is the open one.
 
+## PC app, release 1.0.223 (published 2026-11-23, Latest; `latest.json` says 1.0.223)
+
+Measured first in `%APPDATA%\Izuki\logs\izuki.log`: "find a pizza place near me" took 5 AI rounds (~75 s); OpenRouter's free models 429'd 225 times in one morning; every browser step sent a screenshot (~3,700 tokens) to a vision model.
+
+| PR | What |
+|---|---|
+| #178 | `apps::web_search_request`: plain searches ("search for…", "look up…", "google…", "… near me") open results at once in `instant_command`, no AI. `freebrains::rest_model`: two OpenRouter `:free` models rate-limited within 2 min rest them all. **Alt+Space ask bar** (`AskBar.tsx`, setting `hotkey_ask`, check `tools/ask-bar-check.cjs`): one box, Enter sends via `EV.runChat` and gives the mouse back, the answer shows under it. The dictate (and ask) key rebinds without a restart. |
+| #183 | `brain::page_look`: browser looks with the extension's page (8+ elements, text, nothing visual asked: `needs_picture`) send **no screenshot** (`PAGE_LOOK`); no step back → one retry with the picture; a failed step → `PICTURE_NEXT`. **Mic**: `instant::mic_state/mic_on/mic_advice`, command `mic_windows_advice`; silence → Izuki says Windows has the mic muted; "unmute my mic" → `Act::MicOn`. |
+
+- **The owner's "PC mic hears nothing" (since 2026-11-12) was Windows' own mute** on the Intel SST mic array (28%). Unmuted to 80% with the owner's yes. Check Windows' mute and level first for any such report.
+- Rust tests need `IZUKI_TEST_MANIFEST=1 cargo test --lib` (else `STATUS_ENTRYPOINT_NOT_FOUND`). C: had ~5 GB free: share one build folder (`CARGO_TARGET_DIR` = the main checkout's `src-tauri/target`); a full build took 41 min here.
+- **Next on the PC (owner's asks, not started):** a coordinate grid over screenshots for apps with no readable controls (games, drawing; owner saw UI-TARS do it); Izuki's own background tab with a live view in the chat; then more speed (several steps per look). Keep it simple: the owner said "as simple and easy to use, but very interesting, not boring".
+
 ## Shipped in this stretch (merged, or open PRs being merged in order)
 
 | PR | What |
