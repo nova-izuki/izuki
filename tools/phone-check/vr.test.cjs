@@ -713,6 +713,16 @@ test("the guide's numbered path is drawn in the room (steps flag reaches the sce
   assert.match(scene, /lookUi\.steps = !!steps/);
 });
 
+test("holograms look projected: a projector, a scan line, wire cages, and calm stays still", () => {
+  const scene = read("docs/app/vr-scene.src.js");
+  assert.match(scene, /function projShow\(width, scan\)/);
+  assert.match(scene, /function holoMaterial\(color\)/, "parts get the fresnel + scan-line surface");
+  assert.match(scene, /new LineSegments\(holoShell/, "each part has a wire cage");
+  assert.match(scene, /if \(!proj\.group\.visible \|\| calm\) return;/, "reduced motion: the projector doesn't move");
+  assert.match(scene, /holoClose\(\) \{\s*holoClear\(\);\s*proj\.group\.visible = false;/, "closing a hologram puts the projector away");
+  assert.match(scene, /n\.shell\?\.material\.dispose\(\)/, "cages are cleaned up with their hologram");
+});
+
 (async () => {
   for (const [name, fn] of tests) {
     try { await fn(); passed++; } catch (e) { console.error(`FAIL ${name}\n  ${e.message}`); process.exitCode = 1; }

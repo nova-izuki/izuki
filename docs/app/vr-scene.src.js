@@ -20,10 +20,10 @@
 // On a normal screen ("flat") the same room is a 3D preview you drive with
 // the mouse: click to tap, drag to look around, the wheel scrolls the PC.
 import {
-  AdditiveBlending, BackSide, BoxGeometry, BufferGeometry, CanvasTexture, CircleGeometry, Color, Float32BufferAttribute,
-  Group, Line, LineBasicMaterial, Mesh, MeshBasicMaterial, PerspectiveCamera, PlaneGeometry, Points, PointsMaterial,
-  Quaternion, Raycaster, RingGeometry, Scene, ShaderMaterial, SphereGeometry, Sprite, SpriteMaterial, SRGBColorSpace,
-  TorusGeometry, Vector2, Vector3, WebGLRenderer,
+  AdditiveBlending, BackSide, BoxGeometry, BufferGeometry, CanvasTexture, CircleGeometry, Color, CylinderGeometry, DoubleSide,
+  Float32BufferAttribute, Group, IcosahedronGeometry, Line, LineBasicMaterial, LineSegments, Mesh, MeshBasicMaterial,
+  PerspectiveCamera, PlaneGeometry, Points, PointsMaterial, Quaternion, Raycaster, RingGeometry, Scene, ShaderMaterial,
+  SphereGeometry, Sprite, SpriteMaterial, SRGBColorSpace, TorusGeometry, Vector2, Vector3, WebGLRenderer, WireframeGeometry,
 } from "three";
 
 // The room's type: IZUKI NOVA's own faces (the site's self-hosted Sora for
@@ -1492,12 +1492,89 @@ export async function start({ mode, session, api, tint }) {
   const holoGlow = track(glowTexture());
   const holoSphere = track(new SphereGeometry(1, 32, 24));
   const holoBox = track(new BoxGeometry(1, 1, 1));
+  // A wire cage that turns round each part: the "projected" look.
+  const holoShell = (() => { const ico = new IcosahedronGeometry(1, 1); const w = track(new WireframeGeometry(ico)); ico.dispose(); return w; })();
+  const holoTime = { value: 0 };
+  /** A part's surface: brighter at its edges (fresnel), with faint scan lines drifting up. */
+  function holoMaterial(color) {
+    return new ShaderMaterial({
+      uniforms: { color: { value: new Color(color) }, opacity: { value: 0.82 }, time: holoTime },
+      vertexShader: "varying vec3 vN; varying vec3 vV; varying float vY;\n" +
+        "void main(){ vec4 mv = modelViewMatrix * vec4(position, 1.0); vN = normalize(normalMatrix * normal); vV = normalize(-mv.xyz);\n" +
+        "  vY = (modelMatrix * vec4(position, 1.0)).y; gl_Position = projectionMatrix * mv; }",
+      fragmentShader: "uniform vec3 color; uniform float opacity; uniform float time; varying vec3 vN; varying vec3 vV; varying float vY;\n" +
+        "void main(){ float rim = pow(1.0 - abs(dot(normalize(vN), normalize(vV))), 2.0);\n" +
+        "  float lines = 0.8 + 0.2 * step(0.5, fract(vY * 150.0 - time * 0.9));\n" +
+        "  gl_FragColor = vec4(color * (0.5 + rim * 1.5) * lines, opacity * (0.45 + rim * 0.55));\n" +
+        "  #include <colorspace_fragment>\n}",
+      transparent: true, depthWrite: false,
+    });
+  }
+
+  // ---- the projector under a hologram: turning rings, a beam of light, rising specks, a scan line ----
+  const proj = { group: new Group(), rings: [], beam: null, dots: null, scan: null, scanT0: -1, speed: [] };
+  {
+    const ringMat = (o) => new MeshBasicMaterial({ color: HOLO_COLORS.teal, transparent: true, opacity: o, blending: AdditiveBlending, depthWrite: false, side: DoubleSide });
+    for (const [r0, r1, o, seg, spin] of [[0.985, 1, 0.32, 96, 0.25], [0.7, 0.71, 0.24, 96, -0.4], [0.4, 0.44, 0.14, 6, 0.6]]) {
+      const m = new Mesh(track(new RingGeometry(r0, r1, seg)), track(ringMat(o)));
+      m.rotation.x = -Math.PI / 2;
+      proj.group.add(m); proj.rings.push(m); proj.speed.push(spin);
+    }
+    // An open cone of light: brightest at the base, gone by the top.
+    proj.beam = new Mesh(track(new CylinderGeometry(0.85, 1, 1, 48, 1, true)), track(new ShaderMaterial({
+      uniforms: { color: { value: new Color(HOLO_COLORS.teal) }, strength: { value: 0.14 } },
+      vertexShader: "varying float vY; void main(){ vY = position.y + 0.5; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }",
+      fragmentShader: "uniform vec3 color; uniform float strength; varying float vY;\nvoid main(){ float a = strength * pow(1.0 - vY, 2.2); gl_FragColor = vec4(color * a, a);\n  #include <colorspace_fragment>\n}",
+      transparent: true, blending: AdditiveBlending, depthWrite: false, side: DoubleSide,
+    })));
+    proj.beam.position.y = 0.5;
+    proj.group.add(proj.beam);
+    // Specks of light rising through the beam.
+    const N = 70, pos = new Float32Array(N * 3);
+    proj.rise = [];
+    for (let i = 0; i < N; i++) {
+      const a = Math.random() * Math.PI * 2, rr = Math.sqrt(Math.random()) * 0.88;
+      pos.set([Math.cos(a) * rr, Math.random(), Math.sin(a) * rr], i * 3);
+      proj.rise.push(0.05 + Math.random() * 0.1);
+    }
+    proj.dots = new Points(track(new BufferGeometry().setAttribute("position", new Float32BufferAttribute(pos, 3))),
+      track(new PointsMaterial({ color: HOLO_COLORS.teal, size: 0.006, transparent: true, opacity: 0.75, blending: AdditiveBlending, depthWrite: false })));
+    proj.group.add(proj.dots);
+    // The scan line: a ring of light that sweeps up through a hologram as it appears.
+    proj.scan = new Mesh(track(new RingGeometry(0.95, 1, 96)), track(ringMat(0)));
+    proj.scan.rotation.x = -Math.PI / 2;
+    proj.group.add(proj.scan);
+    proj.group.visible = false;
+    holoUi.group.add(proj.group);
+  }
+  /** The projector, as wide as what it shows; scan: sweep a line up through it. */
+  function projShow(width, scan) {
+    const r = Math.max(0.24, Math.min(0.7, width));
+    proj.group.scale.set(r, 0.68, r);
+    proj.group.position.set(0, -0.34, 0);
+    proj.group.visible = true;
+    proj.scanT0 = scan && !calm ? performance.now() : -1;
+    proj.scan.material.opacity = 0;
+  }
+  function projTick(dt, now) {
+    if (!proj.group.visible || calm) return;
+    proj.rings.forEach((m, i) => { m.rotation.z += dt * proj.speed[i]; });
+    const p = proj.dots.geometry.attributes.position;
+    for (let i = 0; i < p.count; i++) { let y = p.getY(i) + dt * proj.rise[i]; if (y > 1) y -= 1; p.setY(i, y); }
+    p.needsUpdate = true;
+    if (proj.scanT0 >= 0) {
+      const k = (now - proj.scanT0) / 1100;
+      if (k >= 1) { proj.scanT0 = -1; proj.scan.material.opacity = 0; }
+      else { proj.scan.position.y = k; proj.scan.material.opacity = 0.9 * Math.sin(Math.PI * k); }
+    }
+  }
   /** Everything a hologram made for itself goes when it does. */
   function holoClear() {
     for (const n of holoUi.nodes) {
       for (const m of [n.mat, n.glow.material, n.label.mesh.material]) m.dispose();
       n.label.tex.dispose(); n.label.mesh.geometry.dispose();
       n.ring?.geometry.dispose(); n.ring?.material.dispose();
+      n.shell?.material.dispose();
       unui(n.body); unui(n.label.mesh);
     }
     for (const l of holoUi.links) { l.line.geometry.dispose(); l.line.material.dispose(); }
@@ -1561,6 +1638,7 @@ export async function start({ mode, session, api, tint }) {
     const ring = new Mesh(new TorusGeometry(0.16, 0.0025, 8, 96), new MeshBasicMaterial({ color: HOLO_COLORS.teal, transparent: true, opacity: 0.7, depthWrite: false }));
     holoUi.stage.add(ring);
     holoUi.building = ring;
+    projShow(0.3, false);
     drawHoloBar("Building " + (what ? "“" + String(what).slice(0, 48) + "”" : "a hologram") + "…");
     stepAside("holo");
   }
@@ -1568,7 +1646,7 @@ export async function start({ mode, session, api, tint }) {
   function holoNode(it, i, kind, spec) {
     const color = HOLO_COLORS[it.color] ?? HOLO_COLORS.teal;
     const g = new Group();
-    const mat = new MeshBasicMaterial({ color, transparent: true, opacity: 0.82, depthWrite: kind === "chart" });
+    const mat = kind === "chart" ? new MeshBasicMaterial({ color, transparent: true, opacity: 0.82, depthWrite: true }) : holoMaterial(color);
     let body, r;
     if (kind === "chart") {
       body = new Mesh(holoBox, mat);
@@ -1600,7 +1678,14 @@ export async function start({ mode, session, api, tint }) {
     }
     label.mesh.material.opacity = 1;
     g.add(body, glow, label.mesh);
-    const n = { it, i, g, body, mat, glow, label, r, kind, base: new Vector3(), angle: 0, speed: 0, orbitR: 0, parent: null, shown: 0, emph: 1 };
+    let shell = null;
+    if (kind !== "chart") {
+      shell = new LineSegments(holoShell, new LineBasicMaterial({ color, transparent: true, opacity: 0.3, blending: AdditiveBlending, depthWrite: false }));
+      shell.scale.setScalar(r * 1.45);
+      shell.rotation.set(i * 0.7, i * 1.3, 0);
+      g.add(shell);
+    }
+    const n = { it, i, g, body, mat, glow, label, shell, r, kind, base: new Vector3(), angle: 0, speed: 0, orbitR: 0, parent: null, shown: 0, emph: 1 };
     const more = () => api.ask?.(`Tell me more about ${it.label}` + (spec.title ? `, in ${spec.title}` : "") + ".");
     ui(body, { tap: more, hover: (on) => { n.hot = on; } });
     ui(label.mesh, { tap: more, hover: (on) => { n.hot = on; } });
@@ -1688,6 +1773,9 @@ export async function start({ mode, session, api, tint }) {
     for (const n of holoUi.nodes) holoUi.stage.add(n.g);
     holoLayout(spec, holoUi.nodes);
     for (const n of holoUi.nodes) { n.g.position.copy(n.base); n.g.scale.setScalar(calm ? 1 : 0.001); }
+    // The projector reaches as wide as the hologram (orbits included).
+    const reach = Math.max(0.2, ...holoUi.nodes.map((n) => Math.abs(n.base.x) + n.r + (n.parent ? n.orbitR + Math.abs(n.parent.base.x) : 0)));
+    projShow(reach + 0.06, true);
     drawHoloBar();
     stepAside("holo");
   }
@@ -1699,6 +1787,7 @@ export async function start({ mode, session, api, tint }) {
   }
   function holoClose() {
     holoClear();
+    proj.group.visible = false;
     holoUi.open = false;
     holoUi.spec = null;
     holoUi.group.visible = false;
@@ -1782,6 +1871,8 @@ export async function start({ mode, session, api, tint }) {
   const holoTmp = new Vector3();
   function holoTick(dt, now) {
     if (!holoUi.open) return;
+    projTick(dt, now);
+    holoTime.value = now / 1000;
     if (holoUi.building) { holoUi.building.rotation.y += dt * 1.4; holoUi.building.rotation.x = 0.5; return; }
     const age = now - holoUi.t0;
     for (const n of holoUi.nodes) {
@@ -1800,7 +1891,12 @@ export async function start({ mode, session, api, tint }) {
       n.emph += (want - n.emph) * Math.min(1, dt * 6);
       const lit = Math.min(1, n.emph);
       n.g.scale.setScalar(Math.max(0.001, n.shown * (n.emph > 1 ? n.emph : 1)));
-      n.mat.opacity = 0.82 * lit;
+      if (n.mat.uniforms) n.mat.uniforms.opacity.value = 0.82 * lit;
+      else n.mat.opacity = 0.82 * lit;
+      if (n.shell) {
+        n.shell.material.opacity = 0.3 * lit * (n.hot ? 1.6 : 1);
+        if (!calm) { n.shell.rotation.y += dt * 0.5; n.shell.rotation.x += dt * 0.17; }
+      }
       n.glow.material.opacity = 0.5 * lit * (n.hot ? 1.4 : 1);
       n.label.mesh.material.opacity = Math.max(0.25, lit);
     }
