@@ -720,7 +720,7 @@ test("holograms look projected: a projector, a scan line, wire cages, and calm s
   assert.match(scene, /function holoMaterial\(color\)/, "parts get the fresnel + scan-line surface");
   assert.match(scene, /new LineSegments\(holoShell/, "each part has a wire cage");
   assert.match(scene, /if \(!proj\.group\.visible \|\| calm\) return;/, "reduced motion: the projector doesn't move");
-  assert.match(scene, /holoClose\(\) \{\s*holoClear\(\);\s*proj\.group\.visible = false;/, "closing a hologram puts the projector away");
+  assert.match(scene, /holoClose\(\) \{\s*holoClear\(\);[\s\S]{0,60}proj\.group\.visible = false;/, "closing a hologram puts the projector away");
   assert.match(scene, /n\.shell\?\.material\.dispose\(\)/, "cages are cleaned up with their hologram");
 });
 
@@ -785,7 +785,9 @@ test("Izuki can float beside your other apps (a room hides them; a window doesn'
   assert.match(src, /if \(support\.headset\) box\.append\(float, floatTip\)/, "only on a headset");
   assert.match(src, /last === "float"[\s\S]{0,120}goFloat\(\)/, "the app remembers floating");
   assert.match(src, /if \(ok && !chosen && box\.isConnected\) goFloat\(\)/, "a tap you made first wins over the automatic float");
-  assert.match(src, /last === "room" && can\) void straightIn\(\)/, "and remembers the room");
+  assert.match(src, /last !== "float" && can\) void straightIn\(\)/, "the app goes into the room from its first launch, unless you chose floating");
+  assert.match(src, /\.on-headset #go-drive, \.on-headset #tools-health, \.on-headset #tools-cockpit, \.on-headset #tools-pilot/, "a headset's tools leave out the phone-only ones");
+  assert.match(src, /In the room, say \\u201cHey Nova\\u201d any time/, "it says where Hey Nova works");
   assert.doesNotMatch(src, /openedOnce/, "the old explainer no longer opens under the launcher");
 });
 
@@ -932,6 +934,20 @@ test("draw it: the real shape of a thing, checked, and the right words get it", 
   assert.match(scene, /if \(spec\.kind === "sketch"\) \{\s*projShow\(sketchShow\(spec\)/, "a sketch stands on the projector");
   assert.match(scene, /sketchClear\(\);/, "and is cleaned up with its hologram");
   assert.match(src, /\(Draw it: use kind sketch\.\)/, "drawing words ask the AI for a sketch");
+});
+
+test("a real photo of what a hologram shows floats beside it (Wikipedia, credited)", async () => {
+  const { photoUrl } = helpers;
+  assert.equal(photoUrl("//thumb.wikimedia.org/wikipedia/commons/thumb/4/48/A.jpg/60px-A.jpg?x=1"), "https://thumb.wikimedia.org/wikipedia/commons/thumb/4/48/A.jpg/960px-A.jpg?x=1");
+  assert.equal(photoUrl("https://evil.example/60px-a.jpg"), "", "only Wikimedia's own image hosts");
+  assert.equal(photoUrl(""), "");
+  const scene = read("docs/app/vr-scene.src.js");
+  assert.match(scene, /async function holoPhoto\(\{ url, title, note \}\)/);
+  assert.match(scene, /"Photo: Wikipedia"/, "credited");
+  assert.match(scene, /holoClose\(\) \{\s*holoClear\(\);\s*holoPhotoClear\(\);/, "it goes with its hologram");
+  assert.match(src, /void holoPhoto\(h\.photo \|\| h\.title, my\);/, "asked for right after a hologram is built");
+  assert.match(src, /en\.wikipedia\.org\/w\/rest\.php\/v1\/search\/page\?q=/);
+  assert.match(HOLO_SYSTEM, /photo: the English Wikipedia article title/);
 });
 
 (async () => {
