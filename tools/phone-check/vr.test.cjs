@@ -732,6 +732,52 @@ test("the Quest app opens a full-screen way in, even over an old chat", () => {
   assert.match(src, /prefers-reduced-motion:reduce\)\{\.vr-launch-orb\{animation:none\}/, "the orb stays still with reduced motion");
 });
 
+test("dream mode: which words build a world, and which don't", () => {
+  for (const s of ["dream mode", "Dream mode: a calm beach at sunset", "take me to a rainforest at night", "Hey Nova, take me to Mars",
+    "put me on a snowy mountain", "imagine I'm in a forest of glowing mushrooms", "build me a world of floating islands",
+    "I want to be in space", "dream of a quiet lake"]) assert.equal(command(s)?.kind, "dream", `"${s}" should dream`);
+  assert.equal(command("take me to a rainforest at night").place, "a rainforest at night");
+  for (const s of ["wake up", "wake me up", "end the dream", "take me back", "back to my room"]) assert.equal(command(s)?.kind, "dream-end", `"${s}" ends a dream`);
+  // Your own things keep their lanes; lessons stay lessons.
+  assert.equal(command("take me to my photos")?.kind, "files");
+  assert.notEqual(command("take me to google")?.kind, "dream");
+  assert.notEqual(command("take me to my PC screen")?.kind, "dream");
+  assert.equal(command("show me the solar system")?.kind, "holo");
+  assert.equal(command("show my PC")?.kind, "pc");
+});
+
+test("parseDream checks and clamps what the AI designs", () => {
+  const { parseDream } = helpers;
+  assert.equal(parseDream("I'd love to take you there!"), null, "words, not a design");
+  assert.equal(parseDream('{"title":"x"}'), null, "no sky");
+  const shapes = Array.from({ length: 9 }, () => ({ kind: "tree", count: 99, color: "#2a5", size: 40, spread: "nowhere" }));
+  const w = plain(parseDream("```json\n" + JSON.stringify({
+    title: "Night forest", say: "Welcome to the **forest**.", sky: { top: "#0a1030", horizon: "red", bottom: "#123" },
+    ground: { kind: "lava", color: "#334455" }, light: "#ffeeaa", particles: { kind: "fireflies", color: "#ccff66", amount: 7 },
+    shapes: shapes.concat([{ kind: "dragon", count: 3 }]),
+  }) + "\n```"));
+  assert.equal(w.title, "Night forest");
+  assert.ok(!/[*]/.test(w.say), "no markdown is said");
+  assert.equal(w.sky.top, "#0a1030");
+  assert.equal(w.sky.horizon, "#3a4f7a", "a colour that isn't a colour falls back");
+  assert.equal(w.sky.bottom, "#112233", "short colours expand");
+  assert.equal(w.ground.kind, "grass", "unknown ground falls back");
+  assert.equal(w.particles.amount, 1, "amount is clamped");
+  assert.equal(w.shapes.length, 5, "6 groups at most, unknown kinds dropped, and the 120 cap empties the sixth");
+  assert.ok(w.shapes.every((s) => s.count <= 24 && s.size <= 3 && s.spread === "mid"));
+  assert.ok(w.shapes.reduce((n, s) => n + s.count, 0) <= 120, "never more than 120 things");
+});
+
+test("dream mode in the room: a world shows, wake up ends it, the prompt stays gentle", async () => {
+  const { DREAM_SYSTEM } = helpers;
+  assert.match(DREAM_SYSTEM, /nothing scary, violent or gory/);
+  const scene = read("docs/app/vr-scene.src.js");
+  assert.match(scene, /function dreamShow\(spec\)/);
+  assert.match(scene, /dreamClose\(\);\n\s*clearTimeout\(noticeTimer\)/, "leaving VR clears the world");
+  assert.match(src, /if \(c\?\.kind === "dream-end" && !vr\.scene\?\.dreamShown\?\.\(\)\) c = null;/, "\"wake up\" only ends a dream that's on");
+  assert.match(src, /dreamGen\+\+;/, "a world being designed when you leave is dropped");
+});
+
 (async () => {
   for (const [name, fn] of tests) {
     try { await fn(); passed++; } catch (e) { console.error(`FAIL ${name}\n  ${e.message}`); process.exitCode = 1; }

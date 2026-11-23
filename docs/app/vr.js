@@ -162,6 +162,12 @@
     if (HOLO_NEXT.test(s)) return { kind: "holo-next" };
     if (HOLO_BACK.test(s)) return { kind: "holo-back" };
     if (HOLO_AGAIN.test(s)) return { kind: "holo-again" };
+    if (DREAM_END.test(s)) return { kind: "dream-end" };
+    const dm = s.match(DREAM);
+    if (dm) {
+      const place = String(dm.slice(1).find((x) => x) || "").trim();
+      if (!NOT_A_PLACE.test(place)) return { kind: "dream", ask: s, place };
+    }
     if (HOLO.test(s) && !ABOUT_HERE.test(s)) return { kind: "holo", ask: s };
     if (TIMER_STOP.test(s)) return { kind: "timer-stop" };
     const tm = s.match(TIMER);
@@ -276,6 +282,59 @@
   }
   const HOLO_KINDS = ["model", "map", "steps", "timeline", "chart"];
   const HOLO_PALETTE = ["teal", "sky", "violet", "rose", "amber", "lime", "white"];
+  // ---- dream mode: a whole world around you, designed from your words ----------
+  const DREAM = new RegExp(LEAD + "(?:" + [
+    String.raw`dream\s+mode(?:[:,\s]+(?:of\s+|to\s+|in\s+)?(.{2,120}?))?`,
+    String.raw`(?:take|bring|send)\s+me\s+(?:to|into|inside)\s+(.{2,120}?)`,
+    String.raw`put\s+me\s+(?:in|on|inside|at)\s+(.{2,120}?)`,
+    String.raw`(?:i\s+want\s+to\s+be|let\s+me\s+be)\s+(?:in|on|at|inside)\s+(.{2,120}?)`,
+    String.raw`(?:dream|imagine)\s+(?:of\s+|up\s+|about\s+)?(?:(?:that\s+)?(?:i'?m|we'?re|i\s+am|we\s+are)\s+(?:in|on|at)\s+)?((?:a|an|the)\s+.{2,120}?)`,
+    String.raw`(?:build|make|create)\s+(?:me\s+)?(?:a|an)\s+(?:world|place|dream|dreamworld|scene|landscape)(?:\s+(?:of|with|where|like|for|that's)\s+(.{2,120}?))?`,
+  ].join("|") + String.raw`)` + TAIL, "i");
+  const DREAM_END = whole(String.raw`wake\s+(?:me\s+)?up|(?:end|stop|leave|exit|close)\s+(?:the\s+|this\s+)?(?:dream(?:\s+mode)?|world)|take\s+me\s+(?:back|home)|(?:go\s+)?back\s+to\s+(?:my\s+)?(?:room|reality)`);
+  // Not a place to dream up: your own things go to their own lanes.
+  const NOT_A_PLACE = /\b(?:pc|computer|laptop|screen|settings|photos?|pictures?|folders?|files?|downloads|documents|google|youtube|website|page|link|browser|the\s+answer)\b/i;
+  const DREAM_SYSTEM = [
+    "You are Izuki, building a whole place around the person inside their VR headset from their words (dream mode). It replaces their room until they say wake up.",
+    'Reply with JSON only, no markdown: {"title": "up to 5 words", "say": "1 or 2 short spoken sentences welcoming them there", "sky": {"top": "#rrggbb", "horizon": "#rrggbb", "bottom": "#rrggbb"}, "ground": {"kind": "grass|sand|dunes|water|snow|rock|grid|clouds|none", "color": "#rrggbb"}, "light": "#rrggbb", "particles": {"kind": "stars|snow|rain|fireflies|embers|bubbles|petals|dust|none", "color": "#rrggbb", "amount": 0-1}, "shapes": [{"kind": "tree|pine|palm|rock|crystal|pillar|cloud|mountain|planet|moon|tower|arch|lantern", "count": 1-24, "color": "#rrggbb", "size": 0.3-3, "spread": "near|mid|far", "float": true|false}]}',
+    "Up to 6 shape groups. Colours set the mood (deep blues and violets for night, warm golds for sunset, soft greens for a forest). Mountains, planets and moons belong far away; trees, rocks and lanterns near or mid.",
+    "Keep it calm and beautiful: nothing scary, violent or gory, whatever they ask. A real place is evoked by its feel and colours, not copied exactly. Say only what you built; never claim it's the real place.",
+  ].join("\n");
+  const DREAM_GROUNDS = ["grass", "sand", "dunes", "water", "snow", "rock", "grid", "clouds", "none"];
+  const DREAM_PARTICLES = ["stars", "snow", "rain", "fireflies", "embers", "bubbles", "petals", "dust", "none"];
+  const DREAM_SHAPES = ["tree", "pine", "palm", "rock", "crystal", "pillar", "cloud", "mountain", "planet", "moon", "tower", "arch", "lantern"];
+  /** A dream world from the AI's reply, checked and clamped; null if there isn't a usable one. */
+  function parseDream(reply) {
+    let t = String(reply || "").replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+    t = t.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "").trim();
+    const a = t.indexOf("{"), b = t.lastIndexOf("}");
+    if (a < 0 || b <= a) return null;
+    let d;
+    try { d = JSON.parse(t.slice(a, b + 1)); } catch { return null; }
+    if (!d || typeof d !== "object" || !d.sky || typeof d.sky !== "object") return null;
+    const words = (v, n) => (typeof v === "string" ? v : "").replace(/[`*_#>{}[\]]+/g, " ").replace(/\s+/g, " ").trim().slice(0, n);
+    const hex = (v, d0) => {
+      const s = String(v || "").trim();
+      if (/^#[0-9a-f]{6}$/i.test(s)) return s.toLowerCase();
+      if (/^#[0-9a-f]{3}$/i.test(s)) return ("#" + s[1] + s[1] + s[2] + s[2] + s[3] + s[3]).toLowerCase();
+      return d0;
+    };
+    const num = (v, lo, hi, d0) => { const n = Number(v); return Number.isFinite(n) ? Math.max(lo, Math.min(hi, n)) : d0; };
+    const sky = { top: hex(d.sky.top, "#0b1430"), horizon: hex(d.sky.horizon, "#3a4f7a"), bottom: hex(d.sky.bottom, "#121826") };
+    const g0 = d.ground && typeof d.ground === "object" ? d.ground : {};
+    const ground = { kind: DREAM_GROUNDS.includes(g0.kind) ? g0.kind : "grass", color: hex(g0.color, "#2f4a3a") };
+    const p0 = d.particles && typeof d.particles === "object" ? d.particles : {};
+    const particles = { kind: DREAM_PARTICLES.includes(p0.kind) ? p0.kind : "none", color: hex(p0.color, "#ffffff"), amount: num(p0.amount, 0, 1, 0.5) };
+    let total = 0;
+    const shapes = (Array.isArray(d.shapes) ? d.shapes : []).filter((s) => s && typeof s === "object" && DREAM_SHAPES.includes(s.kind)).slice(0, 6).map((s) => {
+      const count = Math.round(num(s.count, 1, 24, 6));
+      const kept = Math.max(0, Math.min(count, 120 - total));
+      total += kept;
+      return { kind: s.kind, count: kept, color: hex(s.color, "#8fa3b8"), size: num(s.size, 0.3, 3, 1), spread: ["near", "mid", "far"].includes(s.spread) ? s.spread : "mid", float: s.float === true };
+    }).filter((s) => s.count > 0);
+    return { title: words(d.title, 40) || "Your dream", say: words(d.say, 300) || "Here we are.", sky, ground, light: hex(d.light, "#ffffff"), particles, shapes };
+  }
+
   const HOLO_SYSTEM = [
     "You are Izuki, teaching inside a VR headset by building a small 3D hologram next to the person while you talk.",
     'Reply with JSON only, no markdown: {"title": "...", "kind": "model|map|steps|timeline|chart", "say": "...", "unit": "", "items": [...], "steps": [...]}',
@@ -391,7 +450,7 @@
     return { nx: c(u), ny: c(1 - v) };
   }
 
-  const util = { command, onPc, named, forIzuki, timerWords, parseLook, parseHolo, HOLO_SYSTEM, wrapLines, fitLines, followTarget, pcPoint, angleGap, LOOK_SYSTEM, lookPrompt };
+  const util = { command, onPc, named, forIzuki, timerWords, parseLook, parseHolo, HOLO_SYSTEM, parseDream, DREAM_SYSTEM, wrapLines, fitLines, followTarget, pcPoint, angleGap, LOOK_SYSTEM, lookPrompt };
   if (typeof module !== "undefined" && module.exports) { module.exports = util; return; }
 
   // ===========================================================================
@@ -657,6 +716,31 @@
   }
 
   // ---- holograms ---------------------------------------------------------------
+  // ---- dream mode ---------------------------------------------------------------
+  let dreamGen = 0;
+  async function dream(ask) {
+    const core = g.IzukiCore;
+    if (!core?.think || !core.ready?.()) return "Add a free AI key in Settings first, then I can build a world around you.";
+    const visit = epoch, my = ++dreamGen;
+    const current = () => vr.active && visit === epoch && my === dreamGen;
+    vr.scene?.notice?.("Dreaming it up…", 6000);
+    vr.scene?.orb("thinking");
+    let reply = "";
+    try {
+      reply = await core.think(ask, DREAM_SYSTEM);
+    } catch (e) {
+      if (!current()) return "";
+      return "I couldn't dream that one up just now: " + String(e?.message || e).slice(0, 120);
+    } finally {
+      if (vr.active && visit === epoch && my === dreamGen) vr.scene?.orb(appState);
+    }
+    if (!current()) return "";
+    const w = parseDream(reply);
+    if (!w) return "I couldn't build that place. Tell me about it in other words, and I'll try again.";
+    vr.scene?.dreamShow?.(w);
+    return w.say + ' Say "wake up" whenever you want your room back.';
+  }
+
   let holoNow = null, holoAt = -1, holoGen = 0;
   /** Your AI designs it, the room builds it; resolves to what Izuki says first. */
   async function holo(ask) {
@@ -735,7 +819,7 @@
       // "Stop listening" always works, name or not.
       const bare = !n.called && command(s)?.kind === "sleep";
       const ctl = !n.called ? command(s) : null;
-      const live = !!ctl && ((/^holo-/.test(ctl.kind) && !!vr.scene?.holoShown?.()) || ctl.kind === "timer-stop" || ctl.kind === "breathe-stop" || ctl.kind === "web-hide");
+      const live = !!ctl && ((/^holo-/.test(ctl.kind) && !!vr.scene?.holoShown?.()) || (ctl.kind === "dream-end" && !!vr.scene?.dreamShown?.()) || ctl.kind === "timer-stop" || ctl.kind === "breathe-stop" || ctl.kind === "web-hide");
       if (heyNova && !armed && !bare && !live && Date.now() - spokeAt > FOLLOW_ON_MS) {
         if (!n.called && !(store.get("vr.anyQuestion", true) !== false && forIzuki(s))) return null;
         if (!n.rest) return { done: true, said: s, say: "Mhm?" };
@@ -745,6 +829,7 @@
       let c = command(s);
       // A lesson's "next", "back", "again" only mean that while a hologram is up.
       if (c?.kind?.startsWith("holo-") && !vr.scene?.holoShown?.()) c = null;
+      if (c?.kind === "dream-end" && !vr.scene?.dreamShown?.()) c = null;
       // With your PC on the big screen, a search is done there (unless you say "in here").
       if (c?.kind === "web" && c.q && !c.here && vr.scene?.pcShown?.()) c = null;
       const done = (say) => ({ done: true, said: s, say });
@@ -786,6 +871,8 @@
         if (c.kind === "web-hide") { vr.scene?.webClose?.(); return done("Okay, I closed the browser."); }
         if (c.kind === "web") return done((await vr.scene?.webSearch?.(c.q)) || "Okay.");
         if (c.kind === "holo") return done((await holo(c.ask)) || "Okay.");
+        if (c.kind === "dream") return done((await dream(c.ask)) || "Okay.");
+        if (c.kind === "dream-end") { vr.scene?.dreamClose?.(); return done("And we're back in your room."); }
         if (c.kind === "holo-hide") { vr.scene?.holoClose?.(); return done("Okay, I put it away."); }
         if (c.kind === "holo-next") return done(holoStep(1));
         if (c.kind === "holo-back") return done(holoStep(-1));
@@ -953,6 +1040,7 @@
     exited() {
       // The Quest app goes back to its launcher, not to a flat chat.
       if (asApp) g.setTimeout?.(launcher, 600);
+      dreamGen++;
       holoNow = null; holoAt = -1;
       epoch++;
       photo = null;

@@ -20,7 +20,7 @@
 // On a normal screen ("flat") the same room is a 3D preview you drive with
 // the mouse: click to tap, drag to look around, the wheel scrolls the PC.
 import {
-  AdditiveBlending, BackSide, BoxGeometry, BufferGeometry, CanvasTexture, CircleGeometry, Color, CylinderGeometry, DoubleSide,
+  AdditiveBlending, BackSide, BoxGeometry, ConeGeometry, DirectionalLight, DodecahedronGeometry, HemisphereLight, MeshLambertMaterial, NormalBlending, OctahedronGeometry, BufferGeometry, CanvasTexture, CircleGeometry, Color, CylinderGeometry, DoubleSide,
   Float32BufferAttribute, Group, IcosahedronGeometry, Line, LineBasicMaterial, LineSegments, Mesh, MeshBasicMaterial,
   PerspectiveCamera, PlaneGeometry, Points, PointsMaterial, Quaternion, Raycaster, RingGeometry, Scene, ShaderMaterial,
   SphereGeometry, Sprite, SpriteMaterial, SRGBColorSpace, TorusGeometry, Vector2, Vector3, WebGLRenderer, WireframeGeometry,
@@ -1794,6 +1794,171 @@ export async function start({ mode, session, api, tint }) {
     api.holoClosed?.();
     if (rig.userData.placed === "holo") { if (pcUi.open) { rig.userData.placed = false; stepAside("pc"); } else comeHere(); }
   }
+  // ---- dream mode: a whole world around you (vr.js parseDream designs it) -----------------
+  // An opaque sky, a ground, low-poly shapes lit by their own light, and
+  // particles, all centred where you stand. It replaces the room (passthrough
+  // or space) until you wake up; the orb, cards and panels stay with you.
+  const dreamUi = { group: null, sky: null, parts: null, dots: null, kind: "none", made: [], t0: 0, spec: null };
+  function dreamClose() {
+    if (!dreamUi.group) return false;
+    scene.remove(dreamUi.group);
+    for (const o of dreamUi.made) { try { o.dispose(); } catch {} }
+    Object.assign(dreamUi, { group: null, sky: null, parts: null, dots: null, made: [], spec: null });
+    return true;
+  }
+  function dreamShow(spec) {
+    dreamClose();
+    const keep = (o) => { dreamUi.made.push(o); return o; };
+    const col = (hex) => new Color(hex);
+    const G = new Group();
+    G.position.set(headPos.x, floorY, headPos.z);
+    G.rotation.y = headYaw; // angle 0 is straight ahead of you
+    // The sky: three colours, top to horizon to below. Opaque, so it replaces the room.
+    const sky = new Mesh(keep(new SphereGeometry(36, 48, 24)), keep(new ShaderMaterial({
+      side: BackSide, transparent: true, depthWrite: true,
+      uniforms: { top: { value: col(spec.sky.top) }, mid: { value: col(spec.sky.horizon) }, low: { value: col(spec.sky.bottom) }, fade: { value: calm ? 1 : 0 } },
+      vertexShader: "varying vec3 vW; void main(){ vW = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }",
+      fragmentShader: "uniform vec3 top; uniform vec3 mid; uniform vec3 low; uniform float fade; varying vec3 vW;\n" +
+        "void main(){ float h = vW.y; vec3 c = h < 0.0 ? mix(mid, low, clamp(-h * 3.0, 0.0, 1.0)) : mix(mid, top, clamp(pow(h, 0.7) * 1.3, 0.0, 1.0));\n" +
+        "  gl_FragColor = vec4(c, fade);\n  #include <colorspace_fragment>\n}",
+    })));
+    sky.renderOrder = -9;
+    G.add(sky);
+    // Its own light: a soft sky/ground fill and a sun in the world's colour.
+    const hemi = new HemisphereLight(col(spec.sky.top), col(spec.ground.color), 1.1);
+    const sun = new DirectionalLight(col(spec.light), 1.4);
+    sun.position.set(6, 10, 4);
+    G.add(hemi, sun);
+    // The ground.
+    const gk = spec.ground.kind;
+    if (gk !== "none") {
+      let geo;
+      if (gk === "dunes" || gk === "rock" || gk === "snow") {
+        geo = new PlaneGeometry(68, 68, 64, 64);
+        const p = geo.attributes.position;
+        for (let i = 0; i < p.count; i++) {
+          const x = p.getX(i), y = p.getY(i), d = Math.hypot(x, y);
+          const amp = gk === "dunes" ? 0.55 : gk === "rock" ? 0.35 : 0.2;
+          // Flat where you stand, rolling further out.
+          p.setZ(i, d < 3 ? 0 : amp * Math.min(1, (d - 3) / 6) * (Math.sin(x * 0.45) * Math.cos(y * 0.38) + 0.5 * Math.sin((x + y) * 0.9)));
+        }
+        geo.computeVertexNormals();
+      } else geo = new CircleGeometry(34, 72);
+      keep(geo);
+      const mat = keep(gk === "water"
+        ? new MeshLambertMaterial({ color: col(spec.ground.color), transparent: true, opacity: 0.92, emissive: col(spec.ground.color), emissiveIntensity: 0.25 })
+        : gk === "clouds" ? new MeshLambertMaterial({ color: col(spec.ground.color), transparent: true, opacity: 0.85 })
+        : new MeshLambertMaterial({ color: col(spec.ground.color), flatShading: gk !== "grass" && gk !== "grid" }));
+      const ground = new Mesh(geo, mat);
+      ground.rotation.x = -Math.PI / 2;
+      ground.position.y = gk === "clouds" ? -0.4 : 0.002;
+      ground.renderOrder = -8;
+      G.add(ground);
+      if (gk === "grid") {
+        // Neon lines to the horizon, the light's colour.
+        const pts = [];
+        for (let k = -30; k <= 30; k += 1.5) { pts.push(k, 0.01, -30, k, 0.01, 30, -30, 0.01, k, 30, 0.01, k); }
+        G.add(new LineSegments(keep(new BufferGeometry().setAttribute("position", new Float32BufferAttribute(pts, 3))),
+          keep(new LineBasicMaterial({ color: col(spec.light), transparent: true, opacity: 0.55 }))));
+      }
+    }
+    // Shapes: low-poly, shared geometry per kind, one material per group.
+    const parts = new Group();
+    const geos = {};
+    const geoOf = (k, make) => geos[k] || (geos[k] = keep(make()));
+    const ring = { near: [4, 9], mid: [9, 17], far: [18, 30] };
+    for (const s of spec.shapes) {
+      const lit = keep(new MeshLambertMaterial({ color: col(s.color), flatShading: true }));
+      const glowy = keep(new MeshBasicMaterial({ color: col(s.color) }));
+      const trunk = keep(new MeshLambertMaterial({ color: col(s.color).multiplyScalar(0.35), flatShading: true }));
+      const spread = s.kind === "mountain" ? ring.far : s.kind === "planet" || s.kind === "moon" ? [22, 30] : ring[s.spread];
+      for (let k = 0; k < s.count; k++) {
+        const a = (k / s.count) * Math.PI * 2 + Math.random() * 0.9;
+        let d = spread[0] + Math.random() * (spread[1] - spread[0]);
+        // A clear view ahead: nothing big right in front of you, close up.
+        const ahead = Math.abs(Math.atan2(Math.sin(a), Math.cos(a))) < 0.65;
+        if (ahead && d < 12 && s.kind !== "lantern") d += 7;
+        const sz = s.size * (0.75 + Math.random() * 0.5);
+        const one = new Group();
+        const add = (geo, mat, y = 0, sx = 1, sy = 1, sz2 = 1) => { const m = new Mesh(geo, mat); m.position.y = y; m.scale.set(sx, sy, sz2); one.add(m); return m; };
+        if (s.kind === "tree") { add(geoOf("trunk", () => new CylinderGeometry(0.06, 0.09, 0.7, 6)), trunk, 0.35); add(geoOf("blob", () => new IcosahedronGeometry(0.45, 0)), lit, 0.95); }
+        else if (s.kind === "pine") { add(geoOf("trunk", () => new CylinderGeometry(0.06, 0.09, 0.7, 6)), trunk, 0.3); add(geoOf("cone", () => new ConeGeometry(0.42, 1.3, 7)), lit, 1.05); }
+        else if (s.kind === "palm") { add(geoOf("stem", () => new CylinderGeometry(0.04, 0.07, 1.9, 6)), trunk, 0.95); add(geoOf("blob", () => new IcosahedronGeometry(0.45, 0)), lit, 1.95, 1.4, 0.35, 1.4); }
+        else if (s.kind === "rock") add(geoOf("rock", () => new DodecahedronGeometry(0.4, 0)), lit, 0.15, 1, 0.6, 1);
+        else if (s.kind === "crystal") add(geoOf("crystal", () => new OctahedronGeometry(0.3, 0)), glowy, 0.7, 0.8, 2.3, 0.8);
+        else if (s.kind === "pillar") add(geoOf("pillar", () => new CylinderGeometry(0.25, 0.3, 3, 10)), lit, 1.5);
+        else if (s.kind === "tower") add(geoOf("tower", () => new BoxGeometry(1, 6, 1)), lit, 3);
+        else if (s.kind === "mountain") add(geoOf("mountain", () => new ConeGeometry(6, 8, 7)), lit, 4);
+        else if (s.kind === "arch") add(geoOf("arch", () => new TorusGeometry(1.2, 0.15, 8, 24, Math.PI)), lit, 0);
+        else if (s.kind === "lantern") add(geoOf("lantern", () => new SphereGeometry(0.12, 12, 8)), glowy, 1.3);
+        else if (s.kind === "cloud") { const b = geoOf("puff", () => new IcosahedronGeometry(0.7, 1)); add(b, lit, 0, 1.4, 0.8, 1); const m2 = add(b, lit, 0.15, 1, 0.7, 1); m2.position.x = 0.9; const m3 = add(b, lit, 0.1, 1.1, 0.75, 1); m3.position.x = -0.9; }
+        else if (s.kind === "planet" || s.kind === "moon") add(geoOf(s.kind, () => new SphereGeometry(s.kind === "planet" ? 3 : 1.5, 32, 20)), s.kind === "moon" ? glowy : lit, 0);
+        one.scale.setScalar(sz);
+        const sky0 = s.kind === "planet" || s.kind === "moon" ? 10 + Math.random() * 10 : s.kind === "cloud" ? 6 + Math.random() * 5 : 0;
+        const lift = s.float && sky0 === 0 ? 0.8 + Math.random() * 2.5 : 0;
+        one.position.set(Math.sin(a) * d, sky0 + lift, -Math.cos(a) * d);
+        one.rotation.y = Math.random() * Math.PI * 2;
+        one.userData = { bob: s.float || s.kind === "cloud" || s.kind === "lantern" ? Math.random() * 6 : -1, y: one.position.y };
+        parts.add(one);
+      }
+    }
+    if (!calm) parts.scale.setScalar(0.001);
+    G.add(parts);
+    // Particles, moved in dreamTick.
+    const pk = spec.particles.kind;
+    let dots = null;
+    if (pk !== "none") {
+      const N = Math.round(pk === "stars" ? 500 + 700 * spec.particles.amount : 150 + 900 * spec.particles.amount);
+      const pos = new Float32Array(N * 3), seed = new Float32Array(N);
+      for (let i = 0; i < N; i++) {
+        if (pk === "stars") {
+          const u = Math.random() * Math.PI * 2, v = Math.random() * 0.9 + 0.08, r = 33;
+          pos.set([Math.cos(u) * Math.sqrt(1 - v * v) * r, v * r, Math.sin(u) * Math.sqrt(1 - v * v) * r], i * 3);
+        } else {
+          const u = Math.random() * Math.PI * 2, r = 1.2 + Math.sqrt(Math.random()) * 13;
+          pos.set([Math.cos(u) * r, Math.random() * 9, Math.sin(u) * r], i * 3);
+        }
+        seed[i] = Math.random() * 100;
+      }
+      const size = { stars: 0.09, snow: 0.05, rain: 0.03, fireflies: 0.07, embers: 0.05, bubbles: 0.08, petals: 0.06, dust: 0.03 }[pk];
+      dots = new Points(keep(new BufferGeometry().setAttribute("position", new Float32BufferAttribute(pos, 3))),
+        keep(new PointsMaterial({ color: col(spec.particles.color), size, transparent: true, opacity: pk === "dust" ? 0.5 : 0.9, depthWrite: false, blending: pk === "fireflies" || pk === "embers" || pk === "stars" ? AdditiveBlending : NormalBlending })));
+      dots.userData.seed = seed;
+      G.add(dots);
+    }
+    scene.add(G);
+    Object.assign(dreamUi, { group: G, sky, parts, dots, kind: pk, t0: performance.now(), spec });
+    // Out of the way of a world: the PC, the browser and a hologram stay where they are.
+    notice(spec.title, 5000);
+  }
+  function dreamTick(dt, now) {
+    if (!dreamUi.group) return;
+    const age = (now - dreamUi.t0) / 1000;
+    if (!calm) {
+      // In over a second and a half: the sky first, then the world grows up out of the ground.
+      dreamUi.sky.material.uniforms.fade.value = Math.min(1, age / 1.2);
+      const k = Math.max(0, Math.min(1, (age - 0.5) / 1.4));
+      dreamUi.parts.scale.setScalar(Math.max(0.001, 1 - (1 - k) ** 3));
+      for (const o of dreamUi.parts.children) if (o.userData.bob >= 0) o.position.y = o.userData.y + Math.sin(now / 1600 + o.userData.bob) * 0.15;
+    }
+    const d = dreamUi.dots;
+    if (!d || calm || dreamUi.kind === "stars") return;
+    const p = d.geometry.attributes.position, seed = d.userData.seed, kind = dreamUi.kind, t = now / 1000;
+    const vy = { snow: -0.5, rain: -7, fireflies: 0, embers: 0.7, bubbles: 0.45, petals: -0.35, dust: 0.03 }[kind] ?? 0;
+    for (let i = 0; i < p.count; i++) {
+      let y = p.getY(i) + vy * dt * (0.7 + (seed[i] % 1) * 0.6);
+      if (y < 0) y += 9; else if (y > 9) y -= 9;
+      p.setY(i, y);
+      if (kind !== "rain") {
+        const s = seed[i];
+        p.setX(i, p.getX(i) + Math.sin(t * 0.6 + s) * dt * (kind === "fireflies" ? 0.35 : 0.12));
+        p.setZ(i, p.getZ(i) + Math.cos(t * 0.5 + s * 1.3) * dt * (kind === "fireflies" ? 0.35 : 0.12));
+      }
+    }
+    p.needsUpdate = true;
+    if (kind === "fireflies") d.material.opacity = 0.6 + 0.35 * Math.sin(t * 2.1);
+  }
+
   // ---- a timer by the orb ----------------------------------------------------------------
   const timerUi = { card: card(0.2, 0.09), until: 0, total: 0, words: "", shown: "", doneAt: 0 };
   timerUi.card.mesh.visible = false;
@@ -2087,6 +2252,7 @@ export async function start({ mode, session, api, tint }) {
     orbTick(dt, clock);
     entrance(now);
     holoTick(dt, now);
+    dreamTick(dt, now);
     timerTick(now);
     breathTick(now);
 
@@ -2191,6 +2357,7 @@ export async function start({ mode, session, api, tint }) {
     filesClose();
     webClose();
     holoClose();
+    dreamClose();
     clearTimeout(noticeTimer);
     renderer.setAnimationLoop(null);
     if (!flat) { try { session.end(); } catch {} }
@@ -2247,6 +2414,9 @@ export async function start({ mode, session, api, tint }) {
     holoFocus,
     holoClose,
     holoShown: () => holoUi.open,
+    dreamShow,
+    dreamClose,
+    dreamShown: () => !!dreamUi.group,
     timerStart,
     timerStop,
     breathe,
