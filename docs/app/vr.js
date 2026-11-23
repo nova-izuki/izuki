@@ -165,6 +165,10 @@
     if (ISS.test(s)) return { kind: "globe", body: "earth", iss: true };
     const sp = s.match(SPACE);
     if (sp) return { kind: "globe", body: BODY_OF[sp[1].toLowerCase().replace(/\s+/g, " ")] || "earth" };
+    const sim = parseSim(s);
+    if (sim) return { kind: "sim", spec: sim };
+    // Only while a simulation is up (the gate checks): "now on the moon", "60 degrees".
+    if (SIM_TWEAK.test(s)) return { kind: "sim-tweak" };
     if (DREAM_END.test(s)) return { kind: "dream-end" };
     const dm = s.match(DREAM);
     if (dm) {
@@ -327,12 +331,176 @@
       ", moving about " + Math.round((v || 27600) / 100) * 100 + " kilometres an hour. The glowing dot is where it is.";
   }
 
+  // ---- physics you can watch: real equations, real numbers ---------------------------
+  // "Simulate a pendulum", "what happens if I drop a feather and a hammer on the moon",
+  // "throw a ball at 60 degrees", "how do satellites orbit": the projector runs the real
+  // equations (vr-scene simShow) and Izuki says the numbers they give. No AI needed,
+  // so it's instant and the numbers are right.
+  const GRAVITY = { earth: 9.81, moon: 1.62, mars: 3.71, jupiter: 24.79, venus: 8.87, mercury: 3.7, saturn: 10.44, uranus: 8.69, neptune: 11.15, sun: 274, space: 0 };
+  const WORLD_NAME = { earth: "on Earth", moon: "on the Moon", mars: "on Mars", jupiter: "on Jupiter", venus: "on Venus", mercury: "on Mercury", saturn: "on Saturn", uranus: "on Uranus", neptune: "on Neptune", sun: "on the Sun", space: "in space" };
+  const WORLD = /\b(?:on\s+(?:the\s+)?(moon|mars|jupiter|venus|mercury|saturn|uranus|neptune|sun|earth)|in\s+(?:outer\s+)?(space)|(?:with\s+)?(?:zero|no)\s+(gravity))\b/i;
+  const SIM_NOUN = [
+    ["pendulum", /\b(?:pendulums?|grandfather\s+clock)\b/i],
+    ["orbit", /\b(?:orbit(?:s|ing|al)?|satellites?)\b/i],
+    ["spring", /\b(?:(?:a|the)\s+spring(?=\s*[.!?]?$|\s+(?:bounc\w*|works?|stretch\w*|oscillat\w*|moves?|with\b|on\b|in\b|at\b|go\b|goes\b))|springs?\s+(?:bounc|stretch|oscillat)\w*|hooke'?s?\s+law|mass\s+on\s+a\s+spring)/i],
+    ["wave", /\b(?:(?:sound|light|water|transverse|standing|sine)\s+)?waves?\b(?!\s+(?:at|to|hello|goodbye|bye))/i],
+    ["projectile", /\b(?:projectile(?:\s+motion)?|cannon(?:ball)?s?|(?:throw|throwing|threw|launch|launching|kick|kicking|fire|firing|shoot|shooting|toss|tossing|hit|hitting)\s+(?:a|an|the|my)\s+(?:ball|rock|stone|basketball|football|soccer\s+ball|baseball|golf\s+ball|tennis\s+ball|cannonball|arrow|javelin|apple|snowball|paper\s+plane))\b/i],
+    ["drop", /\b(?:free\s*fall|(?:drop|dropping|dropped|fall|falls|falling)\s+(?:of\s+)?(?:a|an|the|my)\s+(?:ball|rock|stone|feather|hammer|apple|bowling\s+ball|penny|coin|egg|brick)|(?:feather|hammer)\s+and\s+(?:a\s+)?(?:feather|hammer)|feather\s+(?:fall|drop))\b/i],
+  ];
+  const SIM_LEAD = new RegExp(LEAD + "(?:" + [
+    String.raw`(?:simulate|run\s+a\s+simulation\s+of|show\s+me|let\s+me\s+see|can\s+i\s+see|i\s+want\s+to\s+see|demonstrate|model)\b`,
+    String.raw`what\s+(?:happens|would\s+happen)\s+(?:if|when)\b`,
+    String.raw`(?:drop|throw|launch|kick|fire|toss|swing)\s+(?:a|an|the|my)\b`,
+    String.raw`how\s+(?:does|do|would|fast\s+does|long\s+does|far\s+does|high\s+does)\b`,
+    String.raw`(?:teach|explain)\s+me\b`,
+  ].join("|") + ")", "i");
+  /** Numbers in what was said: an angle, a speed (m/s), a length or height (m). */
+  function simParams(s) {
+    const out = {};
+    const w = s.match(WORLD);
+    if (w) out.world = (w[1] || w[2] || (w[3] ? "space" : "earth")).toLowerCase();
+    const a = s.match(/(\d{1,3}(?:\.\d+)?)\s*(?:°|degrees?|deg)\b/i);
+    if (a) out.angle = Number(a[1]);
+    const v = s.match(/(\d+(?:\.\d+)?)\s*(m\/s|met(?:er|re)s?\s+(?:per|a)\s+second|km\/h|kph|kilomet(?:er|re)s?\s+(?:per|an)\s+hour|mph|miles?\s+(?:per|an)\s+hour)/i);
+    if (v) {
+      const u = v[2].toLowerCase(), n = Number(v[1]);
+      out.speed = /km|kilo|kph/.test(u) ? n / 3.6 : /mph|mile/.test(u) ? n * 0.44704 : n;
+    }
+    const l = s.match(/(\d+(?:\.\d+)?)\s*(cm|centimet(?:er|re)s?|m|met(?:er|re)s?|ft|feet|foot)\b(?!\s*(?:\/|per\b|a\s+second))/i);
+    if (l) {
+      const u = l[2].toLowerCase(), n = Number(l[1]);
+      out.length = /^c/.test(u) ? n / 100 : /^f/.test(u) ? n * 0.3048 : n;
+    }
+    if (/\b(?:without\s+air|no\s+air|(?:in\s+)?a?\s*vacuum|airless)\b/i.test(s)) out.air = false;
+    else if (/\b(?:with\s+air|air\s+resistance|drag)\b/i.test(s)) out.air = true;
+    if (/\bfeather\b/i.test(s)) out.feather = true;
+    return out;
+  }
+  const clampN = (x, lo, hi, d) => (Number.isFinite(x) ? Math.min(hi, Math.max(lo, x)) : d);
+  /** A whole simulation request, or null: needs a lead ("show me", "simulate", "what happens if") and a thing. */
+  function parseSim(said) {
+    const s = String(said || "").trim();
+    if (!SIM_LEAD.test(s)) return null;
+    const hit = SIM_NOUN.find(([, re]) => re.test(s));
+    if (!hit) return null;
+    return simSpec(hit[0], simParams(s));
+  }
+  /** A full, safe spec from a type and whatever numbers were given. */
+  function simSpec(type, p = {}, base = {}) {
+    const world = p.world || base.world || "earth";
+    const g = GRAVITY[world] ?? 9.81;
+    const spec = { type, world, g, angle: 0, speed: 0, length: 0, mass: 0, rate: 1, air: false, feather: false };
+    if (type === "pendulum") { spec.length = clampN(p.length ?? base.length, 0.05, 100, 1); spec.angle = clampN(p.angle ?? base.angle, 2, 170, 30); }
+    if (type === "projectile") { spec.speed = clampN(p.speed ?? base.speed, 0.5, 300, 15); spec.angle = clampN(p.angle ?? base.angle, 1, 89, 45); }
+    if (type === "drop") {
+      spec.length = clampN(p.length ?? base.length, 0.2, 2000, 10);
+      spec.feather = !!(p.feather ?? base.feather);
+      // The Moon has no air; anywhere else a feather drifts unless you say "in a vacuum".
+      spec.air = spec.feather && world !== "moon" && world !== "space" && world !== "mercury" && (p.air ?? base.air ?? true) !== false;
+    }
+    if (type === "orbit") spec.rate = clampN(p.rate ?? base.rate, 0.5, 1.6, 1);
+    if (type === "spring") spec.mass = clampN(p.mass ?? base.mass, 0.05, 20, 0.5);
+    if (type === "wave") spec.rate = clampN(p.rate ?? base.rate, 0.25, 4, 1);
+    spec.title = { pendulum: "A pendulum", projectile: "A thrown ball", drop: spec.feather ? "A feather and a hammer" : "A falling ball", orbit: "An orbit", spring: "A mass on a spring", wave: "A wave" }[type] + (world === "earth" ? "" : " " + WORLD_NAME[world]);
+    return spec;
+  }
+  /** A number the way you'd say it: 2.0 → "2", 22.94 → "22.9", 0.512 → "0.51". */
+  function say(n) {
+    const a = Math.abs(n);
+    const r = a >= 100 ? Math.round(n) : a >= 10 ? Math.round(n * 10) / 10 : Math.round(n * 100) / 100;
+    return String(r);
+  }
+  const metres = (n) => say(n) + (Number(say(n)) === 1 ? " metre" : " metres");
+  const seconds = (n) => say(n) + (Number(say(n)) === 1 ? " second" : " seconds");
+  /** The numbers the equations give for a spec (shown on the projector and spoken). */
+  function simFacts(spec) {
+    const { g } = spec;
+    if (spec.type === "pendulum") {
+      const T = g > 0 ? 2 * Math.PI * Math.sqrt(spec.length / g) : Infinity;
+      return { period: T, formula: "T = 2π√(L/g)" };
+    }
+    if (spec.type === "projectile") {
+      const th = (spec.angle * Math.PI) / 180, v = spec.speed;
+      if (!(g > 0)) return { time: Infinity, range: Infinity, height: Infinity, formula: "no gravity: a straight line" };
+      return { time: (2 * v * Math.sin(th)) / g, range: (v * v * Math.sin(2 * th)) / g, height: (v * v * Math.sin(th) ** 2) / (2 * g), formula: "range = v²·sin 2θ / g" };
+    }
+    if (spec.type === "drop") {
+      if (!(g > 0)) return { time: Infinity, impact: 0, formula: "no gravity: nothing falls" };
+      return { time: Math.sqrt((2 * spec.length) / g), impact: Math.sqrt(2 * g * spec.length), formula: "t = √(2h/g)" };
+    }
+    if (spec.type === "spring") return { period: 2 * Math.PI * Math.sqrt(spec.mass / 20), stretch: g > 0 ? (spec.mass * g) / 20 : 0, formula: "T = 2π√(m/k)" };
+    if (spec.type === "orbit") return { formula: "gravity pulls in · speed carries it round" };
+    if (spec.type === "wave") return { frequency: spec.rate, wavelength: 1 / spec.rate, formula: "speed = frequency × wavelength" };
+    return {};
+  }
+  /** What Izuki says about a simulation, with the real numbers. */
+  function simWords(spec, before) {
+    const f = simFacts(spec), where = WORLD_NAME[spec.world] || "on Earth";
+    if (spec.type === "pendulum") {
+      if (!Number.isFinite(f.period)) return "With no gravity, a pendulum doesn't swing at all: nothing pulls it back down.";
+      const was = before && before.type === "pendulum" ? simFacts(before).period : 0;
+      const lead = was && Math.abs(was - f.period) > 0.01 ? "Now each swing takes " + seconds(f.period) + " instead of " + seconds(was) + ". " : "";
+      // A wide swing is a little slower than the textbook formula (θ0²/16 is the first correction).
+      const th = (spec.angle * Math.PI) / 180, wide = spec.angle > 25 ? " At " + say(spec.angle) + " degrees it's a wide swing, so it really takes about " + seconds(f.period * (1 + (th * th) / 16 + (11 * th ** 4) / 3072)) + "; watch the measured swing on the card." : "";
+      return lead + "A pendulum " + metres(spec.length) + " long swings there and back once every " + seconds(f.period) + " " + where + "." + wide + " Only its length and gravity change that pace: a heavier weight swings just the same. Say on the Moon, or make it longer, to see it change.";
+    }
+    if (spec.type === "projectile") {
+      if (!Number.isFinite(f.range)) return "With no gravity the ball never comes down: it keeps going in a straight line at " + say(spec.speed) + " metres a second.";
+      return "Thrown at " + say(spec.speed) + " metres a second at " + say(spec.angle) + " degrees " + where + ", the ball flies " + metres(f.range) + ", peaks " + metres(f.height) + " up, and lands after " + seconds(f.time) +
+        ". Without air, 45 degrees goes furthest, and 30 and 60 degrees land in the same spot. Try another angle, or throw it harder.";
+    }
+    if (spec.type === "drop") {
+      if (!Number.isFinite(f.time)) return "With no gravity, nothing falls: they just float where you let go.";
+      const main = "Dropped from " + metres(spec.length) + " " + where + ", the hammer hits the ground after " + seconds(f.time) + ", going " + say(f.impact) + " metres a second.";
+      if (!spec.feather) return main.replace("the hammer", "the ball") + " Heavy or light, everything falls at the same rate when air doesn't get in the way.";
+      if (spec.air) return main + " The feather drifts down slowly, because air pushes up on it. Take the air away and they land together. Say in a vacuum, or on the Moon.";
+      return main + " With no air, the feather falls just as fast and they land together, exactly what astronaut David Scott showed on the Moon in 1971.";
+    }
+    if (spec.type === "orbit") {
+      const lead = spec.rate > 1.41 ? "That's faster than escape speed, so it flies away for good. " : spec.rate > 1.02 ? "A bit faster, so its path stretches into an ellipse. " : spec.rate < 0.98 ? "Slower, so it falls closer on one side of its path. " : "";
+      return lead + "An orbit is falling and missing: gravity pulls the moon in the whole time, but it's moving sideways so fast that it keeps missing the planet. About 1.4 times faster and it escapes. Say faster or slower to see.";
+    }
+    if (spec.type === "spring") {
+      return "A " + say(spec.mass) + " kilogram mass on this spring bounces once every " + seconds(f.period) + ". Gravity only sets where it rests, " + (f.stretch ? say(f.stretch * 100) + " centimetres down" : "and in space it doesn't stretch at all") +
+        ", not how fast it bounces, so it would bounce at the same pace on the Moon. A heavier mass bounces slower.";
+    }
+    if (spec.type === "wave") {
+      return "This wave makes " + say(f.frequency) + (f.frequency === 1 ? " wave" : " waves") + " a second, each " + metres(f.wavelength) + " long, so it travels 1 metre a second. Watch the gold bead: it only goes up and down. The shape is what travels, not the stuff it's made of. Say faster to see shorter waves.";
+    }
+    return "";
+  }
+  // While a simulation is up: "now on the moon", "make it longer", "at 60 degrees", "throw it harder".
+  const SIM_TWEAK = whole(String.raw`(?:(?:and|now|so|ok|okay)\s+)?(?:(?:what\s+about|how\s+about|try(?:\s+it)?|do\s+it|drop\s+(?:it|them)|throw\s+it|swing\s+it|again|now)\s+)?(?:` + [
+    String.raw`on\s+(?:the\s+)?(?:moon|mars|jupiter|venus|mercury|saturn|uranus|neptune|sun|earth)|in\s+(?:outer\s+)?space|(?:with\s+)?(?:zero|no)\s+gravity`,
+    String.raw`(?:make\s+it\s+|a\s+bit\s+|a\s+little\s+)?(?:longer|shorter|faster|slower|higher|lower|harder|softer|heavier|lighter|steeper|flatter|taller)(?:\s+(?:string|rope|throw|spring|mass|drop))?`,
+    String.raw`(?:at\s+)?\d{1,3}\s*(?:°|degrees?)|from\s+\d+(?:\.\d+)?\s*(?:m|met(?:er|re)s?|ft|feet)|\d+(?:\.\d+)?\s*(?:m|met(?:er|re)s?|cm|ft|feet)(?:\s+long)?|\d+(?:\.\d+)?\s*(?:m\/s|met(?:er|re)s?\s+(?:per|a)\s+second|km\/h|mph)`,
+    String.raw`with(?:out)?\s+air(?:\s+resistance)?|in\s+a\s+vacuum|with\s+a\s+feather`,
+  ].join("|") + ")");
+  /** A running simulation changed by what was said ("on the moon", "longer", "60 degrees"). */
+  function tweakSim(spec, said) {
+    const s = String(said || "");
+    const p = simParams(s);
+    const up = (k, f) => { p[k] = (p[k] ?? spec[k]) * f; };
+    if (/\blonger|taller\b/i.test(s)) up("length", 2);
+    if (/\bshorter\b/i.test(s)) up("length", 0.5);
+    if (/\b(?:harder|faster)\b/i.test(s)) { if (spec.type === "projectile") up("speed", 1.5); else if (spec.type === "orbit") p.rate = spec.rate + 0.15; else if (spec.type === "wave") up("rate", 1.5); else if (spec.type === "drop") up("length", 2); }
+    if (/\b(?:softer|slower)\b/i.test(s)) { if (spec.type === "projectile") up("speed", 1 / 1.5); else if (spec.type === "orbit") p.rate = spec.rate - 0.15; else if (spec.type === "wave") up("rate", 1 / 1.5); }
+    if (/\b(?:higher|steeper)\b/i.test(s)) { if (spec.type === "drop") up("length", 2); else p.angle = (p.angle ?? spec.angle) + 15; }
+    if (/\b(?:lower|flatter)\b/i.test(s)) { if (spec.type === "drop") up("length", 0.5); else p.angle = (p.angle ?? spec.angle) - 15; }
+    if (/\bheavier\b/i.test(s)) up("mass", 2);
+    if (/\blighter\b/i.test(s)) up("mass", 0.5);
+    const next = simSpec(spec.type, p, spec);
+    // Same pace, heavier or not: say so.
+    if (spec.type === "pendulum" && /\b(?:heavier|lighter)\b/i.test(s)) return { spec: next, note: "Same pace: the weight on a pendulum doesn't change how fast it swings. " };
+    return { spec: next, note: "" };
+  }
+
   // ---- what the chat brain knows about the room ----------------------------------
   // Seen on a real Quest: a normal question in the room got phone talk, because
   // the chat's own prompt says "your AI companion on their phone".
   const VR_CONTEXT = (pcOn, holoOn, dreamOn) => [
     "Right now they're wearing a VR headset (Meta Quest) and you are the glowing orb floating in their room or in a virtual space around them. This is not their phone: never talk about phone screens, phone settings, tapping or swiping a phone, or phone apps.",
-    "In the room you can: build a 3D hologram to teach something (they say \"teach me…\", \"show me … in 3D\"); take them into a whole dream world (\"take me to…\", \"dream mode…\"); open a browser panel beside them (\"search the web for…\"); show their PC's screen big and point at where to click (\"show my PC\", \"where do I click…\"); look through the headset camera (\"what's this?\"); set timers; lead a breathing break; pin an answer as a card.",
+    "In the room you can: build a 3D hologram to teach something (they say \"teach me…\", \"show me … in 3D\"); run real physics on the projector (\"simulate a pendulum\", \"throw a ball at 60 degrees\", \"drop a feather and a hammer on the Moon\", \"how do satellites orbit\"), with the true numbers; take them into a whole dream world (\"take me to…\", \"dream mode…\"); open a browser panel beside them (\"search the web for…\"); show their PC's screen big and point at where to click (\"show my PC\", \"where do I click…\"); look through the headset camera (\"what's this?\"); set timers; lead a breathing break; pin an answer as a card.",
     "When something would be much clearer seen than said (how a thing works, a process, a place, sizes, a history), answer in a sentence or two, then offer it in a few words: \"Want me to build it in 3D?\" or \"Want me to take you there?\". Don't offer it every time.",
     "Answer in one to three short spoken sentences, the most important thing first. No lists, no markdown, no emoji: everything is read aloud and shown as a short caption.",
     pcOn ? "Their PC's screen is open big in the room." : "",
@@ -560,7 +728,7 @@
     return { nx: c(u), ny: c(1 - v) };
   }
 
-  const util = { command, onPc, named, forIzuki, timerWords, parseLook, parseHolo, HOLO_SYSTEM, parseDream, DREAM_SYSTEM, VR_CONTEXT, YES, OFFERS_3D, OFFERS_TRIP, lessonTimes, wrapLines, fitLines, followTarget, pcPoint, angleGap, LOOK_SYSTEM, lookPrompt, ROOM_WORDS, ABOUT_THIS, parseSketch, PLACE_WORDS, photoUrl, BODIES, issWords };
+  const util = { command, onPc, named, forIzuki, timerWords, parseLook, parseHolo, HOLO_SYSTEM, parseDream, DREAM_SYSTEM, VR_CONTEXT, YES, OFFERS_3D, OFFERS_TRIP, lessonTimes, wrapLines, fitLines, followTarget, pcPoint, angleGap, LOOK_SYSTEM, lookPrompt, ROOM_WORDS, ABOUT_THIS, parseSketch, PLACE_WORDS, photoUrl, BODIES, issWords, parseSim, simSpec, simFacts, simWords, tweakSim, simParams, SIM_TWEAK };
   if (typeof module !== "undefined" && module.exports) { module.exports = util; return; }
 
   // ===========================================================================
@@ -827,6 +995,7 @@
         : "Pair this headset with your PC once, and I'll bring its screen and your photos right into the room.",
       "You don't even need my name for a question: just ask.",
       "Say search the web for anything and I'll look it up on a browser right here. Say teach me, or show me, and I'll build it in 3D around you while I explain.",
+      "Ask for real physics, like simulate a pendulum or drop a feather and a hammer on the Moon, and it runs on the projector with the true numbers.",
       "Set a timer, or say help me relax and I'll breathe with you.",
       "Hold Talk, or A, to talk while you hold it. Reach out and pinch me, or any card, to move it. Pin an answer to keep it, say come here to call me over, and change your look whenever you like.",
     ].filter(Boolean).join(" ");
@@ -859,6 +1028,17 @@
       if (q && gen === holoGen) vr.scene?.globeMark?.(q.latitude, q.longitude);
     }, 5000);
     return issWords(p);
+  }
+
+  // ---- physics on the projector ------------------------------------------------
+  let simNow = null;
+  function sim(spec, note) {
+    const before = simNow;
+    stopIss();
+    holoNow = null; holoAt = -1; holoGen++;
+    vr.scene?.simShow?.(spec, before);
+    simNow = spec;
+    return (note || "") + simWords(spec, before);
   }
 
   // ---- dream mode ---------------------------------------------------------------
@@ -1013,7 +1193,7 @@
       // "Stop listening" always works, name or not.
       const bare = !n.called && command(s)?.kind === "sleep";
       const ctl = !n.called ? command(s) : null;
-      const live = !!ctl && ((/^holo-/.test(ctl.kind) && !!vr.scene?.holoShown?.()) || (ctl.kind === "dream-end" && !!vr.scene?.dreamShown?.()) || ctl.kind === "timer-stop" || ctl.kind === "breathe-stop" || ctl.kind === "web-hide");
+      const live = !!ctl && ((/^holo-/.test(ctl.kind) && !!vr.scene?.holoShown?.()) || (ctl.kind === "dream-end" && !!vr.scene?.dreamShown?.()) || (ctl.kind === "sim-tweak" && !!simNow && !!vr.scene?.simShown?.()) || ctl.kind === "timer-stop" || ctl.kind === "breathe-stop" || ctl.kind === "web-hide");
       if (heyNova && !armed && !bare && !live && Date.now() - spokeAt > FOLLOW_ON_MS) {
         if (!n.called && !(store.get("vr.anyQuestion", true) !== false && forIzuki(s))) return null;
         if (!n.rest) return { done: true, said: s, say: "Mhm?" };
@@ -1024,6 +1204,9 @@
       // A lesson's "next", "back", "again" only mean that while a hologram is up.
       if (c?.kind?.startsWith("holo-") && !vr.scene?.holoShown?.()) c = null;
       if (c?.kind === "dream-end" && !vr.scene?.dreamShown?.()) c = null;
+      const simUp = !!simNow && !!vr.scene?.simShown?.();
+      if (c?.kind === "sim-tweak" && !simUp) c = null;
+      if (simUp && command(s)?.kind === "holo-again") c = { kind: "sim", spec: simNow };
       // "Where was this taken?", "who is he?": with a photo open, about the photo.
       if (!c && photoOpen() && ABOUT_THIS(s) && !ROOM_WORDS.test(s)) c = { kind: "photo-ask" };
       // With your PC on the big screen, a search is done there (unless you say "in here").
@@ -1077,6 +1260,8 @@
         if (c.kind === "dream-end") { vr.scene?.dreamClose?.(); return done("And we're back in your room."); }
         if (c.kind === "holo-hide") { vr.scene?.holoClose?.(); return done("Okay, I put it away."); }
         if (c.kind === "globe") return done(await globe(c.body, c.iss));
+        if (c.kind === "sim") return done(sim(c.spec));
+        if (c.kind === "sim-tweak") { const k = tweakSim(simNow, s); return done(sim(k.spec, k.note)); }
         if (c.kind === "holo-next") return done(holoStep(1));
         if (c.kind === "holo-back") return done(holoStep(-1));
         if (c.kind === "holo-again") return done(holoStep(0));
@@ -1260,7 +1445,7 @@
       vr.scene?.line("izuki", say);
       g.IzukiCore?.speak?.(say);
     },
-    holoClosed() { holoNow = null; holoAt = -1; holoGen++; stopIss(); },
+    holoClosed() { holoNow = null; holoAt = -1; holoGen++; stopIss(); simNow = null; },
     exited() {
       // The Quest app goes back to its launcher, not to a flat chat.
       if (asApp) g.setTimeout?.(launcher, 600);

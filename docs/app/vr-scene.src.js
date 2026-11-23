@@ -1581,6 +1581,7 @@ export async function start({ mode, session, api, tint }) {
     if (holoUi.building) { holoUi.building.geometry.dispose(); holoUi.building.material.dispose(); }
     sketchClear();
     globeClear();
+    simClear();
     holoUi.stage.clear();
     holoUi.nodes = []; holoUi.links = []; holoUi.building = null;
   }
@@ -2057,6 +2058,309 @@ export async function start({ mode, session, api, tint }) {
     if (globeUi.mark && !calm) globeUi.mark.scale.setScalar(0.07 + 0.03 * Math.abs(Math.sin(now / 300)));
   }
 
+  // ---- physics on the projector: the real equations, stepped every frame -------------
+  // A box about 68 cm wide over the projector: floor at SIM_F, top at SIM_T. Real
+  // metres are scaled to fit; time runs at real speed, so a 2-second swing takes
+  // 2 seconds. Numbers on the card are measured from the running simulation.
+  const SIM_F = -0.22, SIM_T = 0.36, SIM_W = 0.34;
+  const simUi = { spec: null, made: [], st: null, card: null, readAt: 0, parts: null };
+  function simClear() {
+    for (const o of simUi.made) { try { o.dispose(); } catch {} }
+    if (simUi.card) unui(simUi.card.mesh);
+    Object.assign(simUi, { spec: null, made: [], st: null, card: null, readAt: 0, parts: null });
+  }
+  const simKeep = (o) => { simUi.made.push(o); return o; };
+  /** A glowing ball: a fresnel body and a soft halo. */
+  function simBall(color, r) {
+    const g = new Group();
+    const body = new Mesh(simKeep(new SphereGeometry(r, 20, 14)), simKeep(holoMaterial(color)));
+    body.material.uniforms.opacity.value = 0.95;
+    const halo = new Sprite(simKeep(new SpriteMaterial({ map: holoGlow, color, transparent: true, opacity: 0.8, blending: AdditiveBlending, depthWrite: false })));
+    halo.scale.setScalar(r * 5);
+    g.add(body, halo);
+    return g;
+  }
+  /** A line whose points change every frame (n points, drawn up to .used). */
+  function simLine(n, color, opacity = 0.9) {
+    // (Float32BufferAttribute copies its array: write into the attribute's own one.)
+    const geo = simKeep(new BufferGeometry().setAttribute("position", new Float32BufferAttribute(new Float32Array(n * 3), 3)));
+    const pos = geo.attributes.position.array;
+    geo.setDrawRange(0, 0);
+    const line = new Line(geo, simKeep(new LineBasicMaterial({ color, transparent: true, opacity, blending: AdditiveBlending, depthWrite: false })));
+    line.frustumCulled = false;
+    return { line, pos, geo, n, used: 0,
+      set(i, x, y, z = 0) { pos[i * 3] = x; pos[i * 3 + 1] = y; pos[i * 3 + 2] = z; },
+      draw(k) { this.used = k; geo.setDrawRange(0, k); geo.attributes.position.needsUpdate = true; },
+      push(x, y, z = 0) {
+        if (this.used >= n) { pos.copyWithin(0, 3); this.used = n - 1; }
+        this.set(this.used, x, y, z); this.draw(this.used + 1);
+      },
+      clear() { this.draw(0); } };
+  }
+  /** The floor (and its length in real metres, when there's a scale). */
+  function simFloor(label) {
+    const f = simLine(2, HOLO_COLORS.white, 0.35);
+    f.set(0, -SIM_W, SIM_F); f.set(1, SIM_W, SIM_F); f.draw(2);
+    holoUi.stage.add(f.line);
+    if (!label) return;
+    const c = card(0.16, 0.036);
+    simKeep(c.tex); simKeep(c.mesh.geometry); simKeep(c.mesh.material);
+    write(c.ctx, label, c.w - 8, c.h / 2 + 10, 30, INK2, 500, "right");
+    c.update();
+    c.mesh.position.set(SIM_W - 0.08, SIM_F - 0.025, 0.01);
+    holoUi.stage.add(c.mesh);
+  }
+  const fmt = (n, unit) => (!Number.isFinite(n) ? "—" : (Math.abs(n) >= 100 ? Math.round(n) : Math.abs(n) >= 10 ? n.toFixed(1) : n.toFixed(2)) + (unit ? " " + unit : ""));
+  /** The live numbers under the simulation (redrawn a few times a second). */
+  function simRead(lines) {
+    const c = simUi.card;
+    if (!c) return;
+    const { ctx, w, h } = c;
+    glass(ctx, w, h, 30, { fill0: "rgba(16,19,27,0.86)", fill1: "rgba(10,12,18,0.9)" });
+    write(ctx, ellipsize(ctx, lines[0], w - 60), 30, 58, 40, TEAL, 600, "left", DISPLAY);
+    ctx.font = `500 34px ${FONT}`;
+    write(ctx, ellipsize(ctx, lines[1] || "", w - 60), 30, 112, 34, INK, 500);
+    c.update();
+  }
+
+  function simShow(spec, before) {
+    holoClear();
+    holoPhotoClear();
+    holoUi.spec = { title: spec.title, kind: "sim", steps: [], items: [] };
+    holoUi.step = -1; holoUi.focus = null; holoUi.t0 = performance.now();
+    if (!holoUi.open) placeHolo();
+    holoUi.open = true;
+    holoUi.group.visible = true;
+    simUi.spec = spec;
+    const card0 = card(0.6, 0.06);
+    simKeep(card0.tex); simKeep(card0.mesh.geometry); simKeep(card0.mesh.material);
+    card0.mesh.position.set(0, SIM_F - 0.085, 0.04);
+    holoUi.stage.add(card0.mesh);
+    simUi.card = card0;
+    ui(card0.mesh, { tap: () => api.ask?.("Explain why the " + spec.type + " moves like that, simply.") });
+    const g = spec.g;
+    const T = HOLO_COLORS.teal, A = HOLO_COLORS.amber, S = HOLO_COLORS.sky, W = HOLO_COLORS.white;
+    const P = {};
+    if (spec.type === "pendulum") {
+      const pivot = new Vector3(0, SIM_T, 0), Ld = SIM_T - SIM_F - 0.08;
+      const bar = new Mesh(simKeep(new CylinderGeometry(0.0032, 0.0032, 1, 8)), simKeep(new MeshBasicMaterial({ color: W, transparent: true, opacity: 0.85, blending: AdditiveBlending, depthWrite: false })));
+      const trail = simLine(90, T, 0.55), arc = simLine(49, W, 0.18);
+      const th0 = (spec.angle * Math.PI) / 180;
+      for (let k = 0; k <= 48; k++) { const a = -th0 + (2 * th0 * k) / 48; arc.set(k, Math.sin(a) * Ld, SIM_T - Math.cos(a) * Ld); }
+      arc.draw(49);
+      const bob = simBall(T, 0.026), hub = simBall(W, 0.008);
+      hub.position.copy(pivot);
+      holoUi.stage.add(bar, trail.line, arc.line, bob, hub);
+      Object.assign(P, { pivot, Ld, bar, trail, bob });
+      simUi.st = { th: th0, w: 0, t: 0, lastCross: -1, period: NaN, dir: 0 };
+      simFloor("");
+    } else if (spec.type === "projectile") {
+      const th = (spec.angle * Math.PI) / 180, v = spec.speed;
+      const R = g > 0 ? (v * v * Math.sin(2 * th)) / g : v * 3, H = g > 0 ? (v * v * Math.sin(th) ** 2) / (2 * g) : v * 3 * Math.sin(th);
+      // Room for this throw and the one before it (shown faint), so you can compare.
+      let R0 = 0, H0 = 0;
+      if (before?.type === "projectile" && before.g > 0) { const b = (before.angle * Math.PI) / 180; R0 = (before.speed ** 2 * Math.sin(2 * b)) / before.g; H0 = (before.speed ** 2 * Math.sin(b) ** 2) / (2 * before.g); }
+      const scale = Math.min((2 * SIM_W - 0.04) / Math.max(R, R0, 0.5), (SIM_T - SIM_F - 0.04) / Math.max(H, H0, 0.25));
+      const x0 = -SIM_W + 0.02;
+      const path = (sp, ln, n) => {
+        const t1 = sp.g > 0 ? (2 * sp.speed * Math.sin((sp.angle * Math.PI) / 180)) / sp.g : 3;
+        for (let k = 0; k < n; k++) {
+          const tt = (t1 * k) / (n - 1), a = (sp.angle * Math.PI) / 180;
+          ln.set(k, x0 + sp.speed * Math.cos(a) * tt * scale, SIM_F + (sp.speed * Math.sin(a) * tt - (sp.g * tt * tt) / 2) * scale);
+        }
+        ln.draw(n);
+      };
+      const guide = simLine(64, W, 0.16);
+      path(spec, guide, 64);
+      holoUi.stage.add(guide.line);
+      if (R0) { const ghost = simLine(64, S, 0.28); path(before, ghost, 64); holoUi.stage.add(ghost.line); }
+      const ball = simBall(A, 0.016), trail = simLine(200, A, 0.85), arrow = simLine(2, T, 0.9);
+      const mark = simBall(T, 0.009);
+      mark.visible = false;
+      holoUi.stage.add(ball, trail.line, arrow.line, mark);
+      Object.assign(P, { scale, x0, th, v, ball, trail, arrow, mark, R });
+      simUi.st = { t: 0, rest: 0 };
+      simFloor(fmt(2 * SIM_W / scale, "m"));
+    } else if (spec.type === "drop") {
+      const scale = (SIM_T - SIM_F - 0.04) / spec.length;
+      const top = SIM_F + spec.length * scale;
+      const hammer = simBall(A, 0.02);
+      hammer.position.set(spec.feather ? -0.09 : 0, top, 0);
+      holoUi.stage.add(hammer);
+      let feather = null;
+      if (spec.feather) {
+        feather = new Group();
+        const vane = new Mesh(simKeep(new SphereGeometry(1, 16, 10)), simKeep(holoMaterial(W)));
+        vane.scale.set(0.011, 0.034, 0.004);
+        feather.add(vane);
+        feather.position.set(0.09, top, 0);
+        holoUi.stage.add(feather);
+      }
+      const ruler = simLine(2, W, 0.25);
+      ruler.set(0, -SIM_W + 0.03, SIM_F); ruler.set(1, -SIM_W + 0.03, top); ruler.draw(2);
+      holoUi.stage.add(ruler.line);
+      Object.assign(P, { scale, top, hammer, feather });
+      simUi.st = { t: 0, y: spec.length, v: 0, fy: spec.length, fv: 0, landed: -1, fLanded: -1, rest: 0 };
+      simFloor(fmt(spec.length, "m") + " drop");
+    } else if (spec.type === "orbit") {
+      const planet = new Mesh(simKeep(new SphereGeometry(0.05, 32, 20)), simKeep(holoMaterial(S)));
+      planet.position.set(0, 0.07, 0);
+      const r0 = 0.13, Tc = 6, vc = (2 * Math.PI * r0) / Tc, GM = vc * vc * r0;
+      const moon = simBall(W, 0.014), trail = simLine(420, T, 0.6);
+      holoUi.stage.add(planet, moon, trail.line);
+      Object.assign(P, { planet, moon, trail, GM, r0 });
+      simUi.st = { x: r0, y: 0, vx: 0, vy: vc * spec.rate, t: 0, rest: 0 };
+    } else if (spec.type === "spring") {
+      const top = SIM_T, rest = 0.06, coil = simLine(160, T, 0.85);
+      const plate = simLine(2, W, 0.6);
+      plate.set(0, -0.06, top); plate.set(1, 0.06, top); plate.draw(2);
+      const box = new Mesh(simKeep(new BoxGeometry(0.06, 0.05, 0.06)), simKeep(holoMaterial(A)));
+      holoUi.stage.add(coil.line, plate.line, box);
+      const k = 20, omega = Math.sqrt(k / spec.mass);
+      Object.assign(P, { top, rest, coil, box, omega });
+      simUi.st = { t: 0 };
+      simFloor("");
+    } else if (spec.type === "wave") {
+      const n = 96, line = simLine(n, T, 0.9);
+      const beads = [];
+      for (let i = 0; i < 16; i++) { const b = simBall(i === 7 ? A : W, i === 7 ? 0.011 : 0.006); beads.push(b); holoUi.stage.add(b); }
+      const crest = simBall(T, 0.012);
+      holoUi.stage.add(line.line, crest);
+      // The real wave: speed 1 m/s; the 68 cm box shows 2 metres of it.
+      Object.assign(P, { n, line, beads, crest, perM: (2 * SIM_W) / 2 });
+      simUi.st = { t: 0 };
+    }
+    simUi.parts = P;
+    holoUi.reach = SIM_W;
+    projShow(SIM_W + 0.06, true);
+    drawHoloBar();
+    stepAside("holo");
+    simRead([spec.title, "…"]);
+  }
+
+  function simTick(dt, now) {
+    const spec = simUi.spec, P = simUi.parts, st = simUi.st;
+    if (!spec || !P || !st) return;
+    dt = Math.min(dt, 0.05);
+    const g = spec.g;
+    let read = null;
+    if (spec.type === "pendulum") {
+      // θ'' = −(g/L)·sin θ, four small steps a frame (the real swing, wide angles included).
+      const L = spec.length;
+      for (let i = 0; i < 4; i++) {
+        const h = dt / 4, prev = st.th;
+        st.w += (-(g / L) * Math.sin(st.th)) * h;
+        st.th += st.w * h;
+        st.t += h;
+        // A full swing is measured between two crossings of the middle in the same direction.
+        if (prev < 0 && st.th >= 0) { if (st.lastCross >= 0) st.period = st.t - st.lastCross; st.lastCross = st.t; }
+      }
+      const x = Math.sin(st.th) * P.Ld, y = SIM_T - Math.cos(st.th) * P.Ld;
+      P.bob.position.set(x, y, 0);
+      // The rod: a unit cylinder stretched to the bob and turned to point at it.
+      P.bar.position.set(x / 2, (SIM_T + y) / 2, 0);
+      P.bar.scale.set(1, P.Ld, 1);
+      P.bar.rotation.z = st.th;
+      P.trail.push(x, y);
+      if (P.trail.used > 40) { P.trail.pos.copyWithin(0, 3); P.trail.draw(40); }
+      read = () => [g > 0 ? "T = 2π√(L/g) ≈ " + fmt(2 * Math.PI * Math.sqrt(L / g), "s") : "No gravity: no swing",
+        "angle " + Math.round((st.th * 180) / Math.PI) + "°   speed " + fmt(Math.abs(st.w) * L, "m/s") + "   measured swing " + (Number.isFinite(st.period) ? fmt(st.period, "s") : "…")];
+    } else if (spec.type === "projectile") {
+      if (st.rest > 0) { st.rest -= dt; if (st.rest <= 0) { st.t = 0; P.trail.clear(); P.mark.visible = false; } }
+      else {
+        st.t += dt;
+        let x = P.v * Math.cos(P.th) * st.t, y = P.v * Math.sin(P.th) * st.t - (g * st.t * st.t) / 2;
+        const tEnd = g > 0 ? (2 * P.v * Math.sin(P.th)) / g : 3;
+        if (st.t >= tEnd) {
+          st.t = tEnd; x = P.v * Math.cos(P.th) * tEnd; y = g > 0 ? 0 : y; st.rest = 1.6;
+          P.mark.visible = g > 0; P.mark.position.set(P.x0 + x * P.scale, SIM_F, 0);
+        }
+        P.ball.position.set(P.x0 + x * P.scale, SIM_F + Math.max(0, y) * P.scale, 0);
+        P.trail.push(P.ball.position.x, P.ball.position.y);
+        const vx = P.v * Math.cos(P.th), vy = P.v * Math.sin(P.th) - g * st.t, k = 0.06 / Math.max(1, P.v);
+        P.arrow.set(0, P.ball.position.x, P.ball.position.y); P.arrow.set(1, P.ball.position.x + vx * k, P.ball.position.y + vy * k); P.arrow.draw(2);
+        st.x = x; st.y = Math.max(0, y); st.sp = Math.hypot(vx, vy);
+      }
+      read = () => ["range = v²·sin 2θ / g = " + fmt(P.R, "m"),
+        "time " + fmt(st.t, "s") + "   height " + fmt(st.y ?? 0, "m") + "   distance " + fmt(st.x ?? 0, "m") + "   speed " + fmt(st.sp ?? spec.speed, "m/s")];
+    } else if (spec.type === "drop") {
+      if (st.rest > 0) {
+        st.rest -= dt;
+        if (st.rest <= 0) Object.assign(st, { t: 0, y: spec.length, v: 0, fy: spec.length, fv: 0, landed: -1, fLanded: -1 });
+      } else if (g > 0) {
+        st.t += dt;
+        if (st.landed < 0) { st.v += g * dt; st.y -= st.v * dt; if (st.y <= 0) { st.y = 0; st.landed = st.t; } }
+        if (P.feather && st.fLanded < 0) {
+          // With air, a feather soon falls at about half a metre a second; without, like the hammer.
+          const vt = 0.5;
+          st.fv += (spec.air ? g * (1 - (st.fv * st.fv) / (vt * vt)) : g) * dt;
+          st.fy -= st.fv * dt;
+          if (st.fy <= 0) { st.fy = 0; st.fLanded = st.t; }
+        }
+        const done = st.landed >= 0 && (!P.feather || st.fLanded >= 0 || st.t - st.landed > 6);
+        if (done) st.rest = 2;
+      }
+      P.hammer.position.y = SIM_F + st.y * P.scale + 0.02;
+      if (P.feather) {
+        P.feather.position.y = SIM_F + st.fy * P.scale + 0.02;
+        P.feather.position.x = 0.09 + (spec.air && st.fLanded < 0 ? Math.sin(st.t * 3) * 0.02 : 0);
+        P.feather.rotation.z = spec.air && st.fLanded < 0 ? Math.sin(st.t * 3) * 0.5 : 0;
+      }
+      read = () => [g > 0 ? "t = √(2h/g) = " + fmt(Math.sqrt((2 * spec.length) / g), "s") : "No gravity: nothing falls",
+        "time " + fmt(st.landed >= 0 ? st.landed : st.t, "s") + "   fallen " + fmt(spec.length - st.y, "m") + "   speed " + fmt(st.landed >= 0 ? Math.sqrt(2 * g * spec.length) : st.v, "m/s") +
+        (P.feather ? "   feather " + (st.fLanded >= 0 ? "landed at " + fmt(st.fLanded, "s") : fmt(spec.length - st.fy, "m") + " down") : "")];
+    } else if (spec.type === "orbit") {
+      if (st.rest > 0) {
+        st.rest -= dt;
+        if (st.rest <= 0) { Object.assign(st, { x: P.r0, y: 0, vx: 0, vy: Math.sqrt(P.GM / P.r0) * spec.rate, t: 0 }); P.trail.clear(); P.moon.visible = true; }
+      } else {
+        // Newton's gravity, a = −GM·r/|r|³, in small steps (velocity Verlet).
+        for (let i = 0; i < 8; i++) {
+          const h = dt / 8, r = Math.hypot(st.x, st.y), a = -P.GM / (r * r * r);
+          st.vx += 0.5 * a * st.x * h; st.vy += 0.5 * a * st.y * h;
+          st.x += st.vx * h; st.y += st.vy * h;
+          const r2 = Math.hypot(st.x, st.y), a2 = -P.GM / (r2 * r2 * r2);
+          st.vx += 0.5 * a2 * st.x * h; st.vy += 0.5 * a2 * st.y * h;
+        }
+        st.t += dt;
+        const r = Math.hypot(st.x, st.y);
+        if (r < 0.055 || r > 0.9) { st.rest = 1.2; P.moon.visible = false; }
+        P.moon.position.set(st.x, 0.07 + st.y, 0);
+        P.trail.push(st.x, 0.07 + st.y);
+      }
+      read = () => {
+        const r = Math.hypot(st.x, st.y), v = Math.hypot(st.vx, st.vy), esc = Math.sqrt((2 * P.GM) / Math.max(r, 1e-3));
+        return ["gravity pulls in · speed carries it round", "speed " + fmt(spec.rate, "×") + " a circle's   " + (v >= esc ? "escaping" : spec.rate > 1.02 || spec.rate < 0.98 ? "an ellipse" : "a circle") + "   distance " + fmt(r / P.r0, "×")];
+      };
+    } else if (spec.type === "spring") {
+      st.t += dt;
+      const amp = 0.07, yEq = P.top - 0.2, y = yEq + amp * Math.cos(P.omega * st.t);
+      P.box.position.set(0, y - 0.025, 0);
+      const n = P.coil.n, turns = 12;
+      for (let i = 0; i < n; i++) {
+        const f = i / (n - 1), a = f * turns * Math.PI * 2, yy = P.top + (y - P.top) * f;
+        const edge = f < 0.04 || f > 0.96 ? 0 : 1;
+        P.coil.set(i, Math.cos(a) * 0.025 * edge, yy, Math.sin(a) * 0.025 * edge);
+      }
+      P.coil.draw(n);
+      read = () => ["T = 2π√(m/k) = " + fmt((2 * Math.PI) / P.omega, "s"), "mass " + fmt(spec.mass, "kg") + "   spring 20 N/m   speed " + fmt(Math.abs(amp * P.omega * Math.sin(P.omega * st.t)) * 1, "m/s") + "   gravity doesn't change the pace"];
+    } else if (spec.type === "wave") {
+      st.t += dt;
+      const f = spec.rate, lam = 1 / f, kk = (2 * Math.PI) / lam, w = 2 * Math.PI * f, A = 0.06, mid = 0.07;
+      for (let i = 0; i < P.n; i++) {
+        const xm = (i / (P.n - 1)) * 2; // metres along the string
+        P.line.set(i, -SIM_W + xm * P.perM, mid + A * Math.sin(kk * xm - w * st.t));
+      }
+      P.line.draw(P.n);
+      P.beads.forEach((b, i) => { const xm = (i / 15) * 2; b.position.set(-SIM_W + xm * P.perM, mid + A * Math.sin(kk * xm - w * st.t), 0); });
+      // A marker riding one crest: the shape travels at 1 m/s.
+      const xc = (((w * st.t) / kk + lam / 4) % 2 + 2) % 2;
+      P.crest.position.set(-SIM_W + xc * P.perM, mid + A + 0.02, 0);
+      read = () => ["speed = frequency × wavelength = 1 m/s", "frequency " + fmt(f, "Hz") + "   wavelength " + fmt(lam, "m") + "   the gold bead only moves up and down"];
+    }
+    if (read && now - simUi.readAt > 160) { simUi.readAt = now; simRead(read()); }
+  }
+
   /** A lesson's step: its parts light up, the rest dim. null: all lit. */
   function holoFocus(list, step) {
     holoUi.step = step ?? holoUi.step;
@@ -2320,6 +2624,7 @@ export async function start({ mode, session, api, tint }) {
     if (holoUi.building) { holoUi.building.rotation.y += dt * 1.4; holoUi.building.rotation.x = 0.5; return; }
     if (holoUi.spec?.kind === "sketch") { sketchTick(dt, now); return; }
     if (holoUi.spec?.kind === "globe") { globeTick(dt, now); return; }
+    if (holoUi.spec?.kind === "sim") { simTick(dt, now); return; }
     const age = now - holoUi.t0;
     for (const n of holoUi.nodes) {
       // In one by one, then the parts that circle another go round it.
@@ -2740,6 +3045,10 @@ export async function start({ mode, session, api, tint }) {
     holoPhoto,
     globeShow,
     globeMark,
+    simShow,
+    simShown: () => holoUi.open && holoUi.spec?.kind === "sim",
+    /** The running simulation's state (checks and tests read it). */
+    simProbe: () => (simUi.st ? { ...simUi.st, type: simUi.spec?.type } : null),
     dreamShow,
     dreamClose,
     dreamShown: () => !!dreamUi.group,

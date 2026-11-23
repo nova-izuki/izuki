@@ -973,6 +973,92 @@ test("real planets on the projector, and the live space station", () => {
   assert.match(scene, /function globeMark\(lat, lon\)/);
 });
 
+test("physics you can watch: the right requests run a simulation, others don't", () => {
+  const { parseSim } = helpers;
+  const cases = [
+    ["simulate a pendulum", "pendulum"], ["Hey Nova, show me a pendulum on the moon", "pendulum"], ["how does a pendulum work", "pendulum"],
+    ["throw a ball at 60 degrees", "projectile"], ["how far does a cannonball go at 100 m/s", "projectile"], ["kick a soccer ball at 25 m/s", "projectile"],
+    ["what happens if I drop a feather and a hammer on the moon", "drop"], ["drop a ball from 100 metres", "drop"],
+    ["how do satellites orbit", "orbit"], ["show me how the moon orbits the earth", "orbit"],
+    ["show me a mass on a spring", "spring"], ["show me a sound wave", "wave"], ["simulate a wave", "wave"],
+  ];
+  for (const [s, type] of cases) {
+    const c = command(s);
+    assert.equal(c?.kind, "sim", `"${s}" runs a simulation`);
+    assert.equal(c.spec.type, type, s);
+  }
+  for (const s of ["show me spring flowers", "throw a party", "wave at me", "what is gravity", "drop it", "show me the spring collection", "I fell asleep"]) {
+    assert.notEqual(command(s)?.kind, "sim", `"${s}" is not a simulation`);
+  }
+  assert.equal(command("show me mars")?.kind, "globe", "a planet is still a planet");
+  assert.equal(parseSim("teach me about the french revolution"), null);
+});
+
+test("physics: the numbers are the real equations', in the units people say", () => {
+  const { parseSim, simFacts, simWords, simParams } = helpers;
+  const near = (a, b, d, what) => assert.ok(Math.abs(a - b) < d, `${what}: ${a} vs ${b}`);
+  near(simFacts(parseSim("simulate a pendulum")).period, 2.006, 0.002, "1 m pendulum");
+  near(simFacts(parseSim("show me a pendulum on the moon")).period, 4.937, 0.003, "on the moon");
+  const throwF = simFacts(parseSim("throw a ball at 45 degrees at 15 m/s"));
+  near(throwF.range, 22.94, 0.01, "range"); near(throwF.height, 5.73, 0.01, "height"); near(throwF.time, 2.163, 0.002, "flight");
+  near(simFacts(parseSim("throw a ball at 30 degrees")).range, simFacts(parseSim("throw a ball at 60 degrees")).range, 1e-9, "30 and 60 land together");
+  const drop = simFacts(parseSim("drop a ball from 10 metres"));
+  near(drop.time, 1.428, 0.002, "fall time"); near(drop.impact, 14.01, 0.01, "impact");
+  near(simFacts(parseSim("show me a mass on a spring")).period, 0.993, 0.002, "spring");
+  near(simParams("kick a ball at 100 km/h").speed, 27.78, 0.01, "km/h");
+  near(simParams("drop a rock from 5 feet").length, 1.524, 0.001, "feet");
+  near(simParams("a 50 cm pendulum").length, 0.5, 1e-9, "cm");
+  assert.equal(simParams("at 20 m/s").length, undefined, "a speed is not a length");
+  // A feather drifts in air, lands with the hammer on the airless Moon or in a vacuum.
+  assert.equal(parseSim("drop a feather and a hammer").air, true);
+  assert.equal(parseSim("drop a feather and a hammer on the moon").air, false);
+  assert.equal(parseSim("drop a feather and a hammer in a vacuum").air, false);
+  assert.match(simWords(parseSim("drop a feather and a hammer on the moon")), /3\.51 seconds.*land together.*1971/);
+  assert.match(simWords(parseSim("simulate a pendulum")), /2\.01 seconds.*wide swing.*2\.04 seconds/);
+  // Silly numbers are kept sensible, and nothing ever says NaN or Infinity.
+  assert.equal(parseSim("throw a ball at 120 degrees").angle, 89);
+  assert.equal(parseSim("drop a ball from 0 metres").length, 0.2);
+  for (const s of ["simulate a pendulum in space", "throw a ball in space", "drop a ball with no gravity", "show me a spring in space", "how do satellites orbit", "show me a wave"]) {
+    const w = simWords(parseSim(s));
+    assert.ok(w && !/NaN|Infinity|undefined/.test(w), `${s}: ${w}`);
+  }
+});
+
+test("physics: change it by voice while it runs (\"now on the moon\", \"make it longer\")", async () => {
+  const { parseSim, tweakSim, simWords } = helpers;
+  const p = parseSim("simulate a pendulum");
+  assert.equal(tweakSim(p, "now on the moon").spec.world, "moon");
+  assert.equal(tweakSim(p, "make it longer").spec.length, 2);
+  assert.equal(tweakSim(p, "what about on jupiter").spec.world, "jupiter");
+  assert.match(tweakSim(p, "heavier").note, /doesn't change how fast it swings/);
+  assert.match(simWords(tweakSim(p, "now on the moon").spec, p), /^Now each swing takes 4\.94 seconds instead of 2\.01 seconds/);
+  const t = parseSim("throw a ball at 45 degrees");
+  assert.equal(tweakSim(t, "at 60 degrees").spec.angle, 60);
+  assert.equal(tweakSim(t, "throw it harder").spec.speed, 22.5);
+  assert.equal(tweakSim(t, "higher").spec.angle, 60);
+  assert.equal(tweakSim(parseSim("how do satellites orbit"), "faster").spec.rate, 1.15);
+  // In the room: a tweak only means that while a simulation is up.
+  const b = browser();
+  const runs = [];
+  let up = false;
+  Object.assign(b.scene, { simShow(spec) { runs.push(spec); up = true; }, simShown: () => up, holoClose() { up = false; } });
+  let r = await b.vr.gate("now on the moon");
+  assert.ok(!r?.done, "nothing to change yet: it goes to the brain");
+  r = await b.vr.gate("simulate a pendulum");
+  assert.match(r.say, /2\.01 seconds/);
+  r = await b.vr.gate("now on the moon");
+  assert.match(r.say, /4\.94 seconds instead of 2\.01/);
+  assert.equal(runs.at(-1).world, "moon");
+  r = await b.vr.gate("again");
+  assert.equal(runs.length, 3, "again runs it again");
+  up = false;
+  r = await b.vr.gate("make it longer");
+  assert.ok(!r?.done, "closed: \"make it longer\" isn't a command any more");
+  const scene = read("docs/app/vr-scene.src.js");
+  assert.match(scene, /st\.w \+= \(-\(g \/ L\) \* Math\.sin\(st\.th\)\) \* h;/, "the pendulum is the real equation, wide swings included");
+  assert.match(scene, /const pos = geo\.attributes\.position\.array;/, "lines are drawn from the array the GPU gets (three copies the one you pass)");
+});
+
 (async () => {
   for (const [name, fn] of tests) {
     try { await fn(); passed++; } catch (e) { console.error(`FAIL ${name}\n  ${e.message}`); process.exitCode = 1; }
