@@ -951,6 +951,8 @@
     },
     holoClosed() { holoNow = null; holoAt = -1; holoGen++; },
     exited() {
+      // The Quest app goes back to its launcher, not to a flat chat.
+      if (asApp) g.setTimeout?.(launcher, 600);
       holoNow = null; holoAt = -1;
       epoch++;
       photo = null;
@@ -1063,6 +1065,64 @@
     try { await enter(support.ar ? "immersive-ar" : "immersive-vr"); } catch { return false; }
     return vr.active;
   }
+
+  // ---- the launcher -----------------------------------------------------------
+  // The Quest app's icon (and izukinova.ai/vr) lands here: one full-screen way
+  // in, on top of whatever the page shows. Before this, an old chat on screen
+  // hid the home card, so the app opened as a flat chat and never went in.
+  const LAUNCH_CSS = `
+.vr-launch{position:fixed;inset:0;z-index:2147483000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;
+  padding:24px;text-align:center;color:#eef3f8;background:radial-gradient(120% 90% at 50% 38%,#10283a 0%,#070b12 55%,#030509 100%);font-family:inherit}
+.vr-launch-orb{width:min(34vmin,220px);aspect-ratio:1;border-radius:50%;margin-bottom:8px;
+  background:radial-gradient(circle at 34% 30%,#ffffff 0%,#bfefff 12%,#59c8f0 38%,#2563c9 70%,#0b1f4a 100%);
+  box-shadow:0 0 60px 10px rgba(89,200,240,.35),0 0 140px 40px rgba(37,99,201,.18);animation:vrl-breathe 4.5s ease-in-out infinite}
+@keyframes vrl-breathe{0%,100%{transform:scale(1)}50%{transform:scale(1.05)}}
+@media (prefers-reduced-motion:reduce){.vr-launch-orb{animation:none}}
+.vr-launch h2{margin:0;font-size:clamp(30px,5vw,46px);letter-spacing:.12em;font-weight:650}
+.vr-launch p{margin:0;max-width:30em;font-size:clamp(17px,2.4vw,21px);color:#b5c2cf;line-height:1.45}
+.vr-launch-go{margin-top:10px;min-width:min(80vw,360px);min-height:72px;padding:0 40px;border:0;border-radius:999px;cursor:pointer;
+  font:inherit;font-size:clamp(20px,3vw,25px);font-weight:650;color:#04121c;background:linear-gradient(135deg,#7ee8ff,#3fb6ff);
+  box-shadow:0 10px 40px rgba(63,182,255,.35)}
+.vr-launch-go:disabled{opacity:.6;cursor:default}
+.vr-launch-go:focus-visible,.vr-launch-chat:focus-visible{outline:3px solid #fff;outline-offset:4px}
+.vr-launch-chat{min-height:52px;padding:0 24px;border:1px solid rgba(255,255,255,.18);border-radius:999px;background:transparent;color:#d7e2ec;font:inherit;font-size:18px;cursor:pointer}
+.vr-launch-note:empty{display:none}
+.vr-launch-note{color:#ffd28a !important}`;
+  function launcher() {
+    const doc = g.document;
+    if (!wanted || vr.active || !doc?.body || doc.getElementById("vr-launch")) return;
+    openedOnce = true; // the home card's own explainer doesn't open as well
+    if (!doc.getElementById("vr-launch-css")) { const st = doc.createElement("style"); st.id = "vr-launch-css"; st.textContent = LAUNCH_CSS; doc.head.appendChild(st); }
+    const can = support.ar || support.vr;
+    const box = mk("div", "vr-launch");
+    box.id = "vr-launch";
+    box.setAttribute("role", "dialog");
+    box.setAttribute("aria-label", "IZUKI NOVA in VR");
+    const go = mk("button", "vr-launch-go", can ? "Enter the room" : "Open the 3D preview");
+    go.type = "button";
+    const note = mk("p", "vr-launch-note", "");
+    note.setAttribute("role", "status");
+    const chat = mk("button", "vr-launch-chat", "Chat here instead");
+    chat.type = "button";
+    const close = () => box.remove();
+    chat.onclick = close;
+    go.onclick = async () => {
+      // No key or microphone yet: the explainer walks through both, then goes in.
+      if (!can || !g.IzukiCore?.ready?.() || !(await micAllowed())) { close(); void openSheet(); return; }
+      go.disabled = true; note.textContent = "";
+      try { await enter(support.ar ? "immersive-ar" : "immersive-vr"); } catch (e) { note.textContent = "The headset didn't open the room: " + String(e?.message || e).slice(0, 120) + " Try again."; }
+      go.disabled = false;
+      if (vr.active) close();
+    };
+    box.append(mk("div", "vr-launch-orb"), mk("h2", "", "IZUKI NOVA"),
+      mk("p", "", support.ar ? "Your AI, floating in your room. Talk to it, show it things, learn in 3D." : can ? "Your AI, beside you. Talk to it, learn in 3D, see your PC big." : "A 3D preview of the room. The real thing is on a headset."),
+      go, note, chat);
+    doc.body.appendChild(box);
+    try { go.focus({ preventScroll: true }); } catch {}
+    // The icon tap may count as the tap a headset needs: try once on our own.
+    if (asApp && can) void straightIn().then((inside) => { if (inside) close(); });
+  }
+  if (wanted) supportReady.then(() => g.setTimeout?.(launcher, 250), () => g.setTimeout?.(launcher, 250));
 
   async function micAllowed() {
     if (store.get("micOk", false)) return true;
