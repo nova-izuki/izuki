@@ -155,6 +155,13 @@ is("teach me goes to the screen", mem.needsScreen("Teach me"), true);
 is("so does doing it together", mem.needsScreen("do it with me"), true);
 is("doing an assignment is a screen job, not just a lesson", mem.needsScreen("do my assignment"), true);
 is("the Do it button stays on the screen path", mem.needsScreen("[DO IT] On my screen, do this for me: do my assignment"), true);
+is("the Do it button is one job on this screen", mem.forcedDoIt("[DO IT] On my screen, do this for me: do my assignment"), true);
+is("its steps mentioning the TV don't make it a TV request", mem.forcedDoIt("[DO IT] On my screen, do this for me: open Netflix on my TV"), true);
+is("and a phone in the steps is still this screen", mem.forcedDoIt("[DO IT] On my screen, do this for me: open Chrome on my Android"), true);
+is("leading space before the marker is fine", mem.forcedDoIt("  [DO IT] tidy my desktop"), true);
+is("a plain TV request is not the button", mem.forcedDoIt("open Netflix on the TV"), false);
+is("a plain phone request is not the button", mem.forcedDoIt("open Chrome on my Android"), false);
+is("a guide question about the TV is not the button", mem.forcedDoIt("how do I watch Netflix on my TV?"), false);
 is("but an explicit background lesson stays in the background", mem.needsScreen("Teach me about firewalls in the background"), false);
 is("a plain question doesn't", mem.needsScreen("what is a firewall"), false);
 is("but 'answer this' is about the question on screen", mem.needsScreen("answer this"), true);
@@ -233,6 +240,15 @@ for (const request of [
 is("combined tutor command still reaches teacher mode", mem.TUTOR_START.test("Start tutor mode and explain how to answer question 5"), true);
 is("answer then explanation remains direct", mem.wantsDirectAnswer("Answer question 5 and explain why"), true);
 is("do not explain is not a refusal of the answer", mem.wantsDirectAnswer("Answer question 5, do not explain how to solve it"), true);
+
+// The device routers in the voice engine must never read a device word
+// inside an explicit Do it job as a request for that device.
+{
+  const engine = fs.readFileSync(path.join(__dirname, "..", "src", "components", "VoiceEngine.tsx"), "utf8");
+  is("the TV router is skipped for an explicit do-it", /if \(!forced && \/\\b\(\?:tv\|television\|roku\)/.test(engine), true);
+  is("the phone router is skipped for an explicit do-it", /if \(!forced && \/\\b\(\?:my\|the\|this\|on\|open\) \(\?:phone\|iphone\|android\|mobile\)/.test(engine), true);
+  is("the marker is read once from the request", /const forced = forcedDoIt\(text\)/.test(engine), true);
+}
 
 console.log("");
 console.log(`${pass} passed, ${fail} failed`);
