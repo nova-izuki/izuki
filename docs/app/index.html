@@ -1770,6 +1770,10 @@
   const WEB_WORDS = /\b(news|today|tonight|tomorrow|yesterday|latest|current(?:ly)?|right now|this week|this weekend|weather|forecast|temperature|rain(?:ing|y)?|snow(?:ing)?|sunny|storm|humid|degrees|score|scores|match|who won|price|prices|cost|stock|exchange rate|open now|opening hours|closes|closed|near me|nearby|who is|who's|who was|what's happening|whats happening|happening|going on|top events?|events?|festivals?|concerts?|parades?|headlines?|breaking|traffic|flight|when is|when's|when did|where is|how much|how many|search|look up|google|website|link|recent|update|release|election|president|population|capital)\b|https?:\/\/|www\.|\b20\d\d\b/i;
   // The same in the other languages people use here most.
   const WEB_WORDS_OTHER = /\b(hoy|mañana|ayer|tiempo|clima|lluvia|noticias|precio|quién es|aujourd'hui|demain|météo|pluie|actualités|prix|qui est|heute|morgen|wetter|regen|nachrichten|preis|wer ist)\b/i;
+  // Facts and picks that go stale or that a model half-remembers: "the best
+  // VR game", "who made Minecraft", "how tall is…" (the owner saw "Web search:
+  // not offered" on questions like these).
+  const FACT_WORDS = /\b(best|top \d+|recommend(?:ed|ations?)?|reviews?|rated|rating|ranked|ranking|versus|vs\.?|compare|comparison|which is better|worth (?:it|buying)|who (?:made|makes|invented|created|founded|owns|wrote|directed|plays|sings|runs)|how (?:old|tall|big|far|long ago|fast|rich)|what year|when (?:was|were|is|does|do|will)|tell me about|facts? about|history of|biography|lyrics|release date|came out|coming out|tallest|fastest|biggest|largest|richest|oldest|newest|youngest)\b/i;
   const needsWeb = (contents) => {
     // The last two things they asked: "and in Paris?" follows a weather question.
     const asked = (contents || []).filter((c) => c.role === "user").slice(-2);
@@ -1777,7 +1781,7 @@
     if (!words.trim()) return false;
     // A language the word lists don't cover: let Gemini decide, as before.
     if (!["auto", "english", "pidgin"].includes(speechLanguage)) return true;
-    return WEB_WORDS.test(words) || WEB_WORDS_OTHER.test(words);
+    return WEB_WORDS.test(words) || WEB_WORDS_OTHER.test(words) || FACT_WORDS.test(words);
   };
   const usesGemini = () => brain === "gemini" || !brainKeys[brain];
   let liteUntil = store.get("liteUntil", 0);

@@ -146,6 +146,10 @@ for (const q of ["what's the weather today", "Is it raining in London?", "who wo
 for (const q of ["hi", "tell me a joke", "make that shorter", "write me a poem about the sea", "what's up", "what's your favourite colour", "it took me two hours to get here"]) {
   is(JSON.stringify(q) + " answers without search", needsWeb(asked(q)), false);
 }
+// Facts and picks a model half-remembers (the owner saw "not offered" on these).
+for (const q of ["what's the best VR game", "who made Minecraft", "how tall is the Eiffel Tower", "tell me about the Quest 3S", "which is better, Quest 3 or 3S?", "top 5 horror movies", "when was the iPhone released", "is the Quest 3 worth it", "what's the fastest car in the world"]) {
+  is(JSON.stringify(q) + " searches", needsWeb(asked(q)), true);
+}
 is("a follow-up keeps the search (“and in Paris?”)", needsWeb(asked("what's the weather in London", "and in Paris?")), true);
 is("a language the lists don't cover leaves it to Gemini", searchFor("yoruba")(asked("bawo ni")), true);
 

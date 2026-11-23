@@ -1,6 +1,6 @@
 // Keeps Izuki's phone app opening instantly, even on a bad connection.
 // Only the app itself is cached — never a conversation or an AI reply.
-const CACHE = "izuki-phone-v105";
+const CACHE = "izuki-phone-v107";
 const SHELL = ["./", "index.html", "native.js", "readiness.js", "voicematch.js", "pairing.js", "orb.js", "edge-glow.js", "apps.js", "drive.js", "autopilot.js", "agent.js", "pilot.js", "pilot.css", "cockpit.js", "cockpit.css", "remote.js", "touchgrass.js", "lecture.js", "../shared/bugs.js", "water-orb.js", "orb-motion.js", "orb-materials.js", "glass-orb.js", "toon.js", "speech.js", "tv.js", "tv.css", "vr.js", "companion.css", "platform.css", "android-glass.css", "manifest.webmanifest", "icon-192.png", "icon-512.png", "icon-512-maskable.png", "apple-touch-icon.png"];
 
 self.addEventListener("install", (e) => {
