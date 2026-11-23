@@ -119,7 +119,7 @@
   // (the PC lane does things for you; this one teaches).
   const GUIDE = new RegExp(LEAD + "(?:" + [
     String.raw`where\s+(?:do|should|can|would|could)\s+i\s+(?:click|tap|press|select|go|find|put|plug|connect|insert|type|turn|switch)\b`,
-    String.raw`where(?:'s|\s+is|\s+are)\s+the\s+[\w' -]{1,40}?\s*(?:button|setting|option|menu|icon|switch|tab|link|port|plug|key|slot)s?\b`,
+    String.raw`where(?:'s|\s+is|\s+are)\s+the\s+(?:[\w' -]{1,40}?\s+)?(?:button|setting|option|menu|icon|switch|tab|link|port|plug|key|slot)s?\b`,
     String.raw`show\s+me\s+where\b`,
     String.raw`(?:which|what)\s+(?:button|option|setting|menu|icon|key|tab|link)\s+(?:do|should|can|would)\s+i\b`,
     String.raw`point\s+(?:at|to)\b`,
@@ -853,7 +853,11 @@
     if (kind === "guide") {
       const pcShown = !!vr.scene?.pcShown?.();
       const camOk = await cam.has();
-      const software = /\b(?:pc|computer|laptop|screen|click|double[-\s]?click|button|menu|tab|icon|window|app|settings?|website|page|link|file|folder|desktop|browser)\b/i.test(question);
+      // "Button" or "switch" alone could be on a kettle: a real thing named
+      // ("…on this kettle") wins unless the PC or its software is named too.
+      const pcWords = /\b(?:pc|computer|laptop|screen|click|double[-\s]?click|menu|tab|icon|window|app|settings?|website|page|link|file|folder|desktop|browser|scroll)\b/i.test(question);
+      const physical = /\b(?:this|that|these|those)\b/i.test(question);
+      const software = pcWords || (/\b(?:button|switch|option|key)s?\b/i.test(question) && !physical);
       if (pcShown && (software || !camOk)) return { ...screen, system: SCREEN_SYSTEM + "\n" + GUIDE_ADD, steps: true };
       if (camOk) return { ...camera, system: LOOK_SYSTEM + "\n" + GUIDE_ADD, steps: true };
       return software
