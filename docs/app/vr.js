@@ -828,7 +828,8 @@
         if (!alive() || appState !== "speaking") return;
         await pause(100);
       }
-      if (!alive()) return;
+      // The voice may have stopped during the last short wait: never step on after it.
+      if (!alive() || appState !== "speaking") return;
       holoAt = i;
       vr.scene?.holoFocus?.(h.steps[i].focus, i);
     }
