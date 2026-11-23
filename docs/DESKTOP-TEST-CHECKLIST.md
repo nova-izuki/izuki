@@ -130,3 +130,12 @@ Install the 1.0.217 APK (Settings → Phone → App updates). Android control an
 - [ ] Copy a Gemini key that starts with "AQ." and open Izuki: it offers to save it as a Google Gemini key; Settings shows it saved; a chat answer comes back.
 - [ ] Settings → Something wrong? → copy: no key (AIza… or AQ.…) appears in the copied text.
 - [ ] What's New shows the 1.0.222 line.
+
+## 1.0.223
+
+- [ ] Alt+Space opens the ask bar over any app; typing works at once; Enter answers under the question; Esc and a click outside close it. If Alt+Space is taken (PowerToys Run), Settings → Shortcuts says so; another key works.
+- [ ] Ask bar: "open Spotify" (instant), "explain what's on my screen" (sees the screen), "search for pizza near me" (instant results). The mouse is free while it works.
+- [ ] Typed "find a pizza place near me": Google's results open in one step, the reply says "Here's Google for …", and no AI is asked (log: no `[brain]` lines).
+- [ ] A task in the browser (extension connected): the log says "reading the page itself — N elements, no screenshot this look"; the step happens; "what's this picture?" still takes a screenshot.
+- [ ] Mute the mic in Windows Sound settings, then say "Hey Nova" or press the talk key: Izuki says Windows has it muted; typed "unmute my mic" turns it on (Sound settings show it unmuted, level 80%).
+- [ ] Change the dictate shortcut in Settings: the new one works without a restart.
