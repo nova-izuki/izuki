@@ -20,7 +20,7 @@
 // On a normal screen ("flat") the same room is a 3D preview you drive with
 // the mouse: click to tap, drag to look around, the wheel scrolls the PC.
 import {
-  AdditiveBlending, BackSide, BoxGeometry, ConeGeometry, DirectionalLight, DodecahedronGeometry, HemisphereLight, MeshLambertMaterial, NormalBlending, OctahedronGeometry, BufferGeometry, CanvasTexture, CircleGeometry, Color, CylinderGeometry, DoubleSide,
+  AdditiveBlending, BackSide, BoxGeometry, CatmullRomCurve3, ConeGeometry, CurvePath, LineCurve3, TubeGeometry, DirectionalLight, DodecahedronGeometry, HemisphereLight, MeshLambertMaterial, NormalBlending, OctahedronGeometry, BufferGeometry, CanvasTexture, CircleGeometry, Color, CylinderGeometry, DoubleSide,
   Float32BufferAttribute, Group, IcosahedronGeometry, Line, LineBasicMaterial, LineSegments, Mesh, MeshBasicMaterial,
   PerspectiveCamera, PlaneGeometry, Points, PointsMaterial, Quaternion, Raycaster, RingGeometry, Scene, ShaderMaterial,
   SphereGeometry, Sprite, SpriteMaterial, SRGBColorSpace, TorusGeometry, Vector2, Vector3, WebGLRenderer, WireframeGeometry,
@@ -1579,6 +1579,7 @@ export async function start({ mode, session, api, tint }) {
     }
     for (const l of holoUi.links) { l.line.geometry.dispose(); l.line.material.dispose(); l.pulse?.material.dispose(); }
     if (holoUi.building) { holoUi.building.geometry.dispose(); holoUi.building.material.dispose(); }
+    sketchClear();
     holoUi.stage.clear();
     holoUi.nodes = []; holoUi.links = []; holoUi.building = null;
   }
@@ -1773,6 +1774,12 @@ export async function start({ mode, session, api, tint }) {
     if (!holoUi.open) placeHolo();
     holoUi.open = true;
     holoUi.group.visible = true;
+    if (spec.kind === "sketch") {
+      projShow(sketchShow(spec) + 0.06, true);
+      drawHoloBar();
+      stepAside("holo");
+      return;
+    }
     holoUi.nodes = spec.items.map((it, i) => holoNode(it, i, spec.kind, spec));
     for (const n of holoUi.nodes) holoUi.stage.add(n.g);
     holoLayout(spec, holoUi.nodes);
@@ -1783,6 +1790,159 @@ export async function start({ mode, session, api, tint }) {
     drawHoloBar();
     stepAside("holo");
   }
+
+  // ---- "draw it": the real shape of a thing, in glowing lines and wire solids ----------
+  // Shapes come in a box from -1 to 1 (vr.js parseSketch); here they are scaled
+  // to about 64 cm, drawn in one after another, and things flow along the lines.
+  const SK = 0.32;
+  const sketchUi = { parts: [], made: [] };
+  function sketchClear() {
+    for (const o of sketchUi.made) { try { o.dispose(); } catch {} }
+    sketchUi.parts = []; sketchUi.made = [];
+  }
+  function sketchShow(spec) {
+    const keep = (o) => { sketchUi.made.push(o); return o; };
+    const v = (p) => new Vector3(p[0] * SK, p[1] * SK + 0.04, p[2] * SK);
+    const axisRot = (g, axis) => { if (axis === "x") g.rotation.z = -Math.PI / 2; else if (axis === "z") g.rotation.x = Math.PI / 2; };
+    let reach = 0.2;
+    spec.shapes.forEach((s, i) => {
+      const color = HOLO_COLORS[s.color] ?? HOLO_COLORS.teal;
+      const g = new Group();
+      const lineMat = keep(new MeshBasicMaterial({ color, transparent: true, opacity: 0.95, blending: AdditiveBlending, depthWrite: false }));
+      let path = null, tube = null, solid = null;
+      const tubeOf = (curve, closed = false) => {
+        const geo = keep(new TubeGeometry(curve, 96, 0.0045, 6, closed));
+        tube = new Mesh(geo, lineMat);
+        g.add(tube);
+        path = curve;
+      };
+      const c = v(s.center);
+      const ring = (center, r, axis, n = 48) => {
+        const pts = [];
+        for (let k = 0; k < n; k++) {
+          const a = (k / n) * Math.PI * 2, x = Math.cos(a) * r, y = Math.sin(a) * r;
+          pts.push(axis === "y" ? new Vector3(center.x + x, center.y, center.z + y) : axis === "x" ? new Vector3(center.x, center.y + x, center.z + y) : new Vector3(center.x + x, center.y + y, center.z));
+        }
+        return new CatmullRomCurve3(pts, true);
+      };
+      if (s.type === "line" || s.type === "arrow") {
+        const cp = new CurvePath();
+        for (let k = 1; k < s.points.length; k++) cp.add(new LineCurve3(v(s.points[k - 1]), v(s.points[k])));
+        tubeOf(cp);
+        if (s.type === "arrow") {
+          const end = v(s.points[s.points.length - 1]), before = v(s.points[s.points.length - 2]);
+          const tip = new Mesh(keep(new ConeGeometry(0.016, 0.04, 10)), lineMat);
+          tip.position.copy(end);
+          tip.quaternion.setFromUnitVectors(new Vector3(0, 1, 0), end.clone().sub(before).normalize());
+          g.add(tip);
+        }
+      } else if (s.type === "curve") {
+        tubeOf(new CatmullRomCurve3(s.points.map(v)));
+      } else if (s.type === "circle") {
+        tubeOf(ring(c, s.radius * SK, s.axis), true);
+      } else if (s.type === "spiral" || s.type === "wave") {
+        const pts = [], n = 120;
+        for (let k = 0; k <= n; k++) {
+          const f = k / n;
+          if (s.type === "spiral") {
+            const a = f * s.turns * Math.PI * 2, h = (f - 0.5) * s.height * SK;
+            const x = Math.cos(a) * s.radius * SK, z = Math.sin(a) * s.radius * SK;
+            pts.push(s.axis === "x" ? new Vector3(c.x + h, c.y + x, c.z + z) : s.axis === "z" ? new Vector3(c.x + x, c.y + z, c.z + h) : new Vector3(c.x + x, c.y + h, c.z + z));
+          } else {
+            const x = (f - 0.5) * 2 * s.radius * SK * 2, y = Math.sin(f * Math.PI * 2 * s.turns) * s.height * SK * 0.25;
+            pts.push(new Vector3(c.x + x, c.y + y, c.z));
+          }
+        }
+        tubeOf(new CatmullRomCurve3(pts));
+      } else {
+        // Solids: a see-through glowing body and its wire edges.
+        let geo;
+        if (s.type === "sphere") geo = new SphereGeometry(s.radius * SK, 20, 14);
+        else if (s.type === "cone") geo = new ConeGeometry(s.radius * SK, s.height * SK, 20, 1, true);
+        else if (s.type === "cylinder") geo = new CylinderGeometry(s.radius * SK, s.radius * SK, s.height * SK, 20, 1, true);
+        else geo = new BoxGeometry(s.size[0] * SK, s.size[1] * SK, s.size[2] * SK);
+        keep(geo);
+        const body = new Mesh(geo, keep(holoMaterial(color)));
+        body.material.uniforms.opacity.value = 0.35;
+        const wire = new LineSegments(keep(new WireframeGeometry(geo)), keep(new LineBasicMaterial({ color, transparent: true, opacity: 0.55, blending: AdditiveBlending, depthWrite: false })));
+        const holder = new Group();
+        holder.add(body, wire);
+        solid = { body: body.material, wire: wire.material };
+        axisRot(holder, s.axis);
+        holder.position.copy(c);
+        g.add(holder);
+        // What flows round a solid: a ring at its middle, for "flow".
+        if (s.flow) path = ring(c, (s.type === "box" ? Math.max(s.size[0], s.size[2]) / 2 : s.radius) * SK * 1.08, s.axis === "y" ? "y" : s.axis === "x" ? "x" : "z");
+      }
+      // Things moving along it: lava, blood, air, current.
+      const flows = [];
+      if (s.flow && path) {
+        for (let k = 0; k < 6; k++) {
+          const sp = new Sprite(keep(new SpriteMaterial({ map: holoGlow, color, transparent: true, opacity: 0, blending: AdditiveBlending, depthWrite: false })));
+          sp.scale.setScalar(0.04);
+          g.add(sp);
+          flows.push({ sp, off: k / 6 });
+        }
+      }
+      // A label beside it.
+      let label = null;
+      if (s.label) {
+        label = card(0.16, 0.045);
+        keep(label.tex); keep(label.mesh.geometry); keep(label.mesh.material);
+        const { ctx, w, h } = label;
+        glass(ctx, w, h, 26, { fill0: "rgba(16,19,27,0.82)", fill1: "rgba(10,12,18,0.86)" });
+        ctx.font = `600 34px ${DISPLAY}`;
+        write(ctx, ellipsize(ctx, s.label, w - 40), 20, h / 2 + 12, 34, INK, 600, "left", DISPLAY);
+        label.update();
+        // Beside the middle of its own line (lines often share an end), or beside a solid;
+        // alternate sides so neighbours don't stack.
+        const anchor = path && (s.type === "line" || s.type === "curve" || s.type === "arrow" || s.type === "spiral" || s.type === "wave")
+          ? path.getPointAt(0.55, new Vector3())
+          : c.clone().add(new Vector3((s.type === "box" ? s.size[0] / 2 : s.radius) * SK * 0.7, 0, 0));
+        const side = i % 2 ? -1 : 1;
+        label.mesh.position.set(anchor.x + side * 0.1, anchor.y, anchor.z + 0.03);
+        g.add(label.mesh);
+        ui(label.mesh, { tap: () => api.ask?.(`Tell me more about the ${s.label}` + (spec.title ? `, in ${spec.title}` : "") + ".") });
+      }
+      g.visible = calm;
+      holoUi.stage.add(g);
+      const count = tube ? tube.geometry.index.count : 0;
+      if (tube && !calm) tube.geometry.setDrawRange(0, 0);
+      sketchUi.parts.push({ s, i, g, tube, count, path, flows, label, lineMat, solid, emph: 1 });
+      const pts = s.points.length ? s.points : [s.center];
+      for (const p of pts) reach = Math.max(reach, Math.abs(p[0] * SK) + (s.type === "line" || s.type === "curve" || s.type === "arrow" ? 0 : s.radius * SK));
+    });
+    return reach;
+  }
+  const sketchTmp = new Vector3();
+  function sketchTick(dt, now) {
+    const age = now - holoUi.t0;
+    const n = sketchUi.parts.length;
+    sketchUi.parts.forEach((p) => {
+      // Drawn in one after another, like a pen sketching it.
+      const k = calm ? 1 : Math.max(0, Math.min(1, (age - 250 - p.i * (1600 / Math.max(1, n))) / 700));
+      if (k > 0) p.g.visible = true;
+      if (p.tube && p.count) p.tube.geometry.setDrawRange(0, Math.floor((p.count * k) / 3) * 3);
+      if (!p.tube) p.g.scale.setScalar(Math.max(0.001, 1 - (1 - k) ** 3));
+      const want = holoUi.focus ? (holoUi.focus.has(p.i) ? 1.15 : 0.25) : 1;
+      p.emph += (want - p.emph) * Math.min(1, dt * 6);
+      const pulse = p.s.pulse && !calm ? 0.75 + 0.25 * Math.sin(now / 380 + p.i) : 1;
+      p.lineMat.opacity = 0.95 * Math.min(1, p.emph) * pulse;
+      // A solid dims and pulses with the step too.
+      if (p.solid) { p.solid.body.uniforms.opacity.value = 0.35 * Math.min(1, p.emph) * pulse; p.solid.wire.opacity = 0.55 * Math.min(1, p.emph) * pulse; }
+      if (p.label) p.label.mesh.material.opacity = Math.max(0.3, Math.min(1, p.emph));
+      if (p.s.spin && !calm) p.g.rotation.y += dt * 0.35;
+      if (p.path && p.flows.length) {
+        for (const f of p.flows) {
+          const u = calm ? f.off : (now / 2400 + f.off) % 1;
+          p.path.getPointAt(u, sketchTmp);
+          f.sp.position.copy(sketchTmp);
+          f.sp.material.opacity = k >= 1 ? 0.9 * Math.min(1, p.emph) * (calm ? 0.6 : Math.sin(Math.PI * u) * 0.6 + 0.4) : 0;
+        }
+      }
+    });
+  }
+
   /** A lesson's step: its parts light up, the rest dim. null: all lit. */
   function holoFocus(list, step) {
     holoUi.step = step ?? holoUi.step;
@@ -2043,6 +2203,7 @@ export async function start({ mode, session, api, tint }) {
     projTick(dt, now);
     holoTime.value = now / 1000;
     if (holoUi.building) { holoUi.building.rotation.y += dt * 1.4; holoUi.building.rotation.x = 0.5; return; }
+    if (holoUi.spec?.kind === "sketch") { sketchTick(dt, now); return; }
     const age = now - holoUi.t0;
     for (const n of holoUi.nodes) {
       // In one by one, then the parts that circle another go round it.

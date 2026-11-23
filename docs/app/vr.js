@@ -166,6 +166,7 @@
     const dm = s.match(DREAM);
     if (dm) {
       const place = String(dm.slice(1).find((x) => x) || "").trim();
+      if (/\bimagine\b/i.test(s) && place && !PLACE_WORDS.test(place)) return { kind: "holo", ask: s, draw: true };
       if (!NOT_A_PLACE.test(place)) return { kind: "dream", ask: s, place };
     }
     if (HOLO.test(s) && !ABOUT_HERE.test(s)) return { kind: "holo", ask: s };
@@ -233,6 +234,8 @@
   // French revolution": your AI designs a small hologram (as JSON) and the room
   // builds it beside you while Izuki explains. "Next" walks through a lesson.
   const HOLO = new RegExp(LEAD + "(?:" + [
+    String.raw`(?:draw|sketch)\s+(?:me\s+)?(?:a|an|the|how|what)\b`,
+    String.raw`what\s+(?:does|do)\s+.{2,60}\s+look\s+like`,
     String.raw`teach\s+me\b`,
     String.raw`(?:show|explain|build|make|draw)\b.{0,80}\bin\s+3\s?d\b`,
     String.raw`(?:visuali[sz]e|simulate|map\s+out|walk\s+me\s+through)\b`,
@@ -280,7 +283,11 @@
     // "What do you want for dinner?" is for a person; "can you help me…" is for Izuki.
     return !SOCIAL.test(t) || REQUEST.test(t);
   }
-  const HOLO_KINDS = ["model", "map", "steps", "timeline", "chart"];
+  const HOLO_KINDS = ["model", "map", "steps", "timeline", "chart", "sketch"];
+  // "Draw it": the real shape of a thing, from simple 3D pieces (vr.js parseSketch, scene sketchShow).
+  const SKETCH_TYPES = ["line", "curve", "arrow", "circle", "spiral", "wave", "sphere", "cone", "cylinder", "box"];
+  // "Imagine a…": a place goes to dream mode, a thing gets drawn.
+  const PLACE_WORDS = /\b(?:place|world|forest|rainforest|jungle|beach|island|ocean|sea|lake|river|mountains?|desert|city|town|village|street|park|garden|castle|cave|sky|space|galaxy|underwater|room|meadow|valley|planet\s+surface|surface\s+of|night|sunset|sunrise)\b/i;
   const HOLO_PALETTE = ["teal", "sky", "violet", "rose", "amber", "lime", "white"];
   // With a photo open: the real room named means the camera; a question about
   // "this / it / he / she / here" means the photo.
@@ -362,13 +369,41 @@
 
   const HOLO_SYSTEM = [
     "You are Izuki, teaching inside a VR headset by building a small 3D hologram next to the person while you talk.",
-    'Reply with JSON only, no markdown: {"title": "...", "kind": "model|map|steps|timeline|chart", "say": "...", "unit": "", "items": [...], "steps": [...]}',
+    'Reply with JSON only, no markdown: {"title": "...", "kind": "model|map|steps|timeline|chart|sketch", "say": "...", "unit": "", "items": [...], "shapes": [...], "steps": [...]}',
+    "Use kind sketch whenever the thing has a real shape worth seeing (a volcano, a rocket, a heart, a cell, a bridge, DNA, an engine, a wave, the water cycle): draw it from shapes, not items, and teach it with steps.",
+    'shapes (sketch only, 3 to 16, in a box from -1 to 1 on each axis; x right, y up, z towards the person; centre the thing): each {"type": "line|curve|arrow|circle|spiral|wave|sphere|cone|cylinder|box", "points": [[x,y,z], ...] (line, curve, arrow: 2 to 12 points), "center": [x,y,z], "radius": 0.05-1, "height": 0.05-2 (cone, cylinder, spiral), "size": [w,h,d] (box), "axis": "x|y|z" (circle, cylinder, cone, spiral), "turns": 1-6 (spiral), "color": "teal|sky|violet|rose|amber|lime|white", "label": "1 to 3 words or empty", "flow": true if something moves along it (lava up a pipe, blood, air, current), "spin": true to turn slowly, "pulse": true to glow in and out}. Cones point up their axis (a volcano is a cone with its tip at the top).',
     "kind: model = real things in space (planets round a star, an atom, the parts of an engine or a cell; use orbit to put one round another); map = one idea in the middle (item 0) and the ideas around it; steps = a process in order; timeline = events in time; chart = numbers to compare.",
     'items: 3 to 8, each {"label": "1 to 3 words", "note": "up to 7 words", "size": 1-5, "color": "teal|sky|violet|rose|amber|lime|white", "orbit": index of the item it circles or -1, "link": [indexes it connects to], "when": "short date (timeline)", "value": number (chart)}.',
     "say: what you say first, out loud: 2 to 3 short spoken sentences, plain words. title: up to 6 words. unit: the chart's unit, else empty.",
-    'steps: for a lesson or anything with stages, 2 to 5 steps, each {"say": "1 or 2 spoken sentences", "focus": [indexes of the items it is about]}; otherwise [].',
+    'steps: for a lesson or anything with stages, 2 to 5 steps, each {"say": "1 or 2 spoken sentences", "focus": [indexes of the items (or shapes) it is about]}; otherwise [].',
     "Be accurate: sizes and numbers roughly to scale when they are real (if not to scale, say so). Never invent facts. If it's a quiz, test or exam question, teach the idea and never give the answer to fill in.",
   ].join("\n");
+  /** A "draw it" hologram: every shape checked, numbers clamped into the drawing box. */
+  function parseSketch(d) {
+    const words = (v, n) => (typeof v === "string" || typeof v === "number" ? String(v) : "").replace(/[`*_#>{}[\]]+/g, " ").replace(/\s+/g, " ").trim().slice(0, n);
+    const num = (v, lo, hi, d0) => { const x = Number(v); return Number.isFinite(x) ? Math.max(lo, Math.min(hi, x)) : d0; };
+    const pt = (p) => (Array.isArray(p) && p.length >= 2 ? [num(p[0], -1, 1, 0), num(p[1], -1, 1, 0), num(p[2], -1, 1, 0)] : null);
+    const shapes = [];
+    for (const s of Array.isArray(d.shapes) ? d.shapes : []) {
+      if (!s || typeof s !== "object" || !SKETCH_TYPES.includes(s.type) || shapes.length >= 16) continue;
+      const points = (Array.isArray(s.points) ? s.points : []).map(pt).filter(Boolean).slice(0, 12);
+      if (["line", "curve", "arrow"].includes(s.type) && points.length < 2) continue;
+      const size = Array.isArray(s.size) ? [num(s.size[0], 0.02, 2, 0.4), num(s.size[1], 0.02, 2, 0.4), num(s.size[2], 0.02, 2, 0.4)] : [0.4, 0.4, 0.4];
+      shapes.push({
+        type: s.type, points, center: pt(s.center) || [0, 0, 0],
+        radius: num(s.radius, 0.03, 1, 0.3), height: num(s.height, 0.03, 2, 0.6), size,
+        axis: ["x", "y", "z"].includes(s.axis) ? s.axis : "y", turns: num(s.turns, 1, 6, 3),
+        color: HOLO_PALETTE.includes(s.color) ? s.color : HOLO_PALETTE[shapes.length % 6],
+        label: words(s.label, 28), flow: s.flow === true, spin: s.spin === true, pulse: s.pulse === true,
+      });
+    }
+    if (shapes.length < 2) return null;
+    const steps = (Array.isArray(d.steps) ? d.steps : []).map((st) => ({
+      say: words(st?.say, 300),
+      focus: (Array.isArray(st?.focus) ? st.focus : []).map(Number).filter((k) => Number.isInteger(k) && k >= 0 && k < shapes.length).slice(0, 8),
+    })).filter((st) => st.say).slice(0, 5);
+    return { title: words(d.title, 48) || "Your drawing", kind: "sketch", say: words(d.say, 400) || "Here it is.", unit: "", items: [], shapes, steps };
+  }
   /** A hologram from the AI's reply, checked and trimmed; null if there isn't a usable one. */
   function parseHolo(reply) {
     let t = String(reply || "").replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
@@ -377,6 +412,7 @@
     if (a < 0 || b <= a) return null;
     let d;
     try { d = JSON.parse(t.slice(a, b + 1)); } catch { return null; }
+    if (d && typeof d === "object" && d.kind === "sketch") return parseSketch(d);
     if (!d || typeof d !== "object" || !Array.isArray(d.items)) return null;
     const words = (v, n) => (typeof v === "string" || typeof v === "number" ? String(v) : "").replace(/[`*_#>{}[\]]+/g, " ").replace(/\s+/g, " ").trim().slice(0, n);
     // Parts with no name are dropped; every reference still means the part the AI meant.
@@ -484,7 +520,7 @@
     return { nx: c(u), ny: c(1 - v) };
   }
 
-  const util = { command, onPc, named, forIzuki, timerWords, parseLook, parseHolo, HOLO_SYSTEM, parseDream, DREAM_SYSTEM, VR_CONTEXT, YES, OFFERS_3D, OFFERS_TRIP, lessonTimes, wrapLines, fitLines, followTarget, pcPoint, angleGap, LOOK_SYSTEM, lookPrompt, ROOM_WORDS, ABOUT_THIS };
+  const util = { command, onPc, named, forIzuki, timerWords, parseLook, parseHolo, HOLO_SYSTEM, parseDream, DREAM_SYSTEM, VR_CONTEXT, YES, OFFERS_3D, OFFERS_TRIP, lessonTimes, wrapLines, fitLines, followTarget, pcPoint, angleGap, LOOK_SYSTEM, lookPrompt, ROOM_WORDS, ABOUT_THIS, parseSketch, PLACE_WORDS };
   if (typeof module !== "undefined" && module.exports) { module.exports = util; return; }
 
   // ===========================================================================
@@ -790,7 +826,9 @@
     vr.scene?.orb("thinking");
     let reply = "";
     try {
-      reply = await core.think(ask, HOLO_SYSTEM);
+      // "Draw…", "imagine a…", "what does … look like": the thing's real shape.
+      const draw = /\b(?:draw|sketch|imagine|looks?\s+like|model\s+of|shape\s+of)\b/i.test(ask);
+      reply = await core.think(draw ? ask + "\n(Draw it: use kind sketch.)" : ask, HOLO_SYSTEM);
     } catch (e) {
       if (!current()) return "";
       vr.scene?.holoClose?.();
