@@ -1,0 +1,16 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Ask bar fixture</title></head>
+<body style="background:linear-gradient(135deg,#1c2a3a,#3a2d4a);min-height:100vh;margin:0"><div id="root"></div><script type="module">
+import React from 'react';
+import { createRoot } from 'react-dom/client';
+import { AskBar } from '/src/components/AskBar.tsx';
+import { api, emit, on, EV } from '/src/lib/ipc.ts';
+import '/src/styles.css';
+window.testCalls = { asks: [], interactive: [] };
+api.setOverlayInteractive = async (v) => { window.testCalls.interactive.push(v); };
+on(EV.runChat, (m) => window.testCalls.asks.push(m));
+window.openBar = () => emit(EV.askBar);
+window.reply = (text) => emit(EV.caption, { text, paced: false });
+window.finish = () => emit(EV.chatDone, { id: window.testCalls.asks.at(-1).id });
+createRoot(document.getElementById('root')).render(React.createElement(AskBar));
+window.testReady = true;
+</script></body></html>

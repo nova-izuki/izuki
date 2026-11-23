@@ -18,6 +18,8 @@ pub const PUSH_TO_TALK: &str = "izuki://push-to-talk";
 pub const PUSH_TO_TALK_RELEASE: &str = "izuki://push-to-talk-release";
 /// Hold-to-dictate: talk and it's typed into whatever box you're already in.
 pub const DICTATE: &str = "izuki://dictate";
+/// Alt+Space: open (or close) the ask bar in the overlay (AskBar.tsx).
+pub const ASK_BAR: &str = "izuki://ask-bar";
 pub const DICTATE_RELEASE: &str = "izuki://dictate-release";
 /// Fired when the quickdraw hotkey is released — tells the overlay to
 /// submit whatever's been sketched (or just quietly close if nothing was).

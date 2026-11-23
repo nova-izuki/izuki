@@ -2577,3 +2577,37 @@ html.izuki-overlay .izk-task-pill button {
   html.izuki-overlay .izk-task-state > i,
   html.izuki-overlay .izk-task-live-dot { animation: none; }
 }
+
+/* ---- The ask bar (AskBar.tsx): one box, a living orb, a glowing edge ---- */
+.izk-ask-ring {
+  position: absolute;
+  inset: -1.5px;
+  border-radius: 23.5px;
+  background: conic-gradient(from var(--izk-ask-turn, 0deg), rgba(94, 234, 212, 0.55), rgba(125, 211, 252, 0.15), rgba(196, 181, 253, 0.5), rgba(94, 234, 212, 0.15), rgba(94, 234, 212, 0.55));
+  filter: blur(7px);
+  opacity: 0.75;
+  animation: izk-ask-turn 9s linear infinite;
+}
+.izk-ask-ring-busy { opacity: 0.95; animation-duration: 2.2s; }
+@property --izk-ask-turn { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
+@keyframes izk-ask-turn { to { --izk-ask-turn: 360deg; } }
+.izk-ask-orb {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  background: radial-gradient(circle at 34% 30%, #ffffff 0%, #bfefff 14%, #5eead4 42%, #2563c9 78%, #0b1f4a 100%);
+  box-shadow: 0 0 14px rgba(94, 234, 212, 0.55);
+  animation: izk-ask-breathe 3.2s ease-in-out infinite;
+}
+.izk-ask-orb-busy { animation: izk-ask-think 0.9s ease-in-out infinite; }
+@keyframes izk-ask-breathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.08); } }
+@keyframes izk-ask-think { 0%, 100% { transform: scale(0.9); box-shadow: 0 0 10px rgba(94, 234, 212, 0.4); } 50% { transform: scale(1.12); box-shadow: 0 0 22px rgba(125, 211, 252, 0.8); } }
+.izk-ask-dots span { animation: izk-ask-dot 1.2s infinite; opacity: 0.2; }
+.izk-ask-dots span:nth-child(2) { animation-delay: 0.2s; }
+.izk-ask-dots span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes izk-ask-dot { 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .izk-ask-ring, .izk-ask-orb, .izk-ask-orb-busy, .izk-ask-dots span { animation: none; }
+  .izk-ask-dots span { opacity: 1; }
+}

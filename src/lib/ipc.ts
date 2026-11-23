@@ -189,6 +189,7 @@ export const MOCK_SETTINGS: Settings = {
   hotkey_voice: "Ctrl+Super+Space",
   hotkey_quickdraw: "Ctrl+D",
   hotkey_dictate: "Ctrl+Alt+Space",
+  hotkey_ask: "Alt+Space",
   dictate_tidy: true,
   freeze_screen: true,
   magnetic_hand: true,
@@ -1435,6 +1436,8 @@ export const EV = {
   pushToTalk: "izuki://push-to-talk",
   pushToTalkRelease: "izuki://push-to-talk-release",
   dictate: "izuki://dictate",
+  /** Rust → overlay: Alt+Space, open or close the ask bar. */
+  askBar: "izuki://ask-bar",
   dictateRelease: "izuki://dictate-release",
   /** Fired when the quickdraw hotkey is released — the overlay submits
    * whatever's been sketched, or just quietly closes if nothing was. */

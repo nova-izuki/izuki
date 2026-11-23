@@ -98,6 +98,7 @@ export function SettingsTab() {
     quickdraw: settings.hotkey_quickdraw,
     voice: settings.hotkey_voice,
     dictate: settings.hotkey_dictate,
+    ask: settings.hotkey_ask ?? "Alt+Space",
     replay: settings.hotkey_replay,
     panic: settings.hotkey_panic,
   };
@@ -475,6 +476,13 @@ export function SettingsTab() {
         />
         <div className="izk-divider" />
         <HotkeyRow
+          label="Ask bar (one box: type, press Enter)"
+          value={settings.hotkey_ask ?? "Alt+Space"}
+          taken={otherHotkeys(hotkeys, "ask")}
+          onChange={(v) => patch({ hotkey_ask: v })}
+        />
+        <div className="izk-divider" />
+        <HotkeyRow
           label="Hold to dictate (types where you are)"
           value={settings.hotkey_dictate}
           taken={otherHotkeys(hotkeys, "dictate")}
@@ -759,7 +767,7 @@ function LabelledField({
 /** Every global shortcut but this one, so the Shortcuts list can refuse a
  *  chord that already has a job. One chord, one action. */
 function otherHotkeys(
-  keys: Record<"draw" | "quickdraw" | "voice" | "dictate" | "replay" | "panic", string>,
+  keys: Record<"draw" | "quickdraw" | "voice" | "dictate" | "replay" | "panic" | "ask", string>,
   mine: keyof typeof keys
 ): Array<[string, string]> {
   const named: Array<[keyof typeof keys, string]> = [
@@ -769,6 +777,7 @@ function otherHotkeys(
     ["dictate", "Hold to dictate"],
     ["replay", "Replay last flow"],
     ["panic", "Emergency stop"],
+    ["ask", "Ask bar"],
   ];
   return named
     .filter(([key]) => key !== mine && keys[key].trim())

@@ -265,6 +265,7 @@ export interface Settings {
   hotkey_quickdraw: string;
   /** Hold to dictate into whatever box you're already in. */
   hotkey_dictate: string;
+  hotkey_ask?: string;
   /** Tidy dictation (fillers, false starts, grammar) before typing it. */
   dictate_tidy: boolean;
 
