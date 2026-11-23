@@ -15,7 +15,7 @@ handling. The owner asked for a hand-off like this after every batch of work.
   automatic upload at the store (see "Store uploads" below).
 - **Release 1.0.222 is published** (2026-11-23, Latest on GitHub; `latest.json` says 1.0.222, so installed PCs update).
   It carries Freebuff's typed-command, 20-second brain-timeout and agent-notes work, plus the PC side of the new Gemini key format.
-- **All VR PRs #141–#165 are merged** (web, so izukinova.ai/vr has them once Pages deploys). #167 (physics) is the open one.
+- **All VR PRs #141–#169 are merged** (web, so izukinova.ai/vr has them once Pages deploys). #175 (handle a hologram) is the open one.
 
 ## Shipped in this stretch (merged, or open PRs being merged in order)
 
@@ -35,6 +35,9 @@ handling. The owner asked for a hand-off like this after every batch of work.
 | #161 | VR: a **pinned card takes you back into that chat** (the pin keeps its question; `IzukiCore.recall`) |
 | #162 | **Free natural voice on the device** (Kokoro via kokoro-js 1.2.1, `deviceVoice()`), after Gemini and Groq, before the phone voice; on by itself in a headset; steps aside if too slow |
 | #167 | VR **physics you can watch**: pendulum, thrown ball, feather and hammer, orbit, spring, wave. Real equations stepped per frame (`simShow`/`simTick`), formula and measured numbers on a card, Izuki speaks exact results with no AI (`parseSim`, `simFacts`, `simWords`); voice tweaks while it runs (`SIM_TWEAK`, `tweakSim`: "now on the Moon", "make it longer", "at 30 degrees", "faster", "again") |
+| #168 | **A headset isn't a phone**: `HEADSET_HIDE` (one list) hides phone-only parts on a headset (Drive, iPhone/Android-only sections, install, "read this phone's screen"); `headsetWords` + a MutationObserver say "headset" in the app's own words, never in the chat, typed text or the PC's real menu path "Settings → Phone → Call Izuki from your phone" |
+| #169 | VR **"play … on YouTube"**: the room can't show web pages or video, so Izuki leaves the room and opens YouTube's search in a new tab; if the headset blocks a voice-opened tab, a full-screen **Play on YouTube** link (a tap always works) and **Back to the room** |
+| #175 | VR **handle a hologram**: grab a part and move sideways to turn it (fling to keep it spinning); voice: spin it, stop spinning, turn it around, bigger/smaller, explode it, put it back together (`HOLO_VIEW`, `holoView`, `viewTick`, `explodeDirs`) |
 | #164 | VR: **real photos** beside holograms (Wikipedia, `holoPhoto`, `photoUrl`); a headset hides phone-only tools; the Quest app goes straight in from its first launch; the launcher says where "Hey Nova" works |
 | #165 | VR: **real planets** (Solar System Scope maps, CC BY 4.0) on the projector, and the **live ISS** on the Earth (`globeShow`, `globeMark`, api.wheretheiss.at) |
 | #163 | VR **"Draw it": hologram kind `sketch` (`parseSketch`, scene `sketchShow`): tubes and wire solids that draw themselves in, with flow/spin/pulse and step focus; "imagine a <thing>" draws, "imagine a <place>" dreams |
@@ -52,12 +55,14 @@ handling. The owner asked for a hand-off like this after every batch of work.
 
 - A real `AQ.` key, on both the native and the OpenAI-compatible routes. Fake-key probes can't settle it.
 - Voice cut-in thresholds, float mode, Dream mode, the auto-playing lessons and the voice bars, on the headset itself.
-- "Draw it", real photos, planets/ISS and physics were checked in headless Edge only (screens and numbers), not on the Quest yet.
+- "Draw it", real photos, planets/ISS, physics, the headset wording, YouTube and hologram handling were checked in headless Edge only (screens and numbers), not on the Quest yet. Hand-turning and the YouTube tab need the real headset.
+- **The room's own browser** ("search the web for…") is Google results plus a page's text read aloud, not real web pages; never confirmed working on the Quest. Test it first thing.
 
 ## Review and workspace notes
 
-- **Merged without a CodeRabbit review** (its free reviews were used up; tests and CI passed): #161–#165 and #167. Run `coderabbit review` on them when it resets, and fix what it finds.
+- **Merged without a CodeRabbit review** (its free reviews were used up; tests and CI passed): #161–#165, #167–#169 and #175. Run `coderabbit review` on them when it resets, and fix what it finds.
 - The CodeRabbit **CLI hit its rate limit** on 2026-11-23. #160–#163 were asked for review on GitHub (`@coderabbitai review`) instead.
+- **Merge script trap:** `gh pr checks --watch` once returned early and #169 merged with checks still pending (main then passed everything). Poll until nothing is pending instead.
 - Physics trap: `new Float32BufferAttribute(arr, 3)` **copies** `arr`, so writing to `arr` later draws nothing. Write to `geo.attributes.position.array` (see `simLine`).
 - `.work/vr` was left with conflicted bridge files: an old 2026-11-03 stash was popped by mistake. The stash entry is still there, and nothing was lost. Check it, or `git checkout HEAD -- <those files>` there; don't commit from it as is. Fresh work used `.work/sketch`, `.work/photos`, `.work/pc-keys` and `.work/rev`.
 - Measured: Kokoro in headless Edge spoke a real WAV. On this laptop's CPU it's far slower than real time (53 s for 4.5 s of speech), and headless WebGPU is software. The Quest's GPU speed is still to be measured.
@@ -65,10 +70,21 @@ handling. The owner asked for a hand-off like this after every batch of work.
 ## Next (owner's list, in order)
 
 1. Measure "Draw it" and the Kokoro voice on the real Quest 3S, and tune them.
-2. ~~Live simulations~~ (done in #167). Next: grab and spin a hologram with your hands; "explode it" (parts fly apart and come back); a slider/hand control for a simulation's numbers.
+2. ~~Live simulations~~ (#167) and ~~grab, spin, explode~~ (#175). Next: a hand slider for a simulation's numbers; real part shapes (Freebuff #172).
 3. "Imagine it" pictures. Gemini image models have no free tier, so the only fully free route is a third-party no-key service. Decide with the owner first.
 
-## Freebuff's queue
+## Freebuff's queue (set by Claude, the release coordinator, 2026-11-23)
+
+**Freebuff: stop building VR in a separate `vr/` sandbox project.** Your hand-off (quiz, sleep, custom wake name, to-scale, `unPile`) describes work that isn't in this repo, so it never reaches the owner's headset and drifts from the real code. The real VR app is `docs/app/vr.js` and `docs/app/vr-scene.src.js`. Work on a `freebuff/…` branch from the latest `main`, open a PR into `main`, and run `npm run test:phone` plus a headless 3D preview check before asking for a merge.
+
+In order (bridge tasks, `agent:freebuff`):
+
+1. **#171 VR quiz with memory**: port your quiz into vr.js, with wrong answers weighted and never the one just missed straight away. Extend it to sketches, physics (answers from `simFacts`) and planets.
+2. **#172 Real part shapes** (`it.shape`): after #175 merges, because it builds on #175's `holoNode`/`holoTick`. Shared geometries only.
+3. **#173 Listening ring** on the orb after a tap (zero cost when hidden).
+4. **#174 Wake name**: cache it; refuse common words.
+
+Claude is working on the room itself (#175, then the simulation hand slider), so leave `holoTick`, `viewTick` and the grab code to Claude unless your issue says otherwise. Say on the issue before touching another assistant's open PR.
 
 - **#67 Fast Action Engine** (replace fixed waits; measure with `action_bench`/`look_timing`) is still assigned to Freebuff.
 - **#115 "Answer graded quizzes"** stays **held**: it goes against the coaching-only rule for graded work (AGENTS.md safety lines).
