@@ -486,7 +486,7 @@
 
     <section>
       <h3>Your free AI key</h3>
-      <p>Izuki runs on Google's free Gemini. Get a key (sign in → <b>Create API key</b>), copy it, and paste it here. It stays on this phone only.</p>
+      <p>Izuki runs on Google's free Gemini. Get a key (sign in → <b>Create API key</b>), copy it, and paste it here. It stays on this phone only. AI keys are for adults: Google and the other AI companies ask you to be 18 or older to make one.</p>
       <div class="row" style="margin-top: 10px"><a class="chip" href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">1 · Get a free Gemini key ↗</a><button class="chip" id="paste-key" type="button">2 · 📋 Paste my key</button></div>
       <div class="field" style="margin-top: 10px">
         <label for="key">Gemini key</label>
@@ -1658,7 +1658,7 @@
     get.id = "setup-get";
     get.href = "https://aistudio.google.com/apikey";
     get.target = "_blank"; get.rel = "noopener";
-    const t1 = el("span"); t1.append(el("b", "", "Get my free key"), el("small", "", "Sign in with Google → “Create API key” → copy it"));
+    const t1 = el("span"); t1.append(el("b", "", "Get my free key"), el("small", "", "For adults 18+: sign in with Google → “Create API key” → copy it"));
     get.append(el("span", "n", "1"), t1, el("span", "go", "↗"));
     const paste = el("button", "step");
     paste.type = "button";

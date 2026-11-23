@@ -30,27 +30,31 @@ Sizes and rules from Meta's [asset guidelines](https://developers.meta.com/horiz
 
 **Short description:**
 
-> Your own AI companion, floating in your room. Ask anything out loud and IZUKI NOVA answers in a natural voice. Hold something up and ask "what's this?": it looks and circles the answer. Bring your PC's screen into the room, big, and watch it work there. Free, with your own free AI key.
+> Your own AI companion, floating in your room. Ask anything out loud and IZUKI NOVA answers in a natural voice. Learn in 3D with holograms it builds for you, browse the web right in the room, and bring your PC's screen in, big. Hold something up and ask "what's this?". Free, with your own free AI key (adults 18+).
 
 **Long description:**
 
 > IZUKI NOVA is a free AI that lives with you: on your PC, on your phone, and now in your headset.
 >
-> Talk, don't type. Say "Hey Nova" any time, or point at the orb and pinch. It listens, answers in a natural voice, and shows its words under the orb.
+> Just talk. Say "Hey Nova", ask a question out loud, or hold a button to talk. It answers in a natural voice and shows its words under the orb. Grab the orb with your hand and put it anywhere.
 >
-> Look and ask. On Quest 3 and 3S, ask "what's this?" about anything in front of you: a plant, a label, a gadget, a recipe. After you allow the camera, it takes one photo, answers, and circles what it means. Quizzes and tests get coaching, never answers.
+> Learn in 3D. Ask it to teach you something and it builds a hologram in your room: models, maps, steps, timelines and charts you walk through with "next".
 >
-> Your PC, big. Pair your Windows PC once and say "show my PC": its screen opens on a large panel in your room. Point and click on it, scroll with the thumbstick, or say "open Spotify" and watch it happen. Anything consequential still asks for your approval on the PC.
+> Look it up. A browser opens right in the room: search the web, read a page, and ask about it.
 >
-> Your photos, around you. "Show my photos" opens your PC's Pictures as a gallery. Pick one and ask about it.
+> Look and ask. On Quest 3 and 3S, ask "what's this?" about anything in front of you. After you allow the camera, it takes one photo, answers, and circles what it means. Quizzes and tests get coaching, never answers.
 >
-> Keep what matters. "Pin that" turns an answer into a card you can put anywhere, and it's there next time.
+> Your PC, big. Pair your Windows PC and say "show my PC": its screen opens on a large panel in your room. Point, click, scroll, or say "open Spotify" and watch it happen. Anything important still asks for your approval.
+>
+> Little helpers: timers, a guided breathing break, your PC's photos as a gallery, and "pin that" to keep any answer as a card.
 >
 > Calm by design, with five looks from Midnight to Pearl. No ads, no account, no tracking.
 >
-> Free for everyone: add a free AI key from Google Gemini or Groq (a minute, in the app), or your own key from another provider. Needs an internet connection. The PC features need the free IZUKI NOVA app for Windows.
+> For adults 18+: add a free AI key from Google Gemini or Groq (about a minute, in the app), or your own key from another provider. Needs an internet connection. The PC features need the free IZUKI NOVA app for Windows.
 
-Lengths: the short description is 286 characters and the long one 1,290, under the 500 and 1,500 limits noted on 2026-11-22 (the form shows its own counter).
+Lengths: the short description is 314 characters and the long one 1,411, under the 500 and 1,500 limits (the form shows its own counter). Saved in the dashboard on 2026-11-22 (round three: browser, 3D lessons, hand grab, timers, breathing, and the adults-18+ line for the AI key).
+
+Why "adults 18+" in a 13+ listing: Meta's age groups have no 18+ choice (only Teens and adults 13+, Mixed ages, Children; developers.meta.com/vr/resources/age-groups), while Google's Gemini API terms say its users must be 18 or older. So the listing stays Teens and adults and both descriptions say the AI key needs an adult.
 
 **Category:** Apps. Primary genre Productivity, additional genre Learning ("Media" would ask for a media type that doesn't fit).
 
@@ -101,7 +105,8 @@ Almost every update needs no store update at all. The Quest app is a window onto
 A new store build is needed only when the app's own package changes: its name, icon, permissions or anything else in `quest/`. Then:
 1. Merge the change. On `main`, "Build Izuki VR for Meta Quest" builds and signs the store version and, with the `IZUKI_QUEST_APP_SECRET` secret in GitHub, uploads it to the private Alpha channel by itself (each build's version code is the minute it was made, so it's always newer).
 2. Try it on the Quest from Alpha.
-3. In the dashboard, move the build to the store channel and submit it. Meta reviews updates too; once released, Quests install it by themselves.
+3. For the store: GitHub → Actions → "Build Izuki VR for Meta Quest" → Run workflow on `main` with channel **store**. It makes a fresh store build of `main`'s latest commit (a new version code) and uploads it as a DRAFT in the Production (Store) channel (`--channel store --draft`): Meta attaches only such drafts to a submission, and nobody sees a draft until it is released. Or from a terminal: `gh workflow run quest.yml -R nova-izuki/izuki --ref main -f channel=store`. If `main` changed since the Alpha build you tried, that's a different build: try it first (the room itself comes from the live site, so usually only the app shell differs).
+4. In the dashboard: the submission's Build tab → pick that draft → Submit for Review. Meta reviews updates too; once released, Quests install it by themselves.
 
 To give GitHub the app secret once (from the `izuki` folder; the secret is never printed or committed):
 ```powershell

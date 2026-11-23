@@ -978,7 +978,7 @@
       try { core.startCall?.(); } catch {}
     } else if (mode !== "flat") {
       // This browser keeps its own settings: a key added on your phone or PC isn't here.
-      if (!core?.ready?.()) vr.scene.notice?.("This browser has no AI key yet, so I can't hear you. Leave the room, add a free Gemini or Groq key in Settings here, and come back.", 20000, true);
+      if (!core?.ready?.()) vr.scene.notice?.("This browser has no AI key yet, so I can't hear you. Leave the room, add a free Gemini or Groq key in Settings here (AI keys are for adults 18+), and come back.", 20000, true);
       else if (!core.canHear?.()) vr.scene.notice?.("To hear “Hey Nova” in a headset I need a free Gemini or Groq key (Settings). Tap Talk meanwhile.", 20000, true);
     }
   }

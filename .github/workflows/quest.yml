@@ -20,6 +20,12 @@ on:
   pull_request:
     paths: ['quest/**', 'docs/.well-known/**', '.github/workflows/quest.yml', 'tools/quest-check.cjs', 'docs/ANDROID-SIGNING.md', 'docs/CNAME', 'docs/app/manifest.webmanifest', 'docs/app/icon-*.png']
   workflow_dispatch:
+    inputs:
+      channel:
+        description: "Where main's store build goes: alpha (private testers) or store (a DRAFT in Production, to attach to a store submission; it goes live only after Meta's review and a release from the dashboard)"
+        type: choice
+        options: [alpha, store]
+        default: alpha
 
 permissions:
   contents: read
@@ -174,10 +180,14 @@ jobs:
       # GitHub (IZUKI_QUEST_APP_SECRET, docs/QUEST-STORE.md); without it this
       # step only says so. Going public stays a person's choice: a build reaches
       # the store only after Meta's review and a release from the dashboard.
-      - name: Upload the store version to the private Alpha channel
+      # Run by hand with channel "store" instead, it uploads a DRAFT to the
+      # Production (Store) channel: Meta attaches only such drafts to a store
+      # submission, and a draft is never shown to anyone until released.
+      - name: Upload the store version (private Alpha, or a store draft when asked)
         if: github.ref == 'refs/heads/main' && env.STORE_APK == '1'
         env:
           APP_SECRET: ${{ github.ref == 'refs/heads/main' && secrets.IZUKI_QUEST_APP_SECRET || '' }}
+          CHANNEL: ${{ github.event_name == 'workflow_dispatch' && inputs.channel || 'alpha' }}
         run: |
           if [ -z "$APP_SECRET" ]; then echo "No IZUKI_QUEST_APP_SECRET in GitHub yet: upload by hand (docs/QUEST-STORE.md)."; exit 0; fi
           # A re-run of an older commit would put an older app on Alpha (its
@@ -193,6 +203,13 @@ jobs:
           # The age group is the owner's own self-certification in the
           # dashboard (2026-11-22: teens and adults, 13+). If they ever change
           # it there, change it here too.
+          # Meta's names: ALPHA, and "store" for Production (Store). The age
+          # group has no 18+ choice (only 13+, mixed ages, children): the
+          # store text says the AI key needs an adult (Gemini's terms).
+          case "$CHANNEL" in
+            store) where=(--channel store --draft) ;;
+            *) where=(--channel ALPHA) ;;
+          esac
           "$util" upload-quest-build --app-id 1490038460856480 --app-secret "$APP_SECRET" \
-            --apk Izuki-VR-Quest-store.apk --channel ALPHA --age-group TEENS_AND_ADULTS \
+            --apk Izuki-VR-Quest-store.apk "${where[@]}" --age-group TEENS_AND_ADULTS \
             --notes "IZUKI NOVA $v (${GITHUB_SHA::7})"
