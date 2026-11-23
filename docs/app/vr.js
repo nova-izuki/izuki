@@ -95,6 +95,17 @@
     String.raw`(?:search\s+for|search|google|look\s+up)\s+(.+?)` + ONLINE,
     String.raw`look\s+(.+?)\s+up` + ONLINE,
   ].join("|"));
+  // "Play lofi music on YouTube", "watch how volcanoes work on youtube", "open YouTube":
+  // a headset can't show YouTube inside the 3D room (no web pages there), so Izuki
+  // leaves the room and opens it (ytOpen).
+  const YT = whole([
+    String.raw`(?:play|watch|put\s+on|find|search(?:\s+for)?|look\s+up|show\s+me|open|pull\s+up)\s+(.+?)\s+(?:on|from|in)\s+you\s?tube`,
+    String.raw`(?:open|go\s+to|launch|start|take\s+me\s+to)\s+you\s?tube(?:\s+(?:and\s+)?(?:play|search(?:\s+for)?|find|show\s+me|look\s+up)\s+(.+?))?`,
+    String.raw`you\s?tube\s+(.+?)`,
+    String.raw`(?:play|watch|show\s+me|put\s+on)\s+(?:a\s+|the\s+|some\s+)?(?:youtube\s+)?(?:video|videos|music\s+video|vid|clip)\s+(?:of|about|on|for|from)\s+(.+?)`,
+  ].join("|"));
+  /** YouTube's own search for what they asked (or its home page). */
+  const ytUrl = (q) => (q ? "https://www.youtube.com/results?search_query=" + encodeURIComponent(q) : "https://www.youtube.com/");
   const WEB_OPEN = whole(String.raw`(?:open|show|bring\s+up|pull\s+up)\s+(?:me\s+)?(?:the\s+|a\s+|your\s+)?(?:web\s+)?(?:browser|internet|google)`);
   const WEB_HIDE = whole(String.raw`(?:close|hide|put\s+away)\s+(?:the\s+|your\s+)?(?:web\s+)?(?:browser|search(?:\s+results)?|results)`);
   const HERE = /\b(?:in\s+here|in\s+(?:vr|the\s+room)|(?:in|on)\s+(?:the|your)\s+browser|online|on\s+the\s+(?:web|internet))\b/i;
@@ -149,6 +160,8 @@
     if (PHOTO_ASK.test(s)) return { kind: "photo-ask" };
     if (GUIDE.test(s)) return { kind: "guide" };
     if (SCREEN.test(s)) return { kind: "screen" };
+    const yt = s.match(YT);
+    if (yt) return { kind: "youtube", q: String(yt.slice(1).find((x) => x) || "").trim() };
     if (WEB_HIDE.test(s)) return { kind: "web-hide" };
     if (WEB_OPEN.test(s)) return { kind: "web", q: "", here: true };
     const w = s.match(WEB);
@@ -500,7 +513,7 @@
   // the chat's own prompt says "your AI companion on their phone".
   const VR_CONTEXT = (pcOn, holoOn, dreamOn) => [
     "Right now they're wearing a VR headset (Meta Quest) and you are the glowing orb floating in their room or in a virtual space around them. This is not their phone: never talk about phone screens, phone settings, tapping or swiping a phone, or phone apps.",
-    "In the room you can: build a 3D hologram to teach something (they say \"teach me…\", \"show me … in 3D\"); run real physics on the projector (\"simulate a pendulum\", \"throw a ball at 60 degrees\", \"drop a feather and a hammer on the Moon\", \"how do satellites orbit\"), with the true numbers; take them into a whole dream world (\"take me to…\", \"dream mode…\"); open a browser panel beside them (\"search the web for…\"); show their PC's screen big and point at where to click (\"show my PC\", \"where do I click…\"); look through the headset camera (\"what's this?\"); set timers; lead a breathing break; pin an answer as a card.",
+    "In the room you can: build a 3D hologram to teach something (they say \"teach me…\", \"show me … in 3D\"); run real physics on the projector (\"simulate a pendulum\", \"throw a ball at 60 degrees\", \"drop a feather and a hammer on the Moon\", \"how do satellites orbit\"), with the true numbers; take them into a whole dream world (\"take me to…\", \"dream mode…\"); open a browser panel beside them (\"search the web for…\"); open YouTube for a video (\"play … on YouTube\": the room closes while it plays, because the room can't show web pages or videos); show their PC's screen big and point at where to click (\"show my PC\", \"where do I click…\"); look through the headset camera (\"what's this?\"); set timers; lead a breathing break; pin an answer as a card.",
     "When something would be much clearer seen than said (how a thing works, a process, a place, sizes, a history), answer in a sentence or two, then offer it in a few words: \"Want me to build it in 3D?\" or \"Want me to take you there?\". Don't offer it every time.",
     "Answer in one to three short spoken sentences, the most important thing first. No lists, no markdown, no emoji: everything is read aloud and shown as a short caption.",
     pcOn ? "Their PC's screen is open big in the room." : "",
@@ -731,7 +744,7 @@
   // What a headset hides, and the PC menu names that keep saying "Phone" (see headsetPage).
   const HEADSET_HIDE = ["#go-drive", "#tools-health", "#tools-cockpit", "#tools-pilot", "[data-only]", "#web-install", "#drive-settings", "#screen-allow-row", '#screen-source option[value="phone"]'];
   const KEEP_PHONE = /Settings\s*→\s*Phone\s*→\s*Call Izuki from your phone|Call Izuki from your phone/g;
-  const util = { command, onPc, named, forIzuki, timerWords, parseLook, parseHolo, HOLO_SYSTEM, parseDream, DREAM_SYSTEM, VR_CONTEXT, YES, OFFERS_3D, OFFERS_TRIP, lessonTimes, wrapLines, fitLines, followTarget, pcPoint, angleGap, LOOK_SYSTEM, lookPrompt, ROOM_WORDS, ABOUT_THIS, parseSketch, PLACE_WORDS, photoUrl, BODIES, issWords, parseSim, simSpec, simFacts, simWords, tweakSim, simParams, SIM_TWEAK, headsetWords, HEADSET_HIDE };
+  const util = { command, onPc, named, forIzuki, timerWords, parseLook, parseHolo, HOLO_SYSTEM, parseDream, DREAM_SYSTEM, VR_CONTEXT, YES, OFFERS_3D, OFFERS_TRIP, lessonTimes, wrapLines, fitLines, followTarget, pcPoint, angleGap, LOOK_SYSTEM, lookPrompt, ROOM_WORDS, ABOUT_THIS, parseSketch, PLACE_WORDS, photoUrl, BODIES, issWords, parseSim, simSpec, simFacts, simWords, tweakSim, simParams, SIM_TWEAK, headsetWords, HEADSET_HIDE, ytUrl };
   if (typeof module !== "undefined" && module.exports) { module.exports = util; return; }
 
   // ===========================================================================
@@ -1313,6 +1326,11 @@
           return done((await vr.scene?.filesOpen(c.folder)) || (c.folder ? "Here's your " + c.folder + " folder. Point at a picture to see it big." : "Here are your folders."));
         }
         if (c.kind === "look-style" || c.kind === "space") return done(vr.scene?.nextTheme?.() || "There, a new look.");
+        if (c.kind === "youtube") {
+          const q = c.q;
+          setTimeout(() => { vr.scene?.stop(); g.setTimeout?.(() => ytOpen(q), 400); }, 1600);
+          return done((q ? "Opening YouTube for " + q + ". " : "Opening YouTube. ") + "The 3D room can't show videos, so I'll step out while it plays. When you're done, come back to this tab and say enter the room, or tap it.");
+        }
         if (c.kind === "web-hide") { vr.scene?.webClose?.(); return done("Okay, I closed the browser."); }
         if (c.kind === "web") return done((await vr.scene?.webSearch?.(c.q)) || "Okay.");
         if (c.kind === "holo") return done((await holo(c.ask)) || "Okay.");
@@ -1697,6 +1715,36 @@
     else if (asApp && last !== "float" && can) void straightIn().then((inside) => { if (inside) close(); });
   }
   if (wanted) supportReady.then(() => g.setTimeout?.(launcher, 250), () => g.setTimeout?.(launcher, 250));
+
+  /** YouTube in its own tab. A headset may block a tab opened without a tap: then a big button does it. */
+  function ytOpen(q) {
+    const url = ytUrl(q), doc = g.document;
+    let w = null;
+    try { w = g.open?.(url, "_blank", "noopener"); } catch {}
+    // With noopener, open() returns null even when it worked; a blocked one leaves the page focused.
+    g.setTimeout?.(() => {
+      if (w || !doc?.body || (doc.hasFocus && !doc.hasFocus())) return;
+      if (!doc.getElementById("vr-launch-css")) { const st = doc.createElement("style"); st.id = "vr-launch-css"; st.textContent = LAUNCH_CSS; doc.head.appendChild(st); }
+      doc.getElementById("vr-yt")?.remove();
+      const box = mk("div", "vr-launch");
+      box.id = "vr-yt";
+      box.setAttribute("role", "dialog");
+      box.setAttribute("aria-label", "Play on YouTube");
+      const play = mk("a", "vr-launch-go", "\u25B6  Play on YouTube");
+      play.href = url; play.target = "_blank"; play.rel = "noopener";
+      play.style.cssText = "display:inline-flex;align-items:center;justify-content:center;text-decoration:none";
+      play.onclick = () => g.setTimeout?.(() => box.remove(), 300);
+      const back = mk("button", "vr-launch-float", "Back to the room");
+      back.type = "button";
+      back.onclick = async () => { box.remove(); try { await enter(support.ar ? "immersive-ar" : "immersive-vr"); } catch {} };
+      const close = mk("button", "vr-launch-chat", "Chat here instead");
+      close.type = "button";
+      close.onclick = () => box.remove();
+      box.append(mk("h2", "", "YouTube"), mk("p", "", q ? "\u201C" + q + "\u201D" : "Your videos, in a tab beside Izuki."), play, mk("p", "vr-launch-tip", "It opens in a new tab. Come back to this one for Izuki."), back, close);
+      doc.body.appendChild(box);
+      try { play.focus({ preventScroll: true }); } catch {}
+    }, 700);
+  }
 
   async function micAllowed() {
     if (store.get("micOk", false)) return true;
