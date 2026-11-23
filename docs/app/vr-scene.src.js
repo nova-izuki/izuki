@@ -20,7 +20,7 @@
 // On a normal screen ("flat") the same room is a 3D preview you drive with
 // the mouse: click to tap, drag to look around, the wheel scrolls the PC.
 import {
-  AdditiveBlending, BackSide, BoxGeometry, CatmullRomCurve3, ConeGeometry, CurvePath, LineCurve3, TubeGeometry, DirectionalLight, DodecahedronGeometry, HemisphereLight, MeshLambertMaterial, NormalBlending, OctahedronGeometry, BufferGeometry, CanvasTexture, CircleGeometry, Color, CylinderGeometry, DoubleSide,
+  AdditiveBlending, BackSide, BoxGeometry, CatmullRomCurve3, ConeGeometry, CurvePath, LineCurve3, TubeGeometry, DirectionalLight, DodecahedronGeometry, HemisphereLight, MeshLambertMaterial, NormalBlending, OctahedronGeometry, BufferGeometry, CanvasTexture, CircleGeometry, Color, CylinderGeometry, DoubleSide, TextureLoader,
   Float32BufferAttribute, Group, IcosahedronGeometry, Line, LineBasicMaterial, LineSegments, Mesh, MeshBasicMaterial,
   PerspectiveCamera, PlaneGeometry, Points, PointsMaterial, Quaternion, Raycaster, RingGeometry, Scene, ShaderMaterial,
   SphereGeometry, Sprite, SpriteMaterial, SRGBColorSpace, TorusGeometry, Vector2, Vector3, WebGLRenderer, WireframeGeometry,
@@ -1580,6 +1580,7 @@ export async function start({ mode, session, api, tint }) {
     for (const l of holoUi.links) { l.line.geometry.dispose(); l.line.material.dispose(); l.pulse?.material.dispose(); }
     if (holoUi.building) { holoUi.building.geometry.dispose(); holoUi.building.material.dispose(); }
     sketchClear();
+    globeClear();
     holoUi.stage.clear();
     holoUi.nodes = []; holoUi.links = []; holoUi.building = null;
   }
@@ -1984,6 +1985,78 @@ export async function start({ mode, session, api, tint }) {
     ui(c.mesh, { tap: () => api.ask?.(`Tell me more about ${title}.`), drag: () => holoUi.group });
   }
 
+  // ---- a real planet on the projector (surface maps: Solar System Scope, CC BY 4.0) ----------
+  const globeUi = { mesh: null, mark: null, made: [], credit: null };
+  function globeClear() {
+    for (const o of globeUi.made) { try { o.dispose(); } catch {} }
+    if (globeUi.credit) unui(globeUi.credit.mesh);
+    Object.assign(globeUi, { mesh: null, mark: null, made: [], credit: null });
+  }
+  function globeShow({ title, map, rings, glow }) {
+    holoClear();
+    holoPhotoClear();
+    holoUi.spec = { title, kind: "globe", steps: [], items: [] };
+    holoUi.step = -1; holoUi.focus = null; holoUi.t0 = performance.now();
+    if (!holoUi.open) placeHolo();
+    holoUi.open = true;
+    holoUi.group.visible = true;
+    const keep = (o) => { globeUi.made.push(o); return o; };
+    const tex = keep(new TextureLoader().setCrossOrigin("anonymous").load(map));
+    tex.colorSpace = SRGBColorSpace;
+    tex.anisotropy = 4;
+    const r = 0.2;
+    const mesh = new Mesh(keep(new SphereGeometry(r, 64, 40)), keep(new MeshBasicMaterial({ map: tex })));
+    mesh.position.set(0, 0.12, 0);
+    mesh.rotation.x = 0.41; // the Earth's tilt, near enough for all of them
+    holoUi.stage.add(mesh);
+    // A thin glowing air (or the Sun's corona) round its edge.
+    const halo = new Sprite(keep(new SpriteMaterial({ map: holoGlow, color: glow ? 0xffb347 : 0x9fd8ff, transparent: true, opacity: glow ? 0.9 : 0.35, blending: AdditiveBlending, depthWrite: false })));
+    halo.scale.setScalar(r * (glow ? 4.2 : 2.7));
+    halo.position.copy(mesh.position);
+    holoUi.stage.add(halo);
+    if (rings) {
+      const ring = new Mesh(keep(new RingGeometry(r * 1.25, r * 2.1, 96)), keep(new MeshBasicMaterial({ color: 0xd9c7a0, transparent: true, opacity: 0.55, side: DoubleSide, depthWrite: false })));
+      ring.rotation.x = -Math.PI / 2 + 0.45;
+      ring.position.copy(mesh.position);
+      holoUi.stage.add(ring);
+    }
+    // The credit the maps ask for.
+    const credit = card(0.26, 0.04);
+    keep(credit.tex); keep(credit.mesh.geometry); keep(credit.mesh.material);
+    {
+      const { ctx, w, h } = credit;
+      glass(ctx, w, h, 22, { fill0: "rgba(16,19,27,0.7)", fill1: "rgba(10,12,18,0.75)" });
+      write(ctx, "Map: Solar System Scope · CC BY 4.0", 20, h / 2 + 9, 26, INK2, 500);
+      credit.update();
+    }
+    credit.mesh.position.set(0, -0.15, 0.05);
+    holoUi.stage.add(credit.mesh);
+    globeUi.mesh = mesh; globeUi.credit = credit;
+    holoUi.reach = r * (rings ? 2.1 : 1.3);
+    projShow(holoUi.reach + 0.06, true);
+    drawHoloBar();
+    stepAside("holo");
+  }
+  /** A glowing dot at a place on the planet (latitude, longitude): it turns with it. */
+  function globeMark(lat, lon) {
+    if (!globeUi.mesh) return;
+    const r = 0.2 * 1.01;
+    const phi = ((Number(lon) + 180) / 360) * Math.PI * 2, theta = ((90 - Number(lat)) / 180) * Math.PI;
+    if (!globeUi.mark) {
+      const dot = new Sprite(new SpriteMaterial({ map: holoGlow, color: 0xff5a5a, transparent: true, opacity: 1, blending: AdditiveBlending, depthWrite: false }));
+      globeUi.made.push(dot.material);
+      dot.scale.setScalar(0.08);
+      globeUi.mesh.add(dot);
+      globeUi.mark = dot;
+    }
+    globeUi.mark.position.set(-r * Math.cos(phi) * Math.sin(theta), r * Math.cos(theta), r * Math.sin(phi) * Math.sin(theta));
+  }
+  function globeTick(dt, now) {
+    if (!globeUi.mesh) return;
+    if (!calm) globeUi.mesh.rotation.y += dt * 0.12;
+    if (globeUi.mark && !calm) globeUi.mark.scale.setScalar(0.07 + 0.03 * Math.abs(Math.sin(now / 300)));
+  }
+
   /** A lesson's step: its parts light up, the rest dim. null: all lit. */
   function holoFocus(list, step) {
     holoUi.step = step ?? holoUi.step;
@@ -2246,6 +2319,7 @@ export async function start({ mode, session, api, tint }) {
     holoTime.value = now / 1000;
     if (holoUi.building) { holoUi.building.rotation.y += dt * 1.4; holoUi.building.rotation.x = 0.5; return; }
     if (holoUi.spec?.kind === "sketch") { sketchTick(dt, now); return; }
+    if (holoUi.spec?.kind === "globe") { globeTick(dt, now); return; }
     const age = now - holoUi.t0;
     for (const n of holoUi.nodes) {
       // In one by one, then the parts that circle another go round it.
@@ -2664,6 +2738,8 @@ export async function start({ mode, session, api, tint }) {
     holoClose,
     holoShown: () => holoUi.open,
     holoPhoto,
+    globeShow,
+    globeMark,
     dreamShow,
     dreamClose,
     dreamShown: () => !!dreamUi.group,

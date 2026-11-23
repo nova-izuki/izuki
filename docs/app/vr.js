@@ -162,6 +162,9 @@
     if (HOLO_NEXT.test(s)) return { kind: "holo-next" };
     if (HOLO_BACK.test(s)) return { kind: "holo-back" };
     if (HOLO_AGAIN.test(s)) return { kind: "holo-again" };
+    if (ISS.test(s)) return { kind: "globe", body: "earth", iss: true };
+    const sp = s.match(SPACE);
+    if (sp) return { kind: "globe", body: BODY_OF[sp[1].toLowerCase().replace(/\s+/g, " ")] || "earth" };
     if (DREAM_END.test(s)) return { kind: "dream-end" };
     const dm = s.match(DREAM);
     if (dm) {
@@ -294,6 +297,35 @@
   const ROOM_WORDS = /\b(?:in\s+front\s+of\s+me|in\s+my\s+hands?|i'?m\s+holding|am\s+i\s+holding|around\s+me|in\s+(?:my|the)\s+room|over\s+there|real\s+life)\b/i;
   const ABOUT_THIS = (s) => /\b(?:this|that|it|he|she|they|them|these|those|here|the\s+(?:photo|picture|pic|image))\b/i.test(s) &&
     (/\?\s*$/.test(s) || /^(?:who|what|where|when|why|how|is|are|was|were|does|do|did|can|could|which|tell\s+me|describe|explain)\b/i.test(s.trim()));
+
+
+  // ---- real planets and the live space station -------------------------------------
+  // Surface maps from real spacecraft data (Solar System Scope, CC BY 4.0, on
+  // Wikimedia Commons), wrapped round a sphere on the hologram projector.
+  const SKY_MAP = (f) => "https://upload.wikimedia.org/wikipedia/commons/" + f;
+  const BODIES = {
+    earth: { name: "Earth", map: SKY_MAP("c/c3/Solarsystemscope_texture_2k_earth_daymap.jpg"), say: "Here's the Earth, from real satellite maps. About seventy percent of it is ocean." },
+    moon: { name: "The Moon", map: SKY_MAP("2/26/Solarsystemscope_texture_2k_moon.jpg"), say: "Here's the Moon. The dark patches are old lava plains; the bright parts are highlands full of craters." },
+    mars: { name: "Mars", map: SKY_MAP("4/46/Solarsystemscope_texture_2k_mars.jpg"), say: "Here's Mars. Its red is rust in the dust, and that long scar is Valles Marineris, a canyon as wide as the United States." },
+    jupiter: { name: "Jupiter", map: SKY_MAP("b/be/Solarsystemscope_texture_2k_jupiter.jpg"), say: "Here's Jupiter, the biggest planet. Those bands are storms, and the Great Red Spot is a storm wider than the Earth." },
+    saturn: { name: "Saturn", map: SKY_MAP("e/ea/Solarsystemscope_texture_2k_saturn.jpg"), rings: true, say: "Here's Saturn and its rings, mostly ice, some pieces as small as dust and some as big as houses." },
+    venus: { name: "Venus", map: SKY_MAP("4/40/Solarsystemscope_texture_2k_venus_surface.jpg"), say: "Here's the surface of Venus, under its clouds: the hottest planet, hot enough to melt lead." },
+    mercury: { name: "Mercury", map: SKY_MAP("9/92/Solarsystemscope_texture_2k_mercury.jpg"), say: "Here's Mercury, the smallest planet and the closest to the Sun, covered in craters." },
+    neptune: { name: "Neptune", map: SKY_MAP("1/1e/Solarsystemscope_texture_2k_neptune.jpg"), say: "Here's Neptune, the farthest planet, with the fastest winds in the solar system." },
+    uranus: { name: "Uranus", map: SKY_MAP("9/95/Solarsystemscope_texture_2k_uranus.jpg"), say: "Here's Uranus. It spins on its side, rolling round the Sun like a ball." },
+    sun: { name: "The Sun", map: SKY_MAP("c/cb/Solarsystemscope_texture_2k_sun.jpg"), glow: true, say: "Here's the Sun, a star so big that about a million Earths could fit inside." },
+  };
+  const BODY_OF = { earth: "earth", "the earth": "earth", "our planet": "earth", "the world": "earth", globe: "earth", moon: "moon", "the moon": "moon", mars: "mars", jupiter: "jupiter", saturn: "saturn", venus: "venus", mercury: "mercury", neptune: "neptune", uranus: "uranus", sun: "sun", "the sun": "sun" };
+  const SPACE = whole(String.raw`(?:show\s+me|let\s+me\s+see|bring\s+up|i\s+want\s+to\s+see|zoom\s+(?:in\s+)?(?:on|to)|what\s+does|what\s+do)\s+(?:the\s+)?(?:planet\s+)?(earth|our\s+planet|the\s+world|globe|moon|mars|jupiter|saturn|venus|mercury|neptune|uranus|sun)(?:\s+look\s+like)?(?:\s+(?:up\s+close|in\s+3\s?d|for\s+real))?`);
+  const ISS = whole(String.raw`where(?:'s|\s+is)\s+the\s+(?:iss|international\s+space\s+station|space\s+station)(?:\s+(?:right\s+)?now)?|(?:show\s+me|track|find)\s+the\s+(?:iss|international\s+space\s+station|space\s+station)`);
+  /** Words for the station's live position: "high over the southern hemisphere, 420 km up". */
+  function issWords(p) {
+    const lat = Number(p?.latitude), lon = Number(p?.longitude), alt = Number(p?.altitude), v = Number(p?.velocity);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return "";
+    const ns = lat >= 0 ? "north" : "south", ew = lon >= 0 ? "east" : "west";
+    return "The space station is " + Math.round(alt || 420) + " kilometres up right now, at " + Math.abs(lat).toFixed(0) + " degrees " + ns + " and " + Math.abs(lon).toFixed(0) + " degrees " + ew +
+      ", moving about " + Math.round((v || 27600) / 100) * 100 + " kilometres an hour. The glowing dot is where it is.";
+  }
 
   // ---- what the chat brain knows about the room ----------------------------------
   // Seen on a real Quest: a normal question in the room got phone talk, because
@@ -528,7 +560,7 @@
     return { nx: c(u), ny: c(1 - v) };
   }
 
-  const util = { command, onPc, named, forIzuki, timerWords, parseLook, parseHolo, HOLO_SYSTEM, parseDream, DREAM_SYSTEM, VR_CONTEXT, YES, OFFERS_3D, OFFERS_TRIP, lessonTimes, wrapLines, fitLines, followTarget, pcPoint, angleGap, LOOK_SYSTEM, lookPrompt, ROOM_WORDS, ABOUT_THIS, parseSketch, PLACE_WORDS, photoUrl };
+  const util = { command, onPc, named, forIzuki, timerWords, parseLook, parseHolo, HOLO_SYSTEM, parseDream, DREAM_SYSTEM, VR_CONTEXT, YES, OFFERS_3D, OFFERS_TRIP, lessonTimes, wrapLines, fitLines, followTarget, pcPoint, angleGap, LOOK_SYSTEM, lookPrompt, ROOM_WORDS, ABOUT_THIS, parseSketch, PLACE_WORDS, photoUrl, BODIES, issWords };
   if (typeof module !== "undefined" && module.exports) { module.exports = util; return; }
 
   // ===========================================================================
@@ -801,6 +833,34 @@
   }
 
   // ---- holograms ---------------------------------------------------------------
+  // ---- a real planet on the projector, and the live space station ------------------
+  let issTimer = null;
+  function stopIss() { if (issTimer) { g.clearInterval?.(issTimer); issTimer = null; } }
+  async function issNow() {
+    try {
+      const r = await g.fetch("https://api.wheretheiss.at/v1/satellites/25544");
+      return r.ok ? await r.json() : null;
+    } catch { return null; }
+  }
+  async function globe(body, iss) {
+    const b = BODIES[body] || BODIES.earth;
+    stopIss();
+    holoNow = null; holoAt = -1; holoGen++;
+    vr.scene?.globeShow?.({ title: iss ? "The space station, live" : b.name, map: b.map, rings: !!b.rings, glow: !!b.glow });
+    if (!iss) return b.say;
+    const p = await issNow();
+    if (!p) return "Here's the Earth. I couldn't reach the space station's live position just now: ask me again in a moment.";
+    vr.scene?.globeMark?.(p.latitude, p.longitude);
+    // Keep the dot moving while it's up (it goes round the Earth every 90 minutes).
+    const gen = holoGen;
+    issTimer = g.setInterval?.(async () => {
+      if (gen !== holoGen || !vr.active) return stopIss();
+      const q = await issNow();
+      if (q && gen === holoGen) vr.scene?.globeMark?.(q.latitude, q.longitude);
+    }, 5000);
+    return issWords(p);
+  }
+
   // ---- dream mode ---------------------------------------------------------------
   let dreamGen = 0;
   /** What Izuki last offered to show ("build it in 3D?"), and what they had asked. */
@@ -1016,6 +1076,7 @@
         if (c.kind === "dream") return done((await dream(c.ask)) || "Okay.");
         if (c.kind === "dream-end") { vr.scene?.dreamClose?.(); return done("And we're back in your room."); }
         if (c.kind === "holo-hide") { vr.scene?.holoClose?.(); return done("Okay, I put it away."); }
+        if (c.kind === "globe") return done(await globe(c.body, c.iss));
         if (c.kind === "holo-next") return done(holoStep(1));
         if (c.kind === "holo-back") return done(holoStep(-1));
         if (c.kind === "holo-again") return done(holoStep(0));
@@ -1199,7 +1260,7 @@
       vr.scene?.line("izuki", say);
       g.IzukiCore?.speak?.(say);
     },
-    holoClosed() { holoNow = null; holoAt = -1; holoGen++; },
+    holoClosed() { holoNow = null; holoAt = -1; holoGen++; stopIss(); },
     exited() {
       // The Quest app goes back to its launcher, not to a flat chat.
       if (asApp) g.setTimeout?.(launcher, 600);

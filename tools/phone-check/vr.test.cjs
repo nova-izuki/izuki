@@ -950,6 +950,29 @@ test("a real photo of what a hologram shows floats beside it (Wikipedia, credite
   assert.match(HOLO_SYSTEM, /photo: the English Wikipedia article title/);
 });
 
+test("real planets on the projector, and the live space station", () => {
+  const { BODIES, issWords } = helpers;
+  for (const [s, body] of [["show me Mars", "mars"], ["Hey Nova, show me the moon", "moon"], ["what does Jupiter look like", "jupiter"], ["show me the earth", "earth"], ["let me see Saturn up close", "saturn"], ["show me the sun", "sun"]]) {
+    const c = command(s);
+    assert.equal(c?.kind, "globe", `"${s}" shows a planet`);
+    assert.equal(c.body, body);
+  }
+  for (const s of ["where's the space station", "where is the ISS right now?", "track the international space station"]) {
+    const c = command(s);
+    assert.equal(c?.kind, "globe", s);
+    assert.equal(c.iss, true);
+  }
+  assert.equal(command("take me to Mars")?.kind, "dream", "a trip is still a dream");
+  for (const b of Object.values(BODIES)) assert.match(b.map, /^https:\/\/upload\.wikimedia\.org\/wikipedia\/commons\/[0-9a-f]\/[0-9a-f]{2}\/Solarsystemscope_texture_2k_/, "real maps, Wikimedia only");
+  assert.ok(BODIES.saturn.rings && BODIES.sun.glow);
+  assert.match(issWords({ latitude: -48.2, longitude: -61.4, altitude: 438.9, velocity: 27526 }), /439 kilometres up.*48 degrees south and 61 degrees west.*27500 kilometres an hour/);
+  assert.equal(issWords({}), "");
+  assert.match(src, /holoClosed\(\) \{[^}]*stopIss\(\);/, "closing it stops the live updates");
+  const scene = read("docs/app/vr-scene.src.js");
+  assert.match(scene, /"Map: Solar System Scope · CC BY 4\.0"/, "the maps are credited");
+  assert.match(scene, /function globeMark\(lat, lon\)/);
+});
+
 (async () => {
   for (const [name, fn] of tests) {
     try { await fn(); passed++; } catch (e) { console.error(`FAIL ${name}\n  ${e.message}`); process.exitCode = 1; }
