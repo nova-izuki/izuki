@@ -13,8 +13,9 @@ handling. The owner asked for a hand-off like this after every batch of work.
   `quest.yml`) is **submitted to the Meta Horizon Store and in review** (v1, build 1.0.20).
   After approval the owner releases it from the dashboard; then point the
   automatic upload at the store (see "Store uploads" below).
-- **Release 1.0.222** (PC app) carries Freebuff's typed-command, 20-second
-  brain-timeout and agent-notes work, plus the PC side of the new Gemini key format.
+- **Release 1.0.222 is published** (2026-11-23, Latest on GitHub; `latest.json` says 1.0.222, so installed PCs update).
+  It carries Freebuff's typed-command, 20-second brain-timeout and agent-notes work, plus the PC side of the new Gemini key format.
+- **All VR PRs #141–#165 are merged** (web, so izukinova.ai/vr has them once Pages deploys). #167 (physics) is the open one.
 
 ## Shipped in this stretch (merged, or open PRs being merged in order)
 
@@ -33,6 +34,7 @@ handling. The owner asked for a hand-off like this after every batch of work.
 | #160 | PC: `keys.rs` and `bugs.rs` know `AQ.` keys |
 | #161 | VR: a **pinned card takes you back into that chat** (the pin keeps its question; `IzukiCore.recall`) |
 | #162 | **Free natural voice on the device** (Kokoro via kokoro-js 1.2.1, `deviceVoice()`), after Gemini and Groq, before the phone voice; on by itself in a headset; steps aside if too slow |
+| #167 | VR **physics you can watch**: pendulum, thrown ball, feather and hammer, orbit, spring, wave. Real equations stepped per frame (`simShow`/`simTick`), formula and measured numbers on a card, Izuki speaks exact results with no AI (`parseSim`, `simFacts`, `simWords`); voice tweaks while it runs (`SIM_TWEAK`, `tweakSim`: "now on the Moon", "make it longer", "at 30 degrees", "faster", "again") |
 | #164 | VR: **real photos** beside holograms (Wikipedia, `holoPhoto`, `photoUrl`); a headset hides phone-only tools; the Quest app goes straight in from its first launch; the launcher says where "Hey Nova" works |
 | #165 | VR: **real planets** (Solar System Scope maps, CC BY 4.0) on the projector, and the **live ISS** on the Earth (`globeShow`, `globeMark`, api.wheretheiss.at) |
 | #163 | VR **"Draw it": hologram kind `sketch` (`parseSketch`, scene `sketchShow`): tubes and wire solids that draw themselves in, with flow/spin/pulse and step focus; "imagine a <thing>" draws, "imagine a <place>" dreams |
@@ -50,18 +52,20 @@ handling. The owner asked for a hand-off like this after every batch of work.
 
 - A real `AQ.` key, on both the native and the OpenAI-compatible routes. Fake-key probes can't settle it.
 - Voice cut-in thresholds, float mode, Dream mode, the auto-playing lessons and the voice bars, on the headset itself.
+- "Draw it", real photos, planets/ISS and physics were checked in headless Edge only (screens and numbers), not on the Quest yet.
 
 ## Review and workspace notes
 
-- **Merged without a CodeRabbit review** (its free reviews were used up; tests and CI passed): #161, and any of #162–#165 merged while the limit lasted. Run `coderabbit review` on them when it resets, and fix what it finds.
+- **Merged without a CodeRabbit review** (its free reviews were used up; tests and CI passed): #161–#165 and #167. Run `coderabbit review` on them when it resets, and fix what it finds.
 - The CodeRabbit **CLI hit its rate limit** on 2026-11-23. #160–#163 were asked for review on GitHub (`@coderabbitai review`) instead.
+- Physics trap: `new Float32BufferAttribute(arr, 3)` **copies** `arr`, so writing to `arr` later draws nothing. Write to `geo.attributes.position.array` (see `simLine`).
 - `.work/vr` was left with conflicted bridge files: an old 2026-11-03 stash was popped by mistake. The stash entry is still there, and nothing was lost. Check it, or `git checkout HEAD -- <those files>` there; don't commit from it as is. Fresh work used `.work/sketch`, `.work/photos`, `.work/pc-keys` and `.work/rev`.
 - Measured: Kokoro in headless Edge spoke a real WAV. On this laptop's CPU it's far slower than real time (53 s for 4.5 s of speech), and headless WebGPU is software. The Quest's GPU speed is still to be measured.
 
 ## Next (owner's list, in order)
 
 1. Measure "Draw it" and the Kokoro voice on the real Quest 3S, and tune them.
-2. Live simulations (pendulum, projectile, gravity, waves); grab and spin a hologram; "explode it".
+2. ~~Live simulations~~ (done in #167). Next: grab and spin a hologram with your hands; "explode it" (parts fly apart and come back); a slider/hand control for a simulation's numbers.
 3. "Imagine it" pictures. Gemini image models have no free tier, so the only fully free route is a third-party no-key service. Decide with the owner first.
 
 ## Freebuff's queue
