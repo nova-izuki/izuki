@@ -1577,7 +1577,7 @@ export async function start({ mode, session, api, tint }) {
       n.shell?.material.dispose();
       unui(n.body); unui(n.label.mesh);
     }
-    for (const l of holoUi.links) { l.line.geometry.dispose(); l.line.material.dispose(); }
+    for (const l of holoUi.links) { l.line.geometry.dispose(); l.line.material.dispose(); l.pulse?.material.dispose(); }
     if (holoUi.building) { holoUi.building.geometry.dispose(); holoUi.building.material.dispose(); }
     holoUi.stage.clear();
     holoUi.nodes = []; holoUi.links = []; holoUi.building = null;
@@ -1759,7 +1759,11 @@ export async function start({ mode, session, api, tint }) {
     for (const [a, b] of pairs) {
       const line = new Line(new BufferGeometry().setAttribute("position", new Float32BufferAttribute([0, 0, 0, 0, 0, 0], 3)), new LineBasicMaterial({ color: HOLO_COLORS.teal, transparent: true, opacity: 0, depthWrite: false }));
       holoUi.stage.add(line);
-      holoUi.links.push({ line, a, b });
+      // A pulse of light that travels the link: you see it flow from part to part.
+      const pulse = new Sprite(new SpriteMaterial({ map: holoGlow, color: HOLO_COLORS[b.it.color] ?? HOLO_COLORS.teal, transparent: true, opacity: 0, blending: AdditiveBlending, depthWrite: false }));
+      pulse.scale.setScalar(0.05);
+      holoUi.stage.add(pulse);
+      holoUi.links.push({ line, a, b, pulse, off: holoUi.links.length * 0.37 });
     }
   }
   /** Build a hologram from a checked spec (vr.js parseHolo). */
@@ -2074,6 +2078,14 @@ export async function start({ mode, session, api, tint }) {
       pos.needsUpdate = true;
       const lit = holoUi.focus ? (holoUi.focus.has(l.a.i) && holoUi.focus.has(l.b.i) ? 0.7 : 0.12) : 0.45;
       l.line.material.opacity = lit * linkIn;
+      if (l.pulse) {
+        // Along the link, a pass every ~1.2 s: bright on the step being explained.
+        const k = calm ? 0.5 : (now / 1200 + l.off) % 1;
+        l.pulse.position.lerpVectors(l.a.g.position, l.b.g.position, k);
+        const hot = holoUi.focus ? (lit > 0.5 ? 1 : 0.1) : 0.55;
+        l.pulse.material.opacity = (calm ? 0.4 : Math.sin(Math.PI * k)) * hot * linkIn;
+        l.pulse.scale.setScalar(holoUi.focus && lit > 0.5 ? 0.075 : 0.05);
+      }
     }
   }
 
