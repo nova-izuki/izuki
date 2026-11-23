@@ -728,7 +728,10 @@
     return { nx: c(u), ny: c(1 - v) };
   }
 
-  const util = { command, onPc, named, forIzuki, timerWords, parseLook, parseHolo, HOLO_SYSTEM, parseDream, DREAM_SYSTEM, VR_CONTEXT, YES, OFFERS_3D, OFFERS_TRIP, lessonTimes, wrapLines, fitLines, followTarget, pcPoint, angleGap, LOOK_SYSTEM, lookPrompt, ROOM_WORDS, ABOUT_THIS, parseSketch, PLACE_WORDS, photoUrl, BODIES, issWords, parseSim, simSpec, simFacts, simWords, tweakSim, simParams, SIM_TWEAK };
+  // What a headset hides, and the PC menu names that keep saying "Phone" (see headsetPage).
+  const HEADSET_HIDE = ["#go-drive", "#tools-health", "#tools-cockpit", "#tools-pilot", "[data-only]", "#web-install", "#drive-settings", "#screen-allow-row", '#screen-source option[value="phone"]'];
+  const KEEP_PHONE = /Settings\s*→\s*Phone\s*→\s*Call Izuki from your phone|Call Izuki from your phone/g;
+  const util = { command, onPc, named, forIzuki, timerWords, parseLook, parseHolo, HOLO_SYSTEM, parseDream, DREAM_SYSTEM, VR_CONTEXT, YES, OFFERS_3D, OFFERS_TRIP, lessonTimes, wrapLines, fitLines, followTarget, pcPoint, angleGap, LOOK_SYSTEM, lookPrompt, ROOM_WORDS, ABOUT_THIS, parseSketch, PLACE_WORDS, photoUrl, BODIES, issWords, parseSim, simSpec, simFacts, simWords, tweakSim, simParams, SIM_TWEAK, headsetWords, HEADSET_HIDE };
   if (typeof module !== "undefined" && module.exports) { module.exports = util; return; }
 
   // ===========================================================================
@@ -745,13 +748,70 @@
 
   /** What this browser can open: { ar, vr, headset }. */
   let support = { ar: false, vr: false, headset: HEADSET_UA.test(UA) };
-  // A headset isn't a phone: its tools menu leaves out the phone-only ones.
-  if (support.headset && g.document?.documentElement) {
-    g.document.documentElement.classList.add("on-headset");
-    const st = g.document.createElement("style");
-    st.textContent = ".on-headset #go-drive, .on-headset #tools-health, .on-headset #tools-cockpit, .on-headset #tools-pilot { display: none !important; }";
-    g.document.head?.appendChild(st);
+  // A headset isn't a phone. Seen on a Quest: the app showed iPhone alarm setup,
+  // "Install Izuki on this phone", Drive mode and "read this phone's screen".
+  // One place decides it: phone-only parts are hidden, and the app's own words say
+  // "headset" (a pass over the page, and over anything added later). Chat messages,
+  // what you type, and the PC's real menu names ("Settings → Phone") are left alone.
+  /** The app's own phone wording, said for a headset ("this phone's screen" → "this headset's screen"). */
+  function headsetWords(s) {
+    const text = String(s ?? "");
+    if (!/phone/i.test(text)) return text;
+    const kept = [];
+    return text
+      .replace(KEEP_PHONE, (m) => { kept.push(m); return "\u0000" + (kept.length - 1) + "\u0000"; })
+      .replace(/\bphones\b/g, "headsets").replace(/\bPhones\b/g, "Headsets")
+      .replace(/\bphone\b/g, "headset").replace(/\bPhone\b/g, "Headset").replace(/\bPHONE\b/g, "HEADSET")
+      .replace(/\u0000(\d+)\u0000/g, (_, i) => kept[Number(i)]);
   }
+  function headsetPage(doc) {
+    const html = doc.documentElement;
+    html.classList.add("on-headset");
+    const st = doc.createElement("style");
+    st.textContent = HEADSET_HIDE.map((s) => ".on-headset " + s).join(", ") + " { display: none !important; }";
+    doc.head?.appendChild(st);
+    doc.title = "IZUKI NOVA — your AI companion in VR";
+    // Never the conversation, what you type, or code.
+    const SKIP = "#log, script, style, textarea, input, [contenteditable], code, pre";
+    const fixEl = (el) => {
+      for (const a of ["aria-label", "title", "placeholder", "alt"]) {
+        const v = el.getAttribute?.(a);
+        if (v && /phone/i.test(v)) el.setAttribute(a, headsetWords(v));
+      }
+    };
+    const fix = (node) => {
+      if (!node) return;
+      if (node.nodeType === 3) {
+        if (/phone/i.test(node.data) && !node.parentElement?.closest(SKIP)) { const v = headsetWords(node.data); if (v !== node.data) node.data = v; }
+        return;
+      }
+      if (node.nodeType !== 1 || node.closest(SKIP)) return;
+      fixEl(node);
+      const walk = doc.createTreeWalker(node, 1 | 4);
+      for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+        if (n.nodeType === 1) { if (!n.closest(SKIP)) fixEl(n); }
+        else if (/phone/i.test(n.data) && !n.parentElement?.closest(SKIP)) { const v = headsetWords(n.data); if (v !== n.data) n.data = v; }
+      }
+    };
+    const start = () => {
+      fix(doc.body);
+      // "This phone's screen" can't be the screen source on a headset.
+      const src = doc.getElementById("screen-source");
+      if (src && src.value === "phone") { src.value = "ask"; src.dispatchEvent(new Event("change", { bubbles: true })); }
+      try {
+        new MutationObserver((list) => {
+          for (const m of list) {
+            if (m.type === "characterData") fix(m.target);
+            else if (m.type === "attributes") { if (!m.target.closest?.(SKIP)) fixEl(m.target); }
+            else m.addedNodes.forEach(fix);
+          }
+        }).observe(doc.body, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ["aria-label", "title", "placeholder", "alt"] });
+      } catch {}
+    };
+    if (doc.readyState === "loading") doc.addEventListener("DOMContentLoaded", start, { once: true });
+    else start();
+  }
+  if (support.headset && g.document?.documentElement) headsetPage(g.document);
   const supportReady = (async () => {
     const xr = nav.xr;
     if (!xr?.isSessionSupported) return support;
