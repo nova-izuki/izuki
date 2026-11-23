@@ -3787,9 +3787,75 @@
     const joined = joinWavs(wavs);
     return joined ? URL.createObjectURL(new Blob([joined], { type: "audio/wav" })) : null;
   }
-  /** A natural voice for these words: Gemini's, then Orpheus on Groq while Gemini's rests or refuses. */
+  /** A natural voice for these words: Gemini's, then Orpheus on Groq while Gemini's rests or refuses,
+   *  then Kokoro on this device (free, no limits) before the robotic phone voice. */
   async function naturalVoice(t) {
-    return (await geminiVoice(t)) || groqVoice(t);
+    return (await geminiVoice(t)) || (await groqVoice(t)) || deviceVoice(t);
+  }
+
+  // ---- a natural voice on this device (Kokoro) ---------------------------------
+  // The owner kept hitting the free voice's limit in the headset and got the
+  // robotic voice. Kokoro (Apache-2.0, ~90 MB once) speaks on the device itself:
+  // nothing is sent anywhere, and there's no allowance to run out. It loads in
+  // the background the first time it's needed (that reply uses the device's
+  // voice), and steps aside if this device is too slow to keep up.
+  const KOKORO_JS = "https://cdn.jsdelivr.net/npm/kokoro-js@1.2.1/+esm";
+  const KOKORO_MODEL = "onnx-community/Kokoro-82M-v1.0-ONNX";
+  let kokoroP = null, kokoroReady = false, kokoroFailedAt = 0;
+  let kokoroSlow = store.get("kokoroSlow", false);
+  let kokoroSlowRuns = 0;
+  /** On by itself in a headset (Wi-Fi, no phone data plan); elsewhere when switched on in Settings. */
+  function deviceVoiceOn() {
+    const pref = store.get("deviceVoice", "auto");
+    if (pref === false || pref === "off") return false;
+    if (pref === true || pref === "on") return true;
+    return !!(window.IzukiVr?.active || /OculusBrowser|\bQuest\b|PicoBrowser|Wolvic/i.test(navigator.userAgent || ""));
+  }
+  function loadKokoro() {
+    if (kokoroP) return kokoroP;
+    kokoroP = (async () => {
+      const { KokoroTTS } = await import(KOKORO_JS);
+      // WebGPU when the device has it (much faster); otherwise the CPU, with the smaller model.
+      const gpu = !!navigator.gpu;
+      const tts = await KokoroTTS.from_pretrained(KOKORO_MODEL, { dtype: gpu ? "fp32" : "q8", device: gpu ? "webgpu" : "wasm" });
+      kokoroReady = true;
+      note("device voice ready (" + (gpu ? "webgpu" : "wasm") + ")");
+      return tts;
+    })().catch((e) => {
+      kokoroP = null;
+      kokoroFailedAt = Date.now();
+      note("device voice could not load: " + String(e && e.message || e).slice(0, 120));
+      return null;
+    });
+    return kokoroP;
+  }
+  async function deviceVoice(t, budgetMs = 15000) {
+    if (!deviceVoiceOn() || kokoroSlow || !t || Date.now() - kokoroFailedAt < 600000) return null;
+    // Not loaded yet: start it now for the next reply; this one uses the device's voice.
+    if (!kokoroReady) { void loadKokoro(); return null; }
+    const tts = await loadKokoro();
+    if (!tts) return null;
+    const started = Date.now();
+    try {
+      const audio = await Promise.race([
+        tts.generate(String(t), { voice: "af_heart" }),
+        new Promise((_, no) => setTimeout(() => no(new Error("too slow")), budgetMs)),
+      ]);
+      const took = (Date.now() - started) / 1000;
+      const length = audio?.audio?.length && audio.sampling_rate ? audio.audio.length / audio.sampling_rate : 0;
+      // Much slower than the speech itself, twice in a row (the first one warms
+      // up): this device can't keep up, so stop using it.
+      const slow = length && took > Math.max(4, length * 1.6);
+      kokoroSlowRuns = slow ? kokoroSlowRuns + 1 : 0;
+      note("device voice: " + took.toFixed(1) + " s for " + length.toFixed(1) + " s of speech");
+      if (kokoroSlowRuns >= 2) { kokoroSlow = true; store.set("kokoroSlow", true); note("device voice too slow here: using the device's own voice"); }
+      const blob = audio?.toBlob ? audio.toBlob() : null;
+      return blob ? URL.createObjectURL(blob) : null;
+    } catch (e) {
+      note("device voice: " + String(e && e.message || e).slice(0, 120));
+      if (String(e && e.message) === "too slow" && ++kokoroSlowRuns >= 2) { kokoroSlow = true; store.set("kokoroSlow", true); }
+      return null;
+    }
   }
   /** Why there's no voice right now, in a few words (the VR room has no Retry button). */
   function quietWhy() {
