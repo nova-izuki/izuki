@@ -250,6 +250,20 @@ is("do not explain is not a refusal of the answer", mem.wantsDirectAnswer("Answe
   is("the marker is read once from the request", /const forced = forcedDoIt\(text\)/.test(engine), true);
 }
 
+// "Open Chrome" has to stay a local shortcut in the chat too: typed, it used
+// to become a screen job that waits on a brain (49 s in the owner's log).
+// It is read before the screen agent, and a miss falls through instead of
+// guessing at an app that isn't there.
+{
+  const chat = fs.readFileSync(path.join(__dirname, "..", "src", "components", "tabs", "ChatTab.tsx"), "utf8");
+  const instantAt = chat.indexOf("const instant = parseInstant(t)");
+  const agentAt = chat.indexOf("api.submitVoiceCommand(");
+  is("the chat parses open/launch/go-to itself", instantAt > 0, true);
+  is("the chat reads it before the screen agent", instantAt > 0 && agentAt > instantAt, true);
+  is("the chat opens the installed app at once", chat.includes("await api.openApp(instant.name)"), true);
+  is("the chat still tries a known site when no app matches", chat.includes("if (!opened && instant.url)"), true);
+}
+
 console.log("");
 console.log(`${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);
