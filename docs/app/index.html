@@ -60,16 +60,16 @@
 <script src="orb.js"></script>
 <script src="edge-glow.js"></script>
 <script src="apps.js"></script>
-<script src="drive.js"></script>
+<script src="drive.js" defer></script>
 <script src="autopilot.js"></script>
-<script src="agent.js"></script>
-<script src="cockpit.js"></script>
-<script src="pilot.js"></script>
-<script src="remote.js"></script>
-<script src="touchgrass.js"></script>
-<script src="lecture.js"></script>
+<script src="agent.js" defer></script>
+<script src="cockpit.js" defer></script>
+<script src="pilot.js" defer></script>
+<script src="remote.js" defer></script>
+<script src="touchgrass.js" defer></script>
+<script src="lecture.js" defer></script>
 <script type="module" src="tv.js"></script>
-<script src="vr.js"></script>
+<script src="vr.js" defer></script>
 <style>
   :root {
     color-scheme: dark;
@@ -1815,7 +1815,11 @@
     // The first answer bytes within 12 s (a connection left stale while the
     // app was in the background used to hang for the full 30 s); then up to
     // 30 s between pieces.
-    const guard = stallGuard(12000);
+    // 8 s of silence is already a stale connection for plain chatter; a
+    // search-attached answer gets 12 s because Google's search can genuinely
+    // take that long to start.
+    const firstByte = tools ? 12000 : 8000;
+    const guard = stallGuard(firstByte);
     // A search-attached answer takes longer to start: say what it's doing
     // instead of a bare "Thinking…" that looks like nothing is happening.
     if (tools) stage("Looking it up…");
@@ -1839,7 +1843,7 @@
       } catch (e) {
         if (e.name === "AbortError") {
           // Not Stop and not the deadline: one fresh try on the quick model, without search.
-          if (!retried && !requestEnd) { note("gemini: no first answer in 12 s, trying again"); guard.done(); if (turnMeta) turnMeta.fallback = true; return gemini(contents, onText, LITE, true, system, true); }
+          if (!retried && !requestEnd) { note(`gemini: no first answer in ${Math.round(firstByte / 1000)} s, trying again`); guard.done(); if (turnMeta) turnMeta.fallback = true; return gemini(contents, onText, LITE, true, system, true); }
           bug("gemini: no answer in time", { model });
           throw new Error(TOO_SLOW);
         }
