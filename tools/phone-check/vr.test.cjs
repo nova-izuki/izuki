@@ -505,7 +505,7 @@ test("a refused camera gets plain words, not an error dump", async () => {
 // ---- the app's side ----------------------------------------------------------
 test("the app tells the VR room everything it tells the TV", () => {
   const html = read("docs/app/index.html");
-  assert.match(html, /<script src="vr\.js"><\/script>/);
+  assert.match(html, /<script src="vr\.js"( defer)?><\/script>/);
   assert.match(html, /for \(const v of \[window\.IzukiTv, window\.IzukiVr\]\)/);
   for (const hook of ['toViews("orb"', 'toViews("heard"', 'toViews("said"', 'toViews("line"', 'toViews("level"']) assert.ok(html.includes(hook), hook);
   assert.ok(!/window\.IzukiTv\?\.(orb|heard|said|line)\?\./.test(html), "no hook is TV-only any more");

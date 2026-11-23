@@ -64,8 +64,6 @@ html.izos .app > header {
   border-radius: 26px;
   background: linear-gradient(180deg, rgba(22, 26, 44, 0.78), rgba(10, 12, 24, 0.6));
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.38), inset 0 1px 0 rgba(255, 255, 255, 0.07);
-  backdrop-filter: blur(18px) saturate(140%);
-  -webkit-backdrop-filter: blur(18px) saturate(140%);
 }
 
 html.izos .app > header .who {
@@ -201,7 +199,6 @@ html.izos .hero-orb::before {
   z-index: -1;
   border-radius: 50%;
   background: radial-gradient(circle, rgba(139, 108, 255, 0.34), rgba(79, 227, 212, 0.12) 46%, transparent 72%);
-  filter: blur(14px);
 }
 
 html.izos .hero-orb:active {
@@ -467,9 +464,7 @@ html.izos footer::after {
 /* ------------------------------------------------------------ sheets */
 
 html.izos .sheet {
-  background: rgba(4, 5, 10, 0.74);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
+  background: rgba(4, 5, 10, 0.86);
 }
 
 html.izos .panel {
@@ -732,4 +727,293 @@ html.izos .panel > section:not(.open) > .fold-head {
 
 html.izos .panel .folded-away {
   display: none !important;
+}
+/* ================================================================= OS 2 ====
+   More depth on the same frame. Everything below is a static paint — no blur
+   filter, no filter, no looping animation — so an Android phone keeps drawing
+   this at full speed while it scrolls or an answer streams in.
+   ========================================================================= */
+
+/* ---- the bar: lit from the corner, with a hairline of light under it ---- */
+
+html.izos .app > header {
+  background:
+    radial-gradient(130% 160% at 6% -50%, rgba(139, 108, 255, 0.44), transparent 62%),
+    linear-gradient(180deg, rgba(33, 39, 68, 0.88), rgba(11, 14, 26, 0.8));
+  box-shadow:
+    0 18px 44px rgba(0, 0, 0, 0.44),
+    0 1px 0 rgba(79, 227, 212, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.11),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.45);
+}
+
+html.izos .avatar {
+  box-shadow:
+    0 0 0 1.5px rgba(255, 255, 255, 0.24),
+    0 0 0 4px rgba(139, 108, 255, 0.16),
+    0 8px 22px rgba(139, 108, 255, 0.45);
+}
+
+html.izos .who-text span {
+  letter-spacing: 0.02em;
+}
+
+html.izos .icon-btn {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 4px 14px rgba(0, 0, 0, 0.26);
+}
+
+html.izos .icon-btn.on {
+  box-shadow: 0 6px 18px rgba(79, 227, 212, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.45);
+}
+
+/* ---- the home: a halo with rings, not a smudge ------------------------- */
+
+html.izos .hero-orb::before {
+  inset: -14%;
+  background:
+    radial-gradient(circle, rgba(139, 108, 255, 0.3), rgba(79, 227, 212, 0.1) 44%, transparent 70%),
+    radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.05), transparent 58%);
+}
+
+html.izos .hero-orb::after {
+  content: "";
+  position: absolute;
+  inset: -5%;
+  border-radius: 50%;
+  border: 1px solid rgba(188, 208, 255, 0.13);
+  box-shadow: inset 0 0 46px rgba(139, 108, 255, 0.16);
+  pointer-events: none;
+}
+
+html.izos .welcome h1 {
+  text-wrap: balance;
+}
+
+/* widgets carry a corner of their own colour */
+html.izos .pulse {
+  background-image:
+    radial-gradient(130% 100% at 100% -20%, rgba(139, 108, 255, 0.16), transparent 58%),
+    linear-gradient(160deg, rgba(30, 34, 58, 0.9), rgba(12, 14, 26, 0.76));
+}
+
+html.izos .pulse:first-child {
+  background-image:
+    radial-gradient(120% 150% at 0% -40%, rgba(79, 227, 212, 0.2), transparent 62%),
+    linear-gradient(160deg, rgba(34, 42, 70, 0.92), rgba(12, 14, 26, 0.8));
+}
+
+html.izos .pulse:first-child b {
+  font-size: 15px;
+}
+
+html.izos .home-label::before {
+  content: "";
+  display: inline-block;
+  width: 14px;
+  height: 2px;
+  margin-right: 7px;
+  vertical-align: middle;
+  border-radius: 2px;
+  background: var(--os-grad);
+}
+
+html.izos .idea {
+  background-image:
+    radial-gradient(120% 120% at 100% 0%, rgba(139, 108, 255, 0.14), transparent 56%),
+    linear-gradient(160deg, rgba(26, 30, 50, 0.86), rgba(11, 13, 24, 0.74));
+}
+
+html.izos .idea i {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 6px 16px rgba(0, 0, 0, 0.32);
+}
+
+/* ---- the conversation: a sheen on what you sent ------------------------ */
+
+html.izos .me {
+  background-image:
+    linear-gradient(160deg, rgba(255, 255, 255, 0.26), rgba(255, 255, 255, 0) 48%),
+    linear-gradient(135deg, #7b5cff 0%, #4fe3d4 100%);
+}
+
+html.izos .izuki {
+  background-image:
+    radial-gradient(120% 130% at 0% 0%, rgba(139, 108, 255, 0.12), transparent 54%),
+    linear-gradient(180deg, rgba(24, 28, 48, 0.92), rgba(13, 16, 30, 0.86));
+}
+
+html.izos .msg a {
+  color: var(--os-cyan);
+  text-decoration-color: rgba(79, 227, 212, 0.4);
+}
+
+html.izos .ai-status summary {
+  letter-spacing: 0.01em;
+}
+
+/* ---- typing: the capsule lights from below ----------------------------- */
+
+html.izos .composer {
+  background-image:
+    radial-gradient(110% 150% at 50% 150%, rgba(79, 227, 212, 0.1), transparent 60%),
+    linear-gradient(180deg, rgba(26, 30, 50, 0.94), rgba(12, 14, 26, 0.9));
+}
+
+html.izos .composer:focus-within {
+  border-color: rgba(120, 226, 226, 0.5);
+  box-shadow:
+    0 0 0 3px rgba(79, 227, 212, 0.1),
+    0 0 26px rgba(79, 227, 212, 0.13),
+    0 18px 44px rgba(0, 0, 0, 0.5);
+}
+
+html.izos #send,
+html.izos .call-btn {
+  background-image:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.28), rgba(255, 255, 255, 0) 56%),
+    var(--os-grad);
+}
+
+html.izos .btn:not(.ghost):not(.danger) {
+  background-image:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.24), rgba(255, 255, 255, 0) 54%),
+    var(--os-grad);
+}
+
+html.izos footer::after {
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.34), transparent);
+}
+
+/* ---- sheets: a grabber that catches the light, a title with a rule ----- */
+
+html.izos .panel::before {
+  background: linear-gradient(90deg, rgba(196, 214, 245, 0.16), rgba(196, 214, 245, 0.5), rgba(196, 214, 245, 0.16));
+}
+
+html.izos .panel h2 {
+  padding-bottom: 10px;
+  background-image: linear-gradient(90deg, rgba(79, 227, 212, 0.55), rgba(139, 108, 255, 0.35) 40%, transparent 78%);
+  background-repeat: no-repeat;
+  background-size: 100% 1px;
+  background-position: 0 100%;
+}
+
+html.izos .panel > section {
+  background-image: linear-gradient(160deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.012) 60%);
+}
+
+html.izos .panel > section.open {
+  border-color: rgba(188, 208, 255, 0.2);
+  background-image: linear-gradient(160deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.015) 60%);
+}
+
+/* each fold row gets a lit dot, and an open one a divider under its title */
+html.izos .panel > section > .fold-head {
+  justify-content: flex-start;
+}
+
+html.izos .panel > section > .fold-head .fold-chev {
+  margin-left: auto;
+}
+
+html.izos .panel > section > .fold-head::before {
+  content: "";
+  flex: none;
+  width: 7px;
+  height: 7px;
+  margin-right: 10px;
+  border-radius: 50%;
+  background: var(--os-grad);
+  box-shadow: 0 0 0 3px rgba(139, 108, 255, 0.1);
+}
+
+html.izos .panel > section.open > .fold-head {
+  margin-bottom: 8px;
+  box-shadow: 0 1px 0 rgba(188, 208, 255, 0.12);
+}
+
+html.izos .panel > section:not(.open) > .fold-head {
+  margin-bottom: -14px;
+}
+
+html.izos .panel {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(188, 208, 255, 0.22) transparent;
+}
+
+html.izos .panel::-webkit-scrollbar {
+  width: 4px;
+}
+
+html.izos .panel::-webkit-scrollbar-thumb {
+  border-radius: 99px;
+  background: rgba(188, 208, 255, 0.22);
+}
+
+html.izos .suggest {
+  grid-auto-rows: auto;
+}
+
+/* At phone width two idea tiles are about 146 px each, so a title like
+   "What should I wear?" stacks onto three lines and the card grows. One
+   tile per row reads like a phone's own list of suggestions and keeps every
+   word on a comfortable line. */
+@media (max-width: 480px) {
+  html.izos .suggest {
+    grid-template-columns: 1fr;
+  }
+
+  html.izos .idea {
+    padding: 11px 13px;
+  }
+
+  html.izos .idea small {
+    margin-top: 1px;
+  }
+}
+/* ---- tools: four tiles, four colours ---------------------------------- */
+
+html.izos .tool-card {
+  background-image:
+    radial-gradient(120% 100% at 100% 0%, rgba(139, 108, 255, 0.12), transparent 58%),
+    linear-gradient(160deg, rgba(30, 34, 58, 0.9), rgba(12, 14, 26, 0.8));
+  transition: transform 0.14s var(--os-ease), border-color 0.14s var(--os-ease);
+}
+
+html.izos .tool-card:active {
+  transform: scale(0.982);
+  border-color: var(--os-rim-hot);
+}
+
+html.izos .tool-card:nth-child(4n + 1) .tool-icon {
+  background: linear-gradient(150deg, rgba(139, 108, 255, 0.42), rgba(79, 227, 212, 0.18));
+}
+
+html.izos .tool-card:nth-child(4n + 2) .tool-icon {
+  background: linear-gradient(150deg, rgba(79, 227, 212, 0.4), rgba(139, 108, 255, 0.16));
+}
+
+html.izos .tool-card:nth-child(4n + 3) .tool-icon {
+  background: linear-gradient(150deg, rgba(255, 119, 183, 0.4), rgba(255, 196, 107, 0.18));
+}
+
+html.izos .tool-card:nth-child(4n + 4) .tool-icon {
+  background: linear-gradient(150deg, rgba(255, 196, 107, 0.4), rgba(255, 119, 183, 0.16));
+}
+
+/* ---- a call: the rings sit still, the light does the moving ----------- */
+
+html.izos .round i {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 8px 22px rgba(0, 0, 0, 0.34);
+}
+
+html.izos .round.end i {
+  box-shadow: 0 10px 30px rgba(255, 93, 122, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+
+/* ---- small screens keep their air ------------------------------------- */
+
+@media (max-width: 380px) {
+  html.izos .panel h2 {
+    font-size: 18px;
+  }
 }
