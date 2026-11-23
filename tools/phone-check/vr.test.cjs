@@ -773,7 +773,7 @@ test("dream mode in the room: a world shows, wake up ends it, the prompt stays g
   assert.match(DREAM_SYSTEM, /nothing scary, violent or gory/);
   const scene = read("docs/app/vr-scene.src.js");
   assert.match(scene, /function dreamShow\(spec\)/);
-  assert.match(scene, /dreamClose\(\);\n\s*clearTimeout\(noticeTimer\)/, "leaving VR clears the world");
+  assert.match(scene, /dreamClose\(\);\s*clearTimeout\(noticeTimer\)/, "leaving VR clears the world");
   assert.match(src, /if \(c\?\.kind === "dream-end" && !vr\.scene\?\.dreamShown\?\.\(\)\) c = null;/, "\"wake up\" only ends a dream that's on");
   assert.match(src, /dreamGen\+\+;/, "a world being designed when you leave is dropped");
 });
@@ -808,6 +808,11 @@ test("\"Want me to build it in 3D?\" … \"yes\" builds a hologram of what they 
   for (const s of ["yesterday I went out", "no thanks", "maybe later"]) assert.ok(!YES.test(s), s);
   assert.ok(OFFERS_3D.test("Lava pushes up through the crust. Want me to build it in 3D?"));
   assert.ok(!OFFERS_3D.test("It's 3 degrees outside."));
+  assert.ok(OFFERS_3D.test("Would you like me to show it in 3D?"));
+  assert.ok(!OFFERS_3D.test("I can't build that in 3D. Want a longer explanation?"), "a refusal isn't an offer");
+  const { OFFERS_TRIP } = helpers;
+  assert.ok(OFFERS_TRIP.test("Want me to take you there?"));
+  assert.ok(!OFFERS_TRIP.test("I can't take you there. Would you like a longer explanation?"), "a refusal isn't a trip");
   const holoJson = JSON.stringify({ title: "Volcano", kind: "steps", say: "Here's how.", items: [{ label: "Magma" }, { label: "Vent" }], steps: [] });
   const b = browser({ think: async () => holoJson });
   const first = await b.vr.gate("how do volcanoes erupt");

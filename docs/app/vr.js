@@ -297,8 +297,9 @@
 
   // "Want me to build it in 3D?" … "yes": a short yes builds what they asked about.
   const YES = whole(String.raw`yes|yeah|yep|yup|sure|ok(?:ay)?|please|do\s+it|go\s+ahead|yes\s+please|let'?s\s+do\s+it|let'?s\s+go|build\s+it|show\s+me|take\s+me(?:\s+there)?|why\s+not|definitely|absolutely|of\s+course`);
-  const OFFERS_3D = /\b(?:build|show|make)\s+(?:it|that|this|you\s+that|one)\s+in\s+3\s?d\b|\bin\s+3\s?d\?/i;
-  const OFFERS_TRIP = /\btake\s+you\s+there\b/i;
+  // Only an invitation counts (\"Want me to…?\"), never \"I can't take you there\".
+  const OFFERS_3D = /\b(?:want|would\s+you\s+like|shall\s+i|should\s+i|how\s+about)\b[^.?!]{0,30}\bin\s+3\s?d\s*\?/i;
+  const OFFERS_TRIP = /\b(?:want|would\s+you\s+like|shall\s+i|should\s+i|how\s+about)\b[^.?!]{0,30}\btake\s+you\s+there\s*\?/i;
 
   // ---- dream mode: a whole world around you, designed from your words ----------
   const DREAM = new RegExp(LEAD + "(?:" + [
@@ -468,7 +469,7 @@
     return { nx: c(u), ny: c(1 - v) };
   }
 
-  const util = { command, onPc, named, forIzuki, timerWords, parseLook, parseHolo, HOLO_SYSTEM, parseDream, DREAM_SYSTEM, VR_CONTEXT, YES, OFFERS_3D, wrapLines, fitLines, followTarget, pcPoint, angleGap, LOOK_SYSTEM, lookPrompt };
+  const util = { command, onPc, named, forIzuki, timerWords, parseLook, parseHolo, HOLO_SYSTEM, parseDream, DREAM_SYSTEM, VR_CONTEXT, YES, OFFERS_3D, OFFERS_TRIP, wrapLines, fitLines, followTarget, pcPoint, angleGap, LOOK_SYSTEM, lookPrompt };
   if (typeof module !== "undefined" && module.exports) { module.exports = util; return; }
 
   // ===========================================================================
