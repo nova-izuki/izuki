@@ -723,6 +723,15 @@ test("holograms look projected: a projector, a scan line, wire cages, and calm s
   assert.match(scene, /n\.shell\?\.material\.dispose\(\)/, "cages are cleaned up with their hologram");
 });
 
+test("the Quest app opens a full-screen way in, even over an old chat", () => {
+  assert.match(src, /function launcher\(\)/);
+  assert.match(src, /if \(wanted\) supportReady\.then\(\(\) => g\.setTimeout\?\.\(launcher/, "any ?vr visit gets the launcher, whatever the page shows");
+  assert.match(src, /exited\(\) \{\s*\/\/[^\n]*\n\s*if \(asApp\) g\.setTimeout\?\.\(launcher/, "leaving the room in the app goes back to the launcher");
+  assert.match(src, /Enter the room/);
+  assert.match(src, /Chat here instead/);
+  assert.match(src, /prefers-reduced-motion:reduce\)\{\.vr-launch-orb\{animation:none\}/, "the orb stays still with reduced motion");
+});
+
 (async () => {
   for (const [name, fn] of tests) {
     try { await fn(); passed++; } catch (e) { console.error(`FAIL ${name}\n  ${e.message}`); process.exitCode = 1; }
