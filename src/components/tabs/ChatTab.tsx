@@ -22,6 +22,7 @@ import { chatTitle, orderSessions, pinSession, rememberSession, removeSession, r
 import { clarificationFor, friendlyProviderError, providerRefusal, PROVIDER_REFUSAL_NOTE } from "../../lib/chatIntent";
 import { isNoteStudyPrompt } from "../../lib/notes";
 import { answerOnScreenPrompt, answersOnScreenQuestion, forgetHistory, looksLikeDirections, MISSION_ADD, needsApps, opensAnApp, recentHistory, shareHistory, wantsDirectAnswer } from "../../lib/conversation";
+import { parseInstant } from "../../lib/instant";
 
 /**
  * Izuki as a plain chat companion — no screen, no mouse. Ask anything,
@@ -1038,6 +1039,37 @@ export function ChatTab() {
           setBusy(false);
         }
         return;
+      }
+      // "Open Chrome", "launch Notepad", "go to amazon.com": the same local
+      // shortcut the orb and voice already take — Windows starts it at once,
+      // with no brain to wait on. Typed here it used to become a job for the
+      // screen agent, which on a slow or rate-limited free brain could spend
+      // the better part of a minute on what Windows does in a blink.
+      if (!note && !here && !images.length && !attached.length) {
+        const instant = parseInstant(t);
+        if (instant) {
+          const appName = instant.name.charAt(0).toUpperCase() + instant.name.slice(1);
+          let opened: string | null = null;
+          if (instant.kind === "play") {
+            const title = await api.playYoutube(instant.name).catch(() => null);
+            opened = title ? `Playing ${title}.` : `Here's ${instant.name} on YouTube — pick the one you want.`;
+          } else {
+            if (instant.kind === "app") {
+              opened = await api.openApp(instant.name).then(() => `Opening ${appName}.`).catch(() => null);
+            }
+            // Not installed by that name: a known site still opens straight away.
+            if (!opened && instant.url) {
+              opened = await api.openUrl(instant.url).then(() => `Opening ${appName}.`).catch(() => null);
+            }
+          }
+          if (opened) {
+            if (streamId.current !== id) return;
+            setLast({ content: opened, status: undefined });
+            streamId.current = null;
+            setBusy(false);
+            return;
+          }
+        }
       }
       // "Answer this" / "what's the answer to number 3": read the actual
       // question on screen. This used to fall through to the Study-log
