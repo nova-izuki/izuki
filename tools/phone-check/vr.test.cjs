@@ -786,7 +786,7 @@ test("Izuki can float beside your other apps (a room hides them; a window doesn'
   assert.match(src, /last === "float"[\s\S]{0,120}goFloat\(\)/, "the app remembers floating");
   assert.match(src, /if \(ok && !chosen && box\.isConnected\) goFloat\(\)/, "a tap you made first wins over the automatic float");
   assert.match(src, /last !== "float" && can\) void straightIn\(\)/, "the app goes into the room from its first launch, unless you chose floating");
-  assert.match(src, /\.on-headset #go-drive, \.on-headset #tools-health, \.on-headset #tools-cockpit, \.on-headset #tools-pilot/, "a headset's tools leave out the phone-only ones");
+  assert.match(src, /HEADSET_HIDE = \["#go-drive", "#tools-health", "#tools-cockpit", "#tools-pilot"/, "a headset's tools leave out the phone-only ones");
   assert.match(src, /In the room, say \\u201cHey Nova\\u201d any time/, "it says where Hey Nova works");
   assert.doesNotMatch(src, /openedOnce/, "the old explainer no longer opens under the launcher");
 });
@@ -1057,6 +1057,22 @@ test("physics: change it by voice while it runs (\"now on the moon\", \"make it 
   const scene = read("docs/app/vr-scene.src.js");
   assert.match(scene, /st\.w \+= \(-\(g \/ L\) \* Math\.sin\(st\.th\)\) \* h;/, "the pendulum is the real equation, wide swings included");
   assert.match(scene, /const pos = geo\.attributes\.position\.array;/, "lines are drawn from the array the GPU gets (three copies the one you pass)");
+});
+
+test("a headset isn't a phone: phone-only parts hide, the app's words say headset", () => {
+  const { headsetWords, HEADSET_HIDE } = helpers;
+  assert.equal(headsetWords("Allow Izuki to read this phone's screen"), "Allow Izuki to read this headset's screen");
+  assert.equal(headsetWords("Remote — control your PC from this phone"), "Remote — control your PC from this headset");
+  assert.equal(headsetWords("Phone voice"), "Headset voice");
+  assert.equal(headsetWords("PHONE READINESS"), "HEADSET READINESS");
+  for (const s of ["your microphone", "headphones on", "an iPhone", "a telephone"]) assert.equal(headsetWords(s), s, `"${s}" isn't about this phone`);
+  // The PC's real menu names stay as they are, or the pairing steps would be wrong.
+  assert.equal(headsetWords("on the PC, Izuki → Settings → Phone → Call Izuki from your phone, then scan the QR code."),
+    "on the PC, Izuki → Settings → Phone → Call Izuki from your phone, then scan the QR code.");
+  for (const id of ["#go-drive", "[data-only]", "#web-install", "#drive-settings", "#screen-allow-row"]) assert.ok(HEADSET_HIDE.includes(id), id);
+  const page = read("docs/app/index.html");
+  for (const id of ["drive-settings", "screen-allow-row", "web-install", "go-drive"]) assert.match(page, new RegExp(`id="${id}"`), `the page still has #${id}`);
+  assert.match(src, /const SKIP = "#log, script, style, textarea, input/, "never rewrites the conversation or what you type");
 });
 
 (async () => {
