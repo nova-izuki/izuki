@@ -175,6 +175,8 @@
     if (HOLO_NEXT.test(s)) return { kind: "holo-next" };
     if (HOLO_BACK.test(s)) return { kind: "holo-back" };
     if (HOLO_AGAIN.test(s)) return { kind: "holo-again" };
+    const hv = HOLO_VIEW.find(([, re]) => re.test(s));
+    if (hv) return { kind: "holo-view", what: hv[0] };
     if (ISS.test(s)) return { kind: "globe", body: "earth", iss: true };
     const sp = s.match(SPACE);
     if (sp) return { kind: "globe", body: BODY_OF[sp[1].toLowerCase().replace(/\s+/g, " ")] || "earth" };
@@ -266,6 +268,24 @@
   const ABOUT_HERE = /\b(?:this|that|these|those|it)\s*[.!?]*$|\bhow\s+(?:this|that|it)\s+works?\b|\b(?:this|that|these|those)\s+(?:thing|one|stuff|here)\b/i;
   const HOLO_NEXT = whole(String.raw`next(?:\s+(?:step|one|part))?|go\s+on|continue|keep\s+going|and\s+then|what'?s\s+next`);
   const HOLO_BACK = whole(String.raw`(?:go\s+)?back|previous(?:\s+(?:step|one))?|last\s+step`);
+  // Handling a hologram (only while one is up; the gate checks the holo- prefix).
+  const HOLO_VIEW = [
+    ["apart", whole(String.raw`(?:explode|break|pull|take|split)\s+(?:it|that|this|them|the\s+\w+)(?:\s+(?:apart|open|up))?|(?:explode|exploded\s+view)|show\s+me\s+(?:the\s+)?(?:inside|parts|insides)|open\s+it\s+up|what'?s\s+inside`)],
+    ["together", whole(String.raw`put\s+(?:it|them)\s+(?:back\s+)?together|(?:put|bring)\s+(?:it|them)\s+back|assemble\s+(?:it|them)|close\s+it\s+up|back\s+together|rebuild\s+it`)],
+    ["still", whole(String.raw`stop\s+(?:spinning|turning|rotating)(?:\s+it)?|(?:hold|keep)\s+(?:it\s+)?still|stop\s+it\s+(?:spinning|turning)|freeze(?:\s+it)?`)],
+    ["around", whole(String.raw`(?:turn|flip)\s+it\s+(?:all\s+the\s+way\s+)?(?:around|round|over)|show\s+me\s+(?:the\s+)?(?:back|other\s+side)|(?:the\s+)?other\s+side`)],
+    ["spin", whole(String.raw`(?:spin|rotate|turn)\s+(?:it|that|this|them)(?:\s+(?:round|around|slowly))?|(?:make\s+it|let\s+it)\s+(?:spin|rotate|turn)|keep\s+(?:it\s+)?(?:spinning|turning)`)],
+    ["bigger", whole(String.raw`(?:make\s+(?:it|that|this)\s+)?(?:bigger|larger)|zoom\s+in|enlarge\s+it|grow\s+it|i\s+can'?t\s+see\s+it`)],
+    ["smaller", whole(String.raw`(?:make\s+(?:it|that|this)\s+)?smaller|zoom\s+out|shrink\s+it|too\s+big`)],
+  ];
+  const HOLO_SAY = {
+    spin: "Spinning it. Say stop spinning when you want it still, or grab a part and turn it yourself.",
+    still: "Holding it still.", around: "Here's the other side.",
+    bigger: "Bigger.", biggest: "That's as big as it goes.", smaller: "Smaller.", smallest: "That's as small as it goes.",
+    apart: "Pulled apart, so you can see every part on its own. Tap any part to hear about it, and say put it back together when you're done.",
+    "no-parts": "This one doesn't come apart. Try spin it, turn it around, or make it bigger.",
+    together: "Back together.",
+  };
   const HOLO_AGAIN = whole(String.raw`(?:say\s+(?:that|it)\s+)?again|repeat(?:\s+(?:that|it))?|one\s+more\s+time`);
   const HOLO_HIDE = whole(String.raw`(?:close|hide|clear|put\s+away|remove)\s+(?:the\s+|that\s+|this\s+)?(?:hologram|model|simulation|sim|lesson|diagram|map|timeline|chart|3\s?d(?:\s+thing)?)|close\s+it|put\s+it\s+away`);
   // Timers that float by the orb, and a breathing exercise the orb leads.
@@ -744,7 +764,7 @@
   // What a headset hides, and the PC menu names that keep saying "Phone" (see headsetPage).
   const HEADSET_HIDE = ["#go-drive", "#tools-health", "#tools-cockpit", "#tools-pilot", "[data-only]", "#web-install", "#drive-settings", "#screen-allow-row", '#screen-source option[value="phone"]'];
   const KEEP_PHONE = /Settings\s*→\s*Phone\s*→\s*Call Izuki from your phone|Call Izuki from your phone/g;
-  const util = { command, onPc, named, forIzuki, timerWords, parseLook, parseHolo, HOLO_SYSTEM, parseDream, DREAM_SYSTEM, VR_CONTEXT, YES, OFFERS_3D, OFFERS_TRIP, lessonTimes, wrapLines, fitLines, followTarget, pcPoint, angleGap, LOOK_SYSTEM, lookPrompt, ROOM_WORDS, ABOUT_THIS, parseSketch, PLACE_WORDS, photoUrl, BODIES, issWords, parseSim, simSpec, simFacts, simWords, tweakSim, simParams, SIM_TWEAK, headsetWords, HEADSET_HIDE, ytUrl };
+  const util = { command, onPc, named, forIzuki, timerWords, parseLook, parseHolo, HOLO_SYSTEM, parseDream, DREAM_SYSTEM, VR_CONTEXT, YES, OFFERS_3D, OFFERS_TRIP, lessonTimes, wrapLines, fitLines, followTarget, pcPoint, angleGap, LOOK_SYSTEM, lookPrompt, ROOM_WORDS, ABOUT_THIS, parseSketch, PLACE_WORDS, photoUrl, BODIES, issWords, HOLO_VIEW, HOLO_SAY, parseSim, simSpec, simFacts, simWords, tweakSim, simParams, SIM_TWEAK, headsetWords, HEADSET_HIDE, ytUrl };
   if (typeof module !== "undefined" && module.exports) { module.exports = util; return; }
 
   // ===========================================================================
@@ -1343,6 +1363,7 @@
         if (c.kind === "holo-next") return done(holoStep(1));
         if (c.kind === "holo-back") return done(holoStep(-1));
         if (c.kind === "holo-again") return done(holoStep(0));
+        if (c.kind === "holo-view") return done(HOLO_SAY[vr.scene?.holoView?.(c.what)] || "Okay.");
         if (c.kind === "timer") { vr.scene?.timerStart?.(c.ms, timerWords(c.ms)); return done("Timer set for " + timerWords(c.ms) + ". It's floating by me."); }
         if (c.kind === "timer-stop") return done(vr.scene?.timerStop?.() ? "Okay, timer cancelled." : "There's no timer running.");
         if (c.kind === "breathe") { vr.scene?.breathe?.(4); return done("Let's breathe together. Follow me: breathe in as I grow, hold, and breathe out slowly as I shrink."); }

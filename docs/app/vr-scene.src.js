@@ -465,6 +465,7 @@ export async function start({ mode, session, api, tint }) {
     const u = p.hit.object.userData.ui;
     const drag = u.drag ? u.drag() : null;
     p.press = { u, obj: p.hit.object, hit: p.hit, drag, grabOnly, dist: p.hit.distance, start: p.hit.point.clone(), offset: drag ? drag.position.clone().sub(p.hit.point) : null, moved: false, t0: performance.now() };
+    if (!drag && u.turn) p.press.turn = turnStart(u.turn());
     buzz(p, 0.35, 20);
     if (!grabOnly) { try { u.down?.(p); } catch (e) { console.warn("vr down", e); } }
   }
@@ -485,7 +486,7 @@ export async function start({ mode, session, api, tint }) {
     let best = null, bestD = Infinity;
     for (const m of targets) {
       const u = m.userData.ui;
-      if (!(u.drag || u.grab) || !shown(m)) continue;
+      if (!(u.drag || u.grab || u.turn) || !shown(m)) continue;
       const g = m.geometry;
       if (!g.boundingBox) g.computeBoundingBox();
       // The pinch, in the thing's own space: inside its box, or just off its face.
@@ -502,6 +503,11 @@ export async function start({ mode, session, api, tint }) {
       if (d < bestD) { bestD = d; best = { m, u }; }
     }
     if (!best) return false;
+    if (!(best.u.drag || best.u.grab) && best.u.turn) {
+      p.press = { u: best.u, obj: best.m, hit: null, drag: null, turn: turnStart(best.u.turn()), direct: true, grabOnly: false, start: grabAt.clone(), moved: false, t0: performance.now() };
+      buzz(p, 0.5, 28);
+      return true;
+    }
     const obj = (best.u.drag || best.u.grab)();
     if (!obj) return false;
     p.press = { u: best.u, obj: best.m, hit: null, drag: obj, direct: true, grabOnly: false, offset: obj.position.clone().sub(grabAt), start: grabAt.clone(), moved: false, t0: performance.now() };
@@ -514,6 +520,8 @@ export async function start({ mode, session, api, tint }) {
     p.press = null;
     if (!pr) return;
     if (!pr.grabOnly) { try { pr.u.up?.(performance.now() - pr.t0, completed && !pr.moved); } catch (e) { console.warn("vr up", e); } }
+    // Let go of a turn mid-swing and it keeps spinning, slowing down.
+    if (pr.moved && pr.turn) { holoUi.view.spin = Math.max(-4, Math.min(4, pr.turn.vel)); return; }
     if (pr.moved) { pr.u.dropped?.(); return; }
     // A pinch right on something that didn't move it: a tap on the spot it touched.
     if (pr.direct) {
@@ -1483,7 +1491,9 @@ export async function start({ mode, session, api, tint }) {
   // floats in your real room (passthrough) or the calm space alike.
   const HOLO_COLORS = { teal: 0x5eead4, sky: 0x7dd3fc, violet: 0xc4b5fd, rose: 0xfda4af, amber: 0xfcd34d, lime: 0xbef264, white: 0xe9eef7 };
   const holoHex = (c) => "#" + (HOLO_COLORS[c] ?? HOLO_COLORS.teal).toString(16).padStart(6, "0");
-  const holoUi = { group: new Group(), stage: new Group(), open: false, spec: null, nodes: [], links: [], bar: card(0.86, 0.1), t0: 0, focus: null, step: -1, building: null, btns: [] };
+  const holoUi = { group: new Group(), stage: new Group(), open: false, spec: null, nodes: [], links: [], bar: card(0.86, 0.1), t0: 0, focus: null, step: -1, building: null, btns: [], view: null };
+  const freshView = () => ({ spin: 0, spinT: 0, size: 1, sizeT: 1, turnT: null, ex: 0, exT: 0 });
+  holoUi.view = freshView();
   holoUi.group.visible = false;
   holoUi.group.add(holoUi.stage, holoUi.bar.mesh);
   holoUi.bar.mesh.position.set(0, -0.42, 0.02);
@@ -1584,6 +1594,10 @@ export async function start({ mode, session, api, tint }) {
     simClear();
     holoUi.stage.clear();
     holoUi.nodes = []; holoUi.links = []; holoUi.building = null;
+    holoUi.view = freshView();
+    holoUi.stage.rotation.set(0, 0, 0);
+    holoUi.stage.scale.setScalar(1);
+    holoUi.stage.position.set(0, 0, 0);
   }
   function placeHolo() {
     // In front of you, a little further than the orb; to the right when your PC's screen has the middle.
@@ -1690,7 +1704,7 @@ export async function start({ mode, session, api, tint }) {
     }
     const n = { it, i, g, body, mat, glow, label, shell, r, kind, base: new Vector3(), angle: 0, speed: 0, orbitR: 0, parent: null, shown: 0, emph: 1 };
     const more = () => api.ask?.(`Tell me more about ${it.label}` + (spec.title ? `, in ${spec.title}` : "") + ".");
-    ui(body, { tap: more, hover: (on) => { n.hot = on; } });
+    ui(body, { tap: more, hover: (on) => { n.hot = on; }, turn: () => holoUi.stage });
     ui(label.mesh, { tap: more, hover: (on) => { n.hot = on; } });
     return n;
   }
@@ -1799,10 +1813,11 @@ export async function start({ mode, session, api, tint }) {
   // Shapes come in a box from -1 to 1 (vr.js parseSketch); here they are scaled
   // to about 64 cm, drawn in one after another, and things flow along the lines.
   const SK = 0.32;
-  const sketchUi = { parts: [], made: [] };
+  const sketchUi = { parts: [], made: [], turnables: [] };
   function sketchClear() {
     for (const o of sketchUi.made) { try { o.dispose(); } catch {} }
-    sketchUi.parts = []; sketchUi.made = [];
+    for (const m of sketchUi.turnables) unui(m);
+    sketchUi.parts = []; sketchUi.made = []; sketchUi.turnables = [];
   }
   function sketchShow(spec) {
     const keep = (o) => { sketchUi.made.push(o); return o; };
@@ -1913,6 +1928,7 @@ export async function start({ mode, session, api, tint }) {
       const count = tube ? tube.geometry.index.count : 0;
       if (tube && !calm) tube.geometry.setDrawRange(0, 0);
       sketchUi.parts.push({ s, i, g, tube, count, path, flows, label, lineMat, solid, emph: 1 });
+      for (const m of [tube, solid && g.children.find((h) => h.isGroup)?.children[0]]) if (m) { ui(m, { turn: () => holoUi.stage }); sketchUi.turnables.push(m); }
       const pts = s.points.length ? s.points : [s.center];
       for (const p of pts) reach = Math.max(reach, Math.abs(p[0] * SK) + (s.type === "line" || s.type === "curve" || s.type === "arrow" ? 0 : s.radius * SK));
     });
@@ -1991,7 +2007,8 @@ export async function start({ mode, session, api, tint }) {
   function globeClear() {
     for (const o of globeUi.made) { try { o.dispose(); } catch {} }
     if (globeUi.credit) unui(globeUi.credit.mesh);
-    Object.assign(globeUi, { mesh: null, mark: null, made: [], credit: null });
+    if (globeUi.turnable) unui(globeUi.turnable);
+    Object.assign(globeUi, { mesh: null, mark: null, made: [], credit: null, turnable: null });
   }
   function globeShow({ title, map, rings, glow }) {
     holoClear();
@@ -2033,6 +2050,8 @@ export async function start({ mode, session, api, tint }) {
     credit.mesh.position.set(0, -0.15, 0.05);
     holoUi.stage.add(credit.mesh);
     globeUi.mesh = mesh; globeUi.credit = credit;
+    ui(mesh, { turn: () => holoUi.stage, tap: () => api.ask?.("Tell me something amazing about " + title + ".") });
+    globeUi.turnable = mesh;
     holoUi.reach = r * (rings ? 2.1 : 1.3);
     projShow(holoUi.reach + 0.06, true);
     drawHoloBar();
@@ -2361,6 +2380,79 @@ export async function start({ mode, session, api, tint }) {
     if (read && now - simUi.readAt > 160) { simUi.readAt = now; simRead(read()); }
   }
 
+  // ---- handling a hologram: turn it by hand, spin, size, pull it apart ---------------
+  function turnStart(obj) {
+    return { obj, yaw0: obj.rotation.y, vel: 0, lastYaw: obj.rotation.y, lastT: performance.now() };
+  }
+  const turnRight = new Vector3();
+  /** Sideways hand movement (across the hologram) turns it: about a full turn for 90 cm. */
+  function turnMove(pr, pt, now) {
+    const t = pr.turn;
+    turnRight.set(1, 0, 0).applyQuaternion(holoUi.group.quaternion);
+    const yaw = t.yaw0 + pt.clone().sub(pr.start).dot(turnRight) * 7;
+    const dt = Math.max(1, now - t.lastT) / 1000;
+    t.vel = t.vel * 0.6 + ((yaw - t.lastYaw) / dt) * 0.4;
+    t.lastYaw = yaw; t.lastT = now;
+    t.obj.rotation.y = yaw;
+    holoUi.view.spin = 0; holoUi.view.turnT = null;
+  }
+  function viewTick(dt) {
+    const v = holoUi.view, st = holoUi.stage;
+    v.size += (v.sizeT - v.size) * Math.min(1, dt * 5);
+    st.scale.setScalar(v.size);
+    // Bigger grows up out of the projector, not down through it.
+    st.position.y = (v.size - 1) * 0.12;
+    v.spin += (v.spinT - v.spin) * Math.min(1, dt * 1.2);
+    if (Math.abs(v.spin) > 0.001) st.rotation.y += dt * v.spin;
+    if (v.turnT != null) {
+      const d = v.turnT - st.rotation.y;
+      st.rotation.y += d * Math.min(1, dt * 3.5);
+      if (Math.abs(d) < 0.003) { st.rotation.y = v.turnT; v.turnT = null; }
+    }
+    v.ex += (v.exT - v.ex) * Math.min(1, dt * (calm ? 20 : 3));
+    // The real photo beside it moves out as the hologram grows or comes apart.
+    if (holoPic.card) holoPic.card.mesh.position.x = Math.max(0.62, ((holoUi.reach || 0.4) + v.ex * 0.2) * v.size + 0.26);
+  }
+  /** Which way each part flies when it's pulled apart: away from the middle. */
+  function explodeDirs() {
+    // Away from the middle, fanned out in depth and height too (a row of parts
+    // would only slide sideways), and never far down into the projector.
+    const dirOf = (p, i) => {
+      const d = p.clone();
+      if (d.length() < 0.02) d.set(Math.cos(i * 2.4), 0.35, Math.sin(i * 2.4));
+      d.normalize().add(new Vector3(0, 0.3 * Math.sin(i * 2.4 + 1), 0.55 * Math.cos(i * 2.4)));
+      d.y = Math.max(-0.2, d.y);
+      return d.normalize();
+    };
+    if (holoUi.spec?.kind === "sketch") {
+      if (sketchUi.parts.length < 2) return false;
+      const c = new Vector3();
+      const at = sketchUi.parts.map((p) => new Vector3(...(p.s.points.length ? p.s.points.reduce((a, q) => [a[0] + q[0] / p.s.points.length, a[1] + q[1] / p.s.points.length, a[2] + q[2] / p.s.points.length], [0, 0, 0]) : p.s.center)));
+      at.forEach((v) => c.add(v)); c.multiplyScalar(1 / at.length);
+      sketchUi.parts.forEach((p, i) => { p.exDir = dirOf(at[i].sub(c), i); });
+      return true;
+    }
+    const free = holoUi.nodes.filter((n) => !n.parent);
+    if (free.length < 2 || !["model", "map"].includes(holoUi.spec?.kind)) return false;
+    const c = new Vector3();
+    free.forEach((n) => c.add(n.base)); c.multiplyScalar(1 / free.length);
+    free.forEach((n) => { n.exDir = dirOf(n.base.clone().sub(c), n.i); });
+    return true;
+  }
+  /** What you asked for: "spin", "still", "around", "bigger", "smaller", "apart", "together". Says how it went. */
+  function holoView(what) {
+    if (!holoUi.open || !holoUi.spec) return "";
+    const v = holoUi.view;
+    if (what === "spin") { v.spinT = 0.7; v.turnT = null; return "spin"; }
+    if (what === "still") { v.spinT = 0; v.spin = 0; return "still"; }
+    if (what === "around") { v.spinT = 0; v.spin = 0; v.turnT = holoUi.stage.rotation.y + Math.PI; return "around"; }
+    if (what === "bigger") { v.sizeT = Math.min(2.4, v.sizeT * 1.4); return v.sizeT >= 2.4 ? "biggest" : "bigger"; }
+    if (what === "smaller") { v.sizeT = Math.max(0.45, v.sizeT / 1.4); return v.sizeT <= 0.45 ? "smallest" : "smaller"; }
+    if (what === "apart") { if (!explodeDirs()) return "no-parts"; v.exT = 1; return "apart"; }
+    if (what === "together") { v.exT = 0; return "together"; }
+    return "";
+  }
+
   /** A lesson's step: its parts light up, the rest dim. null: all lit. */
   function holoFocus(list, step) {
     holoUi.step = step ?? holoUi.step;
@@ -2622,7 +2714,13 @@ export async function start({ mode, session, api, tint }) {
     projTick(dt, now);
     holoTime.value = now / 1000;
     if (holoUi.building) { holoUi.building.rotation.y += dt * 1.4; holoUi.building.rotation.x = 0.5; return; }
-    if (holoUi.spec?.kind === "sketch") { sketchTick(dt, now); return; }
+    viewTick(dt);
+    if (holoUi.spec?.kind === "sketch") {
+      sketchTick(dt, now);
+      const ex = holoUi.view.ex;
+      for (const p of sketchUi.parts) if (p.exDir) p.g.position.copy(p.exDir).multiplyScalar(ex * 0.17);
+      return;
+    }
     if (holoUi.spec?.kind === "globe") { globeTick(dt, now); return; }
     if (holoUi.spec?.kind === "sim") { simTick(dt, now); return; }
     const age = now - holoUi.t0;
@@ -2635,8 +2733,9 @@ export async function start({ mode, session, api, tint }) {
         holoTmp.set(Math.cos(n.angle) * n.orbitR, Math.sin(n.angle) * n.orbitR * 0.22, Math.sin(n.angle) * n.orbitR * 0.85);
         n.g.position.copy(n.parent.g.position).add(holoTmp);
         n.ring.position.copy(n.parent.g.position);
-      } else if (!calm) {
-        n.g.position.set(n.base.x, n.base.y + Math.sin(now / 1400 + n.i) * 0.004, n.base.z);
+      } else {
+        n.g.position.set(n.base.x, n.base.y + (calm ? 0 : Math.sin(now / 1400 + n.i) * 0.004), n.base.z);
+        if (n.exDir && holoUi.view.ex > 0.001) n.g.position.addScaledVector(n.exDir, holoUi.view.ex * 0.2);
       }
       const want = holoUi.focus ? (holoUi.focus.has(n.i) ? 1.18 : 0.32) : n.hot ? 1.1 : 1;
       n.emph += (want - n.emph) * Math.min(1, dt * 6);
@@ -2898,7 +2997,11 @@ export async function start({ mode, session, api, tint }) {
       if (hit) { p.dot.position.copy(hit.point).addScaledVector(p.dir, -0.003); p.dot.lookAt(p.origin); }
       if (p.line) p.line.scale.z = hit ? hit.distance : 1.2;
       const pr = p.press;
-      if (pr?.direct) {
+      if (pr?.turn) {
+        const pt = pr.direct ? grabPoint(p, grabAt) : p.origin.clone().addScaledVector(p.dir, pr.dist);
+        if (!pr.moved && pt.distanceTo(pr.start) > (pr.direct ? 0.012 : 0.03)) pr.moved = true;
+        if (pr.moved) turnMove(pr, pt, now);
+      } else if (pr?.direct) {
         grabPoint(p, grabAt);
         if (!pr.moved && grabAt.distanceTo(pr.start) > 0.012) pr.moved = true;
         if (pr.moved) { pr.drag.position.copy(grabAt).add(pr.offset); faceHead(pr.drag); }
@@ -3046,6 +3149,9 @@ export async function start({ mode, session, api, tint }) {
     globeShow,
     globeMark,
     simShow,
+    holoView,
+    /** The hologram's view right now (checks read it). */
+    holoViewNow: () => ({ ...holoUi.view, yaw: holoUi.stage.rotation.y }),
     simShown: () => holoUi.open && holoUi.spec?.kind === "sim",
     /** The running simulation's state (checks and tests read it). */
     simProbe: () => (simUi.st ? { ...simUi.st, type: simUi.spec?.type } : null),
