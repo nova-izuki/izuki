@@ -1075,6 +1075,25 @@ test("a headset isn't a phone: phone-only parts hide, the app's words say headse
   assert.match(src, /const SKIP = "#log, script, style, textarea, input/, "never rewrites the conversation or what you type");
 });
 
+test("\"play … on YouTube\" leaves the room and opens YouTube (a tap if the headset blocks it)", async () => {
+  const { ytUrl } = helpers;
+  const cases = [["play lofi music on youtube", "lofi music"], ["Hey Nova, open YouTube", ""], ["open youtube and play minecraft", "minecraft"],
+    ["youtube cat videos", "cat videos"], ["watch a video about volcanoes", "volcanoes"], ["show me a video of the moon landing", "the moon landing"], ["take me to youtube", ""]];
+  for (const [s, q] of cases) assert.deepEqual(plain(command(s)), { kind: "youtube", q }, s);
+  assert.equal(command("search for cats")?.kind, "web", "a search stays in the room's browser");
+  assert.equal(command("play some music"), null);
+  assert.equal(ytUrl("lofi & chill"), "https://www.youtube.com/results?search_query=lofi%20%26%20chill");
+  assert.equal(ytUrl(""), "https://www.youtube.com/");
+  const b = browser();
+  let stopped = 0;
+  b.scene.stop = () => { stopped++; };
+  const r = await b.vr.gate("play lofi music on youtube");
+  assert.match(r.say, /^Opening YouTube for lofi music\. The 3D room can't show videos/);
+  await new Promise((res) => setTimeout(res, 30));
+  assert.equal(stopped, 1, "the room closes so the video can play");
+  assert.match(src, /play\.href = url; play\.target = "_blank"; play\.rel = "noopener";/, "the fallback is a real link: a tap opens it even where a script can't");
+});
+
 (async () => {
   for (const [name, fn] of tests) {
     try { await fn(); passed++; } catch (e) { console.error(`FAIL ${name}\n  ${e.message}`); process.exitCode = 1; }
