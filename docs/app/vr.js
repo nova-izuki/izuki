@@ -729,7 +729,7 @@
   // ---- pinned notes ---------------------------------------------------------
   const notes = {
     list() { const l = store.get("notes", []); return Array.isArray(l) ? l.filter((n) => n && typeof n.text === "string") : []; },
-    add(text) { const l = notes.list(); l.push({ text: String(text).slice(0, 600), at: Date.now() }); while (l.length > 8) l.shift(); store.set("notes", l); return l; },
+    add(text, ask = "") { const l = notes.list(); l.push({ text: String(text).slice(0, 600), ask: String(ask || "").slice(0, 200), at: Date.now() }); while (l.length > 8) l.shift(); store.set("notes", l); return l; },
     remove(at) { store.set("notes", notes.list().filter((n) => n.at !== at)); },
   };
 
@@ -931,7 +931,7 @@
         if (c.kind === "come") { vr.scene?.comeHere(); return done("Here I am."); }
         if (c.kind === "pin") {
           if (!lastReply) return done("There's nothing to pin yet. Ask me something first.");
-          vr.scene?.pin(lastReply);
+          vr.scene?.pin(lastReply, undefined, false, lastAsk);
           return done("Pinned. Drag it anywhere you like.");
         }
         if (c.kind === "pc-hide") { vr.scene?.pcClose(); return done("Okay, I put your PC away."); }
@@ -1108,6 +1108,14 @@
     look: () => g.IzukiCore?.ask?.("What am I looking at?"),
     pc,
     notes,
+    /** A pinned card tapped: back into that conversation (the chat carries on from it). */
+    resume(n) {
+      const ask = String(n?.ask || ""), text = String(n?.text || "");
+      if (!text) return;
+      if (ask) lastAsk = ask;
+      g.IzukiCore?.recall?.(ask, text);
+      g.IzukiCore?.speak?.((ask ? "Back to: " + ask.replace(/[.?!\s]+$/, "") + ". " : "") + text + " What would you like to know next?");
+    },
     openPhoto,
     thumb,
     isPicture,
@@ -1181,7 +1189,7 @@
       try { await session?.end(); } catch {}
       throw e;
     }
-    for (const n of notes.list()) vr.scene.pin(n.text, n.at, true);
+    for (const n of notes.list()) vr.scene.pin(n.text, n.at, true, n.ask || "");
     // "Hey Nova" in the room: listening hands-free from the start, like a
     // headset's own assistant; only what's said to Izuki is answered.
     const core = g.IzukiCore;

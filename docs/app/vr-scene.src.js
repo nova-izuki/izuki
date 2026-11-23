@@ -2110,9 +2110,9 @@ export async function start({ mode, session, api, tint }) {
     const i = pinned.indexOf(item);
     if (i >= 0) pinned.splice(i, 1);
   }
-  function pin(text, at, restoring = false) {
+  function pin(text, at, restoring = false, ask = "") {
     if (!restoring) {
-      const list = api.notes.add(text);
+      const list = api.notes.add(text, ask);
       at = list[list.length - 1]?.at ?? Date.now();
       // Only the newest eight are kept: the card of one that dropped out goes too.
       const kept = new Set(list.map((n) => n.at));
@@ -2125,7 +2125,9 @@ export async function start({ mode, session, api, tint }) {
       const { ctx, w, h } = c;
       glass(ctx, w, h, 44);
       icon(ctx, "pin", 62, 66, 34, INK2, 7);
-      write(ctx, "Pinned", 88, 76, 28, INK2, 600, "left", DISPLAY, "0.02em");
+      // What you asked, so you know which chat a tap takes you back to.
+      ctx.font = `600 28px ${DISPLAY}`;
+      write(ctx, ask ? ellipsize(ctx, "Pinned · " + ask, w - 140) : "Pinned", 88, 76, 28, INK2, 600, "left", DISPLAY, "0.02em");
       const measure = (s, size) => { ctx.font = `500 ${size}px ${FONT}`; return ctx.measureText(s).width; };
       const fit = util.fitLines(text, w - 96, 6, 34, 22, measure);
       let y = 92;
@@ -2142,7 +2144,8 @@ export async function start({ mode, session, api, tint }) {
     while (used.has(slot)) slot++;
     const item = { group, c, x, at, text, slot };
     pinned.push(item);
-    ui(c.mesh, { tap: () => api.speak(text), drag: () => group });
+    // A tap goes back into that conversation (older pins without a question just read out).
+    ui(c.mesh, { tap: () => (api.resume ? api.resume({ text, ask }) : api.speak(text)), drag: () => group });
     ui(x.mesh, { tap: () => { dropCard(item); api.notes.remove(at); } });
     if (placed) placeNote(item);
     else group.visible = false;

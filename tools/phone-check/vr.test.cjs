@@ -202,7 +202,7 @@ function browser({ camera = false, see = async () => "{}", denied = false, pcs =
   const vr = window.IzukiVr;
   vr.active = true;
   vr.scene = scene;
-  return { vr, calls, scene, stopped: () => stopped, opens: () => opens };
+  return { vr, calls, scene, core: window.IzukiCore, stopped: () => stopped, opens: () => opens };
 }
 
 test("a camera that won't play is let go of at once", async () => {
@@ -879,6 +879,27 @@ test("with a photo open, \"this\" means the photo (seen on a real Quest: it talk
   assert.ok(seen, "it really looked");
   assert.equal(seen[1].b64, "QUJD", "through the headset camera");
   assert.doesNotMatch(system(b), /own photos/, "the room named: the camera, not the photo");
+});
+
+test("a pinned card takes you back into that chat", async () => {
+  const b = browser();
+  await b.vr.gate("how far is the moon");
+  b.vr.line("izuki", "About 384,000 kilometres away.");
+  await b.vr.gate("pin that");
+  assert.ok(b.calls.some((c) => c[0] === "pin"), "the answer is pinned");
+  assert.match(src, /vr\.scene\?\.pin\(lastReply, undefined, false, lastAsk\)/, "with the question that led to it");
+  const api = b.vr.api();
+  api.notes.add("About 384,000 kilometres away.", "how far is the moon");
+  const saved = plain(api.notes.list().pop());
+  assert.equal(saved.ask, "how far is the moon", "the pin remembers what you asked");
+  const recalled = [], spoken = [];
+  b.core.recall = (q, a) => recalled.push([q, a]);
+  b.core.speak = (t) => spoken.push(t);
+  api.resume(saved);
+  assert.deepEqual(recalled, [["how far is the moon", "About 384,000 kilometres away."]], "the chat carries on from it");
+  assert.match(spoken[0], /^Back to: how far is the moon\. About 384,000/);
+  assert.match(read("docs/app/index.html"), /recall: \(q, a\) => \{/, "the app takes the exchange back into its history");
+  assert.match(read("docs/app/vr-scene.src.js"), /api\.resume \? api\.resume\(\{ text, ask \}\)/, "tapping the card resumes it");
 });
 
 (async () => {
