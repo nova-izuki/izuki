@@ -293,6 +293,7 @@
 
   /* the live call */
   #live { position: fixed; inset: 0; z-index: 20; display: flex; flex-direction: column; align-items: center; justify-content: space-between;
+    overflow-y: auto; overscroll-behavior: contain;
     padding: calc(var(--safe-top) + 20px) 20px calc(var(--safe-bottom) + 26px);
     background: radial-gradient(80% 50% at 50% 40%, rgba(60, 40, 120, 0.55), transparent 70%), rgba(7, 6, 14, 0.94);
     backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px); }
@@ -300,7 +301,8 @@
   .live-top { text-align: center; }
   .live-top b { display: block; font-size: 22px; }
   .live-top span { color: var(--muted); font-size: 13.5px; }
-  #live-orb { width: min(78vw, 330px); aspect-ratio: 1; border: 0; padding: 0; background: none; border-radius: 50%; }
+  /* the height cap keeps the buttons on screen when the keyboard is up */
+  #live-orb { width: min(78vw, 330px, 46vh); aspect-ratio: 1; border: 0; padding: 0; background: none; border-radius: 50%; }
   .lines { width: 100%; max-width: 520px; text-align: center; display: flex; flex-direction: column; gap: 10px; min-height: 7em; }
   #live-status { color: var(--muted); font-size: 14.5px; min-height: 1.4em; }
   #live-heard { font-size: 20px; line-height: 1.35; color: var(--ink); font-weight: 600; }

@@ -63,12 +63,13 @@
 }
 .pl-run.stop { background: #fb7185; color: #2a0710; }
 .pl-run:disabled { opacity: 0.4; }
-.pl-chips { display: flex; gap: 6px; overflow-x: auto; padding: 8px 0 2px; scrollbar-width: none; }
-.pl-chips::-webkit-scrollbar { display: none; }
+.pl-chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 0 2px; }
 .pl-chips button {
-  flex: none; border: 1px solid rgba(94, 234, 212, 0.18); border-radius: 999px;
+  flex: 0 1 auto; min-width: 0; max-width: 100%;
+  border: 1px solid rgba(94, 234, 212, 0.18); border-radius: 999px;
   background: rgba(94, 234, 212, 0.06); color: var(--muted, #9aa3b5);
   padding: 6px 9px; font: inherit; font-size: 11px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .pl-log {
   min-height: 84px; max-height: 190px; overflow-y: auto; margin-top: 10px;

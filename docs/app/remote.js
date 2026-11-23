@@ -40,7 +40,7 @@
   const $ = (sel) => root.querySelector(sel);
 
   const css = `
-  .izr{position:fixed;inset:0;z-index:2147482000;background:#0b0d16;color:#fff;display:flex;flex-direction:column;font:14px system-ui,-apple-system,Segoe UI,sans-serif}
+  .izr{position:fixed;inset:0;z-index:2147482000;background:#0b0d16;color:#fff;display:flex;flex-direction:column;overflow-y:auto;overscroll-behavior:contain;font:14px system-ui,-apple-system,Segoe UI,sans-serif}
   .izr header{display:flex;align-items:center;gap:8px;padding:10px 12px;padding-top:max(10px,env(safe-area-inset-top))}
   .izr header b{flex:1;font-size:16px}
   .izr button{background:rgba(255,255,255,.1);color:#fff;border:1px solid rgba(255,255,255,.14);border-radius:12px;padding:10px 12px;font:inherit;font-weight:600;touch-action:manipulation}
