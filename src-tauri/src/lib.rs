@@ -354,6 +354,7 @@ pub fn run() {
             commands::task_status,
             commands::set_overlay_wheel,
             commands::frontend_log,
+            commands::mic_windows_advice,
             commands::list_memories,
             commands::add_memory,
             commands::delete_memory,

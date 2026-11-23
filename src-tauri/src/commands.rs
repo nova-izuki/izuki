@@ -224,6 +224,15 @@ pub fn close_overlay(app: AppHandle) -> R<()> {
     overlay::hide_overlay(&app).map_err(err)
 }
 
+/// A microphone that only sent silence: what Windows says about it, in
+/// words to show (muted, or turned right down), or `None` when it's on.
+#[tauri::command]
+pub fn mic_windows_advice() -> Option<String> {
+    let state = crate::instant::mic_state();
+    eprintln!("[mic] Windows says the default microphone is {:?} (muted, level)", state);
+    crate::instant::mic_advice(state)
+}
+
 #[tauri::command]
 pub fn set_overlay_interactive(app: AppHandle, interactive: bool) -> R<()> {
     overlay::set_overlay_interactive(&app, interactive).map_err(err)

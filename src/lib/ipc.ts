@@ -1348,6 +1348,8 @@ export const api = {
   /** "Scroll down", "louder", "next song"…: done at once in Rust with no AI;
    *  the few words to say back, or null when it isn't one (instant.rs). */
   instantCommand: (said: string) => call<string | null>("instant_command", { said }, () => null),
+  /** A mic that only sent silence: Windows' own reason (muted, turned down), or null. */
+  micWindowsAdvice: () => call<string | null>("mic_windows_advice", {}, () => null),
   submitVoiceCommand: (prompt: string, recent?: Array<{ role: "user" | "assistant"; content: string }>) =>
     call<VisionPlan>("submit_voice_command", { prompt, recent: recent?.slice(-8) ?? null }, () => ({
       steps: [],

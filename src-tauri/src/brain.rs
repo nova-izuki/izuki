@@ -892,6 +892,36 @@ fn better_text(from_window: String, from_pixels: String) -> String {
     }
 }
 
+/// The next look takes a screenshot again: set when a step failed or a
+/// page-only look wasn't enough (see [`page_look`]).
+static PICTURE_NEXT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// What a page-only look tells the brain.
+const PAGE_LOOK: &str = "READING THE PAGE ITSELF (no screenshot this look, it's faster): the numbered page elements and the page's text below ARE what's on screen right now. Act on them by number. If you truly need to see it (a picture, a chart, the layout), give no steps and say so, and you'll get a screenshot on the next look.";
+
+/// A request about how things look needs the picture, whatever the page says.
+fn needs_picture(prompt: &str) -> bool {
+    let latest = prompt.split("\n\n(The conversation just before,").next().unwrap_or(prompt).to_lowercase();
+    let padded = format!(" {} ", latest.replace(|c: char| !c.is_alphanumeric() && c != '\'', " "));
+    [" screen ", " picture ", " pictures ", " image ", " images ", " photo ", " photos ", " look at ", " see ", " colour ", " color ", " video ",
+     " chart ", " graph ", " map ", " draw ", " point ", " circle ", " highlight ", " what's this ", " what is this ", " this one ", " that one ",
+     " design ", " layout ", " looks ", " watch ", " game ", " captcha ", " where is the ", " where's the "]
+        .iter()
+        .any(|w| padded.contains(w))
+}
+
+/// Seen 2026-11-23: every agent step on a web page sent a screenshot (about
+/// 3,700 tokens: Groq's free per-minute allowance ran out after one or two
+/// looks) and waited 3.5–7 s on a vision model, even though the extension had
+/// already read the page's 60 real elements and its text. With enough of
+/// them, and nothing visual asked, the look is the page itself: no picture,
+/// a faster text answer, the same numbered targets (clicked through the
+/// extension, no mouse). A failed step or a reply with nothing to do brings
+/// the picture back for the next look.
+fn page_look(prompt: &str, page_controls: usize, page_text: &str, zoomed: bool, picture_asked: bool) -> bool {
+    !zoomed && !picture_asked && page_controls >= 8 && page_text.trim().len() >= 80 && !needs_picture(prompt)
+}
+
 /// `wants_action`: the request is something to *do* (not a question), so a
 /// reply that does nothing can't win the race — see [`good_enough`].
 fn ask_model(
@@ -958,6 +988,7 @@ fn ask_model(
     // only show your tab — and every step goes into that page by number.
     let tab_mode = crate::ext::check_tab_hidden();
     let mut tab_title = String::new();
+    let mut page_controls = 0usize;
     if tab_mode {
         controls.clear();
         page_text.clear();
@@ -979,6 +1010,7 @@ fn ask_model(
             } else {
                 String::new()
             };
+            page_controls = page.elements.len();
             merge_page(&mut controls, &mut page_text, page);
             if !behind.is_empty() {
                 page_text.push_str("\n");
@@ -995,7 +1027,15 @@ fn ask_model(
         });
     }
     crate::tags::draw(&mut scaled, &desktop, &controls);
-    let image_jpeg = if tab_mode { Vec::new() } else { scaled.to_jpeg(80)? };
+    let picture_asked = PICTURE_NEXT.swap(false, std::sync::atomic::Ordering::SeqCst);
+    let text_only = !tab_mode && page_controls > 0 && page_look(&session.prompt, page_controls, &page_text, zoomed, picture_asked);
+    if text_only {
+        eprintln!("[brain] reading the page itself — {page_controls} elements, no screenshot this look");
+        page_text = format!("{PAGE_LOOK}\n{page_text}");
+    }
+    // Kept for a second try with the picture when the page alone wasn't enough.
+    let picture = if text_only { Some(scaled.clone()) } else { None };
+    let image_jpeg = if tab_mode || text_only { Vec::new() } else { scaled.to_jpeg(80)? };
 
     let ocr_text = session
         .marks
@@ -1056,7 +1096,17 @@ fn ask_model(
     // instead of doing it ("no brain acted" 35 times in one user's log, all
     // from an 11B model). They stay as backups.
     smartest_first(&mut chain);
+    let retry = picture.as_ref().map(|_| req.clone());
     let mut plan = ask_racing(&chain, req, prep_ms, wants_action)?;
+    // Something to do, and the page alone gave no step: look at the picture now.
+    if let (Some(mut again), Some(pic)) = (retry, picture) {
+        if wants_action && plan.steps.is_empty() && !plan.done {
+            eprintln!("[brain] the page alone wasn't enough — looking at the screenshot");
+            again.image_jpeg = pic.to_jpeg(80)?;
+            again.page_text = again.page_text.replacen(PAGE_LOOK, "", 1);
+            plan = ask_racing(&chain, again, prep_ms, wants_action)?;
+        }
+    }
     // Marks aimed at words go exactly where those words really are.
     anchor_marks(&mut plan.steps, frame);
     // "Remind me…" said while it works the screen: set it, don't say the tag.
@@ -5011,6 +5061,8 @@ fn submit_task(
         }
         if let Some(why) = &snag {
             eprintln!("[agent] a step failed — {why}");
+            // After a failure, look at the real screen, not just the page's list.
+            PICTURE_NEXT.store(true, std::sync::atomic::Ordering::SeqCst);
             if why.starts_with("final_repeat:") {
                 remember_final_warning(&mut done_so_far);
                 set_unfinished((prompt.clone(), done_so_far.clone()));
@@ -6760,6 +6812,27 @@ mod speed_tests {
     }
 
     use super::*;
+
+    #[test]
+    fn a_web_page_is_read_not_photographed_unless_the_picture_matters() {
+        let text = "Pizza places near me · Domino's 0.4 mi · Papa John's 1.1 mi · Order online · Directions · Reviews".repeat(2);
+        assert!(page_look("find a pizza place near me and open the closest", 60, &text, false, false));
+        assert!(page_look("fill in my name and email on this form", 25, &text, false, false));
+        // How things look needs the picture.
+        for p in ["what's on my screen", "what is this picture", "click the red button in the image", "watch this video", "where is the login button"] {
+            assert!(!page_look(p, 60, &text, false, false), "{p}");
+        }
+        // Too little to go on, a close-up, or a failed step: the picture.
+        assert!(!page_look("open the closest one", 5, &text, false, false));
+        assert!(!page_look("open the closest one", 60, "short", false, false));
+        assert!(!page_look("open the closest one", 60, &text, true, false));
+        assert!(!page_look("open the closest one", 60, &text, false, true));
+        // Only the latest request counts, not the conversation tacked on after it.
+        assert!(page_look("open the closest one
+
+(The conversation just before, oldest first: \"what's on my screen\")", 60, &text, false, false));
+    }
+
 
     #[test]
     fn reads_host_and_port_from_a_local_address() {

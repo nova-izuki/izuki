@@ -550,6 +550,22 @@ function noteSilence(label: string, level: number) {
   deafMics.add(label);
   heardBest = null;
   log(`mic "${label}" sent only silence (level ${level.toFixed(4)}) — using another mic from the next listen`);
+  // Windows may have it muted or turned right down (seen 2026-11-23: muted
+  // at 28% for eleven days). Say so once, with the fix.
+  void api.micWindowsAdvice().then((advice) => {
+    if (!advice || windowsMicTold) return;
+    windowsMicTold = true;
+    log(`mic: ${advice}`);
+    micAdviceListeners.forEach((f) => f(advice));
+  }).catch(() => undefined);
+}
+
+let windowsMicTold = false;
+const micAdviceListeners = new Set<(advice: string) => void>();
+/** Hear about a microphone Windows has muted or turned down (once per run). */
+export function onMicAdvice(f: (advice: string) => void): () => void {
+  micAdviceListeners.add(f);
+  return () => void micAdviceListeners.delete(f);
 }
 
 /** Whether this webview can record at all. */
