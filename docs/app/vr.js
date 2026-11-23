@@ -1188,7 +1188,9 @@
     const chat = mk("button", "vr-launch-chat", "Chat here instead");
     chat.type = "button";
     const close = () => box.remove();
-    chat.onclick = close;
+    // Your own tap wins over the automatic start below, even one still pending.
+    let chosen = false;
+    chat.onclick = () => { chosen = true; close(); };
     // Floating beside your other apps: a full room hides them (Meta's rule for
     // immersive apps), but a window can sit next to them. The hands-free call
     // screen is the floating Izuki: an orb, captions, Mute and End.
@@ -1200,8 +1202,9 @@
       close();
       g.document.getElementById("go-live")?.click();
     };
-    float.onclick = goFloat;
+    float.onclick = () => { chosen = true; goFloat(); };
     go.onclick = async () => {
+      chosen = true;
       store.set("launch", "room");
       // No key or microphone yet: the explainer walks through both, then goes in.
       if (!can || !g.IzukiCore?.ready?.() || !(await micAllowed())) { close(); void openSheet(); return; }
@@ -1220,7 +1223,7 @@
     // Your last choice from the app's icon: straight into the room, or
     // floating beside your apps. The first time, you choose.
     const last = store.get("launch", "");
-    if (asApp && last === "float" && support.headset && g.IzukiCore?.ready?.()) void micAllowed().then((ok) => { if (ok) goFloat(); });
+    if (asApp && last === "float" && support.headset && g.IzukiCore?.ready?.()) void micAllowed().then((ok) => { if (ok && !chosen && box.isConnected) goFloat(); });
     else if (asApp && last === "room" && can) void straightIn().then((inside) => { if (inside) close(); });
   }
   if (wanted) supportReady.then(() => g.setTimeout?.(launcher, 250), () => g.setTimeout?.(launcher, 250));
