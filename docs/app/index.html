@@ -5880,6 +5880,9 @@
     const panel = $("sheet")?.querySelector(".panel");
     if (!panel || panel.dataset.folded === "1") return;
     panel.dataset.folded = "1";
+    // This panel is the Settings screen's; the skin's sticky title bar and its
+    // zero top padding belong to this screen and nothing else.
+    panel.classList.add("settings");
     let open = 0;
     for (const sec of panel.querySelectorAll(":scope > section")) {
       const head = sec.querySelector("h3");

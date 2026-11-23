@@ -545,7 +545,8 @@ html.izos .tools-advanced button {
 }
 
 html.izos .guide-panel {
-  border-radius: 32px 32px 0 0;
+  /* it floats above the screen edge, so it is a card, not a bottom sheet */
+  border-radius: 32px;
 }
 
 /* -------------------------------------------------------------- live call */
@@ -944,8 +945,6 @@ html.izos .panel > section:not(.open) > .fold-head {
 }
 
 html.izos .panel {
-  scrollbar-width: thin;
-  scrollbar-color: rgba(188, 208, 255, 0.22) transparent;
 }
 
 html.izos .panel::-webkit-scrollbar {
@@ -1022,24 +1021,26 @@ html.izos .round.end i {
 
 /* The Settings title and its Done button used to scroll away under 24
    sections. They ride at the top of the sheet now, and the grabber stays
-   visible above them. */
-html.izos .panel {
+   visible above them. Scoped to the panel `.settings` marks: another screen
+   in this sheet must keep its own padding and its own header. */
+html.izos .panel.settings {
   position: relative;
   padding-top: 0;
   scroll-padding-top: 62px;
 }
 
-html.izos .panel > .row:first-child {
+html.izos .panel.settings > .row:first-child {
   position: sticky;
   top: 0;
   z-index: 4;
   margin: 0 -14px;
   padding: 20px 14px 12px;
+  border-radius: 32px 32px 0 0;
   background: linear-gradient(180deg, #141a2c 74%, rgba(20, 26, 44, 0.94));
   border-bottom: 1px solid rgba(188, 208, 255, 0.12);
 }
 
-html.izos .panel::before {
+html.izos .panel.settings::before {
   z-index: 5;
 }
 
@@ -1178,6 +1179,39 @@ html.izos:has(#live:not([hidden])) .update-bar {
 
 html.izos .panel::-webkit-scrollbar-track {
   background: transparent;
+}
+/* Every sheet that scrolls gets the same quiet bar, not the browser's
+   grey rail with arrows. */
+html.izos .guide-panel,
+html.izos .tools-panel,
+html.izos .pl-sheet,
+html.izos #izuki-cockpit,
+html.izos #izuki-pilot {
+}
+
+html.izos .guide-panel::-webkit-scrollbar,
+html.izos .tools-panel::-webkit-scrollbar,
+html.izos .pl-sheet::-webkit-scrollbar,
+html.izos #izuki-cockpit::-webkit-scrollbar,
+html.izos #izuki-pilot::-webkit-scrollbar {
+  width: 4px;
+}
+
+html.izos .guide-panel::-webkit-scrollbar-track,
+html.izos .tools-panel::-webkit-scrollbar-track,
+html.izos .pl-sheet::-webkit-scrollbar-track,
+html.izos #izuki-cockpit::-webkit-scrollbar-track,
+html.izos #izuki-pilot::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+html.izos .guide-panel::-webkit-scrollbar-thumb,
+html.izos .tools-panel::-webkit-scrollbar-thumb,
+html.izos .pl-sheet::-webkit-scrollbar-thumb,
+html.izos #izuki-cockpit::-webkit-scrollbar-thumb,
+html.izos #izuki-pilot::-webkit-scrollbar-thumb {
+  border-radius: 99px;
+  background: rgba(188, 208, 255, 0.22);
 }
 /* ---- small screens keep their air ------------------------------------- */
 
