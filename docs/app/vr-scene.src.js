@@ -776,31 +776,76 @@ export async function start({ mode, session, api, tint }) {
     ctx.drawImage(lookUi.img, 0, 0, w, h);
     ctx.restore();
     const n = lookUi.marks.length;
+    // Steps point at buttons that sit close together on a screen: smaller rings,
+    // labels beside them instead of below.
+    const r = w * (lookUi.steps ? 0.03 : 0.065);
+    const at = (m) => ({ x: (m.x / 1000) * w, y: (m.y / 1000) * h });
     lookUi.marks.forEach((m, i) => {
       const p = Math.max(0, Math.min(1, progress * n - i));
       if (p <= 0) return;
-      const x = (m.x / 1000) * w, y = (m.y / 1000) * h, r = w * 0.065;
+      const { x, y } = at(m);
+      // "Show me where": a path from the last step to this one, then its number.
+      if (lookUi.steps && i > 0) drawStepPath(ctx, at(lookUi.marks[i - 1]), { x, y }, r, Math.min(1, p * 2));
       // The pen: a teal circle drawn round it, lifted off any photo by a soft dark shadow.
       ctx.save();
       ctx.shadowColor = "rgba(0,0,0,0.55)"; ctx.shadowBlur = 10; ctx.shadowOffsetY = 3;
       ctx.strokeStyle = TEAL; ctx.lineWidth = 6; ctx.lineCap = "round";
       ctx.beginPath(); ctx.arc(x, y, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * p); ctx.stroke();
       ctx.restore();
+      if (lookUi.steps && n > 1 && p > 0.3) {
+        const bx = Math.min(w - 26, Math.max(26, x - r * 0.75)), by = Math.min(h - 26, Math.max(26, y - r * 0.75));
+        ctx.save();
+        ctx.shadowColor = "rgba(0,0,0,0.5)"; ctx.shadowBlur = 8;
+        ctx.fillStyle = TEAL; ctx.beginPath(); ctx.arc(bx, by, 22, 0, Math.PI * 2); ctx.fill();
+        ctx.restore();
+        ctx.font = `700 26px ${FONT}`;
+        const num = String(i + 1);
+        write(ctx, num, bx - ctx.measureText(num).width / 2, by + 9, 26, "#0b1016", 700);
+      }
       if (p > 0.85 && m.label) {
         ctx.font = `600 28px ${FONT}`;
         const tw = ctx.measureText(m.label).width;
-        const lx = Math.min(w - tw - 40, Math.max(10, x - tw / 2 - 16)), ly = y + r + 12 > h - 50 ? y - r - 56 : y + r + 12;
+        let lx = Math.min(w - tw - 40, Math.max(10, x - tw / 2 - 16)), ly = y + r + 12 > h - 50 ? y - r - 56 : y + r + 12;
+        if (lookUi.steps) {
+          lx = x + r + 16 + tw + 32 <= w - 10 ? x + r + 16 : Math.max(10, x - r - 16 - tw - 32);
+          ly = Math.min(h - 54, Math.max(10, y - 22));
+        }
         rr(ctx, lx, ly, tw + 32, 44, 22); ctx.fillStyle = "rgba(14,16,22,0.88)"; ctx.fill();
         write(ctx, m.label, lx + 16, ly + 31, 28, INK, 600);
       }
     });
     ph.update();
   }
+  /** A dashed teal line from one step's ring to the next, with an arrowhead once it arrives. */
+  function drawStepPath(ctx, a, b, r, t) {
+    const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy);
+    if (len <= 2 * r + 12) return;
+    const ux = dx / len, uy = dy / len;
+    const sx = a.x + ux * (r + 6), sy = a.y + uy * (r + 6);
+    const run = (len - 2 * r - 12) * t;
+    const ex = sx + ux * run, ey = sy + uy * run;
+    ctx.save();
+    ctx.shadowColor = "rgba(0,0,0,0.5)"; ctx.shadowBlur = 8;
+    ctx.strokeStyle = TEAL; ctx.lineWidth = 5; ctx.lineCap = "round";
+    ctx.setLineDash([16, 12]);
+    ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(ex, ey); ctx.stroke();
+    ctx.setLineDash([]);
+    if (t >= 1) {
+      const s = 18, px = -uy, py = ux;
+      ctx.fillStyle = TEAL;
+      ctx.beginPath();
+      ctx.moveTo(ex + ux * 4, ey + uy * 4);
+      ctx.lineTo(ex - ux * s + px * s * 0.6, ey - uy * s + py * s * 0.6);
+      ctx.lineTo(ex - ux * s - px * s * 0.6, ey - uy * s - py * s * 0.6);
+      ctx.closePath(); ctx.fill();
+    }
+    ctx.restore();
+  }
   function showLookWaiting() {
     if (!lookUi.group.visible) return;
     lookUi.say = "Looking…"; drawLookText();
   }
-  async function showLook({ url, w, h, marks, say, picked }) {
+  async function showLook({ url, w, h, marks, say, picked, steps }) {
     // A late answer for a photo you closed stays closed; one you pick again opens.
     if (picked) lookUi.closed = "";
     else if (url === lookUi.closed) return;
@@ -824,6 +869,7 @@ export async function start({ mode, session, api, tint }) {
       lookUi.close.mesh.position.set(pw / 2 - 0.01, 0.1 + phH / 2 - 0.01, 0.005);
     }
     lookUi.marks = Array.isArray(marks) ? marks : [];
+    lookUi.steps = !!steps;
     lookUi.say = String(say || "");
     lookUi.t0 = performance.now();
     lookUi.anim = lookUi.marks.length > 0;

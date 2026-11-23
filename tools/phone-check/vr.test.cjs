@@ -253,7 +253,8 @@ test("on a PC (tethered headset or preview) the webcam is never used to look", a
 test("a camera facing the person is refused and closed", async () => {
   const b = browser({ camera: true, facing: "user" });
   const r = await b.vr.gate("what's this?");
-  assert.match(r.say, /faces you, not the room/);
+  assert.match(r.say, /faces you, so I can't see your room/);
+  assert.match(r.say, /Headset cameras/, "it says where the headset's setting is");
   assert.equal(b.stopped(), 1);
   assert.ok(!b.calls.some((c) => c[0] === "see"));
 });
@@ -669,6 +670,47 @@ test("vr-scene.js is built from vr-scene.src.js (run node tools/build-vr.cjs)", 
   const lf = (s) => s.replace(/\r\n/g, "\n");
   assert.equal(lf(read("docs/app/vr-scene.js")), lf(built));
   assert.match(built, /Permission is hereby granted, free of charge/, "three.js's MIT notice is in the bundle");
+});
+
+test("\"show me where\": Izuki points and numbers the steps instead of doing it", () => {
+  for (const s of ["where do I click to save this", "Hey Nova, where should I click?", "where's the share button", "where is the settings icon",
+    "show me where the wifi settings are", "which button do I press to send it", "what menu should I use", "point at the save button",
+    "how do I change my wallpaper on my PC", "walk me through installing Zoom on my computer", "show me how to print this on my screen",
+    "where do I plug this in", "where should I put the battery", "where is the button", "where's the menu"]) assert.equal(command(s)?.kind, "guide", `"${s}" should point and teach`);
+  // Not "show me where": doing it, looking, lessons and the PC's screen keep their own lanes.
+  assert.equal(command("how do I fix this tap?")?.kind, "look");
+  assert.equal(command("show me how volcanoes work")?.kind, "holo");
+  assert.equal(command("walk me through photosynthesis")?.kind, "holo");
+  assert.equal(command("what's on my screen")?.kind, "screen");
+  assert.equal(command("where are you?")?.kind, "come");
+  for (const s of ["open Spotify", "click the send button", "how are you", "where is Paris"]) assert.notEqual(command(s)?.kind, "guide", `"${s}" isn't a "show me where"`);
+});
+
+test("\"show me where\" looks at the right thing: the PC for software, the camera for a real thing", async () => {
+  const marks = async () => JSON.stringify({ say: "Here.", marks: [{ x: 100, y: 100, label: "Tap" }] });
+  const pic = (b) => b.calls.filter((c) => c[0] === "see").map((c) => c[1].b64);
+  const SCREEN = "UENTQ1JFRU4=";
+  // A kettle's button, with the PC on show and the camera free: the camera.
+  let b = browser({ camera: true, see: marks });
+  b.scene.shown = true;
+  await b.vr.gate("where do I press the power button on this kettle?");
+  assert.notEqual(pic(b)[0], SCREEN, "a real thing in front of you goes to the camera");
+  assert.ok(b.calls.some((c) => c[0] === "showLook" && c[1].steps), "drawn as steps");
+  // Software named: the PC's screen, camera or not.
+  for (const q of ["where do I click to save this?", "where's the share button", "where is the settings icon on my screen"]) {
+    b = browser({ camera: true, see: marks });
+    b.scene.shown = true;
+    await b.vr.gate(q);
+    assert.equal(pic(b)[0], SCREEN, `"${q}" reads the PC's screen`);
+  }
+});
+
+test("the guide's numbered path is drawn in the room (steps flag reaches the scene)", () => {
+  const scene = read("docs/app/vr-scene.src.js");
+  assert.match(src, /showLook\(\{[^}]*steps: !!source\.steps/, "a guide look tells the scene to draw steps");
+  assert.match(src, /They want to be SHOWN where, step by step/, "the guide prompt asks for ordered steps");
+  assert.match(scene, /function drawStepPath\(/);
+  assert.match(scene, /lookUi\.steps = !!steps/);
 });
 
 (async () => {
