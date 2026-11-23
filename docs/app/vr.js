@@ -403,6 +403,15 @@
     return { title: words(d.title, 48) || items[0].label, kind, say, unit: words(d.unit, 12), items, steps };
   }
 
+  /** When each step starts in a lesson said in one go (seconds, at a calm ~2.6 words a second). */
+  function lessonTimes(h, wps = 2.6) {
+    const words = (s) => String(s || "").split(/\s+/).filter(Boolean).length;
+    const at = [];
+    let n = words(h.say);
+    for (const s of h.steps) { at.push(n / wps); n += words(s.say); }
+    return at;
+  }
+
   // ---- text on 3D cards -----------------------------------------------------
   /** Words into lines no wider than `width` (measure = text → width). Long words break. */
   function wrapLines(text, width, measure) {
@@ -469,7 +478,7 @@
     return { nx: c(u), ny: c(1 - v) };
   }
 
-  const util = { command, onPc, named, forIzuki, timerWords, parseLook, parseHolo, HOLO_SYSTEM, parseDream, DREAM_SYSTEM, VR_CONTEXT, YES, OFFERS_3D, OFFERS_TRIP, wrapLines, fitLines, followTarget, pcPoint, angleGap, LOOK_SYSTEM, lookPrompt };
+  const util = { command, onPc, named, forIzuki, timerWords, parseLook, parseHolo, HOLO_SYSTEM, parseDream, DREAM_SYSTEM, VR_CONTEXT, YES, OFFERS_3D, OFFERS_TRIP, lessonTimes, wrapLines, fitLines, followTarget, pcPoint, angleGap, LOOK_SYSTEM, lookPrompt };
   if (typeof module !== "undefined" && module.exports) { module.exports = util; return; }
 
   // ===========================================================================
@@ -794,8 +803,37 @@
     }
     holoNow = h; holoAt = -1;
     vr.scene?.holoShow?.(h);
+    if (h.steps.length && store.get("autoLesson", true) !== false) {
+      // Like watching a film: the whole lesson is said in one go and the
+      // hologram moves on to each step as the voice gets there.
+      void playLesson(h, my);
+      return [h.say].concat(h.steps.map((s) => s.say)).join(" ") + " Say again to replay a step, or ask me anything about it.";
+    }
     return h.say + (h.steps.length ? " Say next when you're ready." : " Point at any part to hear more.");
   }
+  /** Moves the hologram through its steps in time with the voice; stops if
+   *  the voice stops (cut in, a new question, closed, left the room). */
+  async function playLesson(h, gen) {
+    const visit = epoch;
+    const alive = () => vr.active && visit === epoch && gen === holoGen && holoNow === h;
+    const timer = typeof g.setTimeout === "function" ? g.setTimeout.bind(g) : typeof setTimeout === "function" ? setTimeout : null;
+    if (!timer) return;
+    const pause = (ms) => new Promise((r) => timer(r, ms));
+    // Wait for the voice to start (it may take a few seconds to make the audio).
+    let waited = 0;
+    while (appState !== "speaking") { if (!alive() || waited > 20000) return; await pause(100); waited += 100; }
+    const t0 = Date.now(), at = lessonTimes(h);
+    for (let i = 0; i < at.length; i++) {
+      while (Date.now() - t0 < at[i] * 1000) {
+        if (!alive() || appState !== "speaking") return;
+        await pause(100);
+      }
+      if (!alive()) return;
+      holoAt = i;
+      vr.scene?.holoFocus?.(h.steps[i].focus, i);
+    }
+  }
+
   /** A lesson's next (1), previous (-1) or the same step again (0): what to say. */
   function holoStep(d) {
     const h = holoNow;

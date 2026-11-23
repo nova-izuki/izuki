@@ -623,7 +623,8 @@ test("teach me in 3D: the AI's design is built, next walks the lesson; elsewhere
   assert.equal(think[2], HOLO_SYSTEM);
   assert.ok(b.calls.some((c) => c[0] === "holoBuilding"));
   assert.equal(b.calls.find((c) => c[0] === "holoShow")[1].title, "How the heart pumps");
-  assert.match(r.say, /^Your heart is two pumps side by side\. Say next/);
+  // A lesson plays by itself, said in one go; "next" still steps through by hand.
+  assert.match(r.say, /^Your heart is two pumps side by side\. Blood comes back from the body\. It's pushed to the lungs\. Say again/);
   assert.equal((await b.vr.gate("next")).say, "Blood comes back from the body.");
   assert.deepEqual(plain(b.calls.filter((c) => c[0] === "holoFocus").pop()), ["holoFocus", [0], 0]);
   assert.equal((await b.vr.gate("next")).say, "It's pushed to the lungs.");
@@ -837,6 +838,18 @@ test("in a headset call you can talk over Izuki, and voice bars show it hears yo
   const scene = read("docs/app/vr-scene.src.js");
   assert.match(scene, /function voiceBarsTick\(dt, t\)/);
   assert.match(scene, /const on = view\.state === "listening";/, "bars only while listening");
+});
+
+test("a lesson plays by itself, moving step by step in time with the voice, with light flowing", () => {
+  const { lessonTimes } = helpers;
+  const h = { say: "one two three four five", steps: [{ say: "six seven eight" }, { say: "nine ten" }] };
+  assert.deepEqual(plain(lessonTimes(h, 1)), [5, 8], "each step starts when the voice reaches it");
+  assert.deepEqual(plain(lessonTimes({ say: "", steps: [] })), [], "nothing to time");
+  assert.match(src, /store\.get\("autoLesson", true\) !== false/, "on unless switched off");
+  assert.match(src, /if \(!alive\(\) \|\| appState !== "speaking"\) return;/, "stops when the voice stops (cut in, new question)");
+  const scene = read("docs/app/vr-scene.src.js");
+  assert.match(scene, /l\.pulse\.position\.lerpVectors\(l\.a\.g\.position, l\.b\.g\.position, k\)/, "pulses travel the links");
+  assert.match(scene, /l\.pulse\?\.material\.dispose\(\)/, "and are cleaned up");
 });
 
 (async () => {
