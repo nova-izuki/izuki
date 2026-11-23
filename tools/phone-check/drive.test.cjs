@@ -363,6 +363,14 @@ const fix = (lat, lon, speed, at) => ({ coords: { latitude: lat, longitude: lon,
   Date.now = realClock;
   D3.stop();
 
+  // ---- a phone on its side: nothing may fall off the bottom --------------
+  ok(/@media \(orientation: landscape\) and \(max-height: 540px\)/.test(src), 'landscape: the drive HUD has a landscape layout');
+  ok(/#live\.driving \{[^}]*grid-template-areas: "top top" "orb hud" "bar bar"/.test(src), 'landscape: orb left, speed and buttons right');
+  ok(/\.drive-hud \{[^}]*overflow-y: auto/.test(src), 'landscape: the button column scrolls instead of clipping');
+  ok(/#live\.driving \.drive-grid button \{ min-height: 46px/.test(src), 'landscape: the six buttons shrink to fit');
+  // The portrait rules stay where they were, outside the landscape block.
+  ok(/#live\.driving \.drive-hud \{ display: flex; flex-direction: column; gap: 14px; width: min\(100%, 520px\)/.test(src), 'portrait: the tall layout is unchanged');
+
   let bad = 0;
   for (const [c, w] of cases) { if (!c) { bad++; console.log('FAIL', w); } }
   console.log(`Drive mode: ${cases.length - bad} passed, ${bad} failed`);
