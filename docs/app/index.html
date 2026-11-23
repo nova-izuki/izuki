@@ -6383,6 +6383,40 @@
     bar.append(copy, open, close);
     document.body.appendChild(bar);
   }
+  /**
+   * A new build takes over while this page is open (the service worker
+   * installs, activates and claims it). An installed app can stay open for
+   * days, so without this the phone keeps running the code it started with:
+   * every fix shipped since then would be invisible until it was closed.
+   * The first install is not an update, and the reload is the person's call.
+   */
+  function watchForNewBuild(sw, onNew) {
+    let had = !!sw.controller;
+    sw.addEventListener("controllerchange", () => {
+      if (!had) { had = true; return; }
+      onNew();
+    });
+  }
+  function showReloadBar() {
+    if ($("reload-banner")) return;
+    const bar = el("div", "update-bar");
+    bar.id = "reload-banner";
+    bar.setAttribute("role", "status");
+    const copy = el("div", "update-copy");
+    copy.append(
+      el("b", "", "Izuki has an update"),
+      el("span", "", "Reload to get the newest fixes. Your chat stays on this phone."),
+    );
+    const go = el("button", "update-open", "Reload");
+    go.type = "button";
+    go.onclick = () => location.reload();
+    const close = el("button", "update-close", "✕");
+    close.type = "button";
+    close.setAttribute("aria-label", "Later");
+    close.onclick = () => bar.remove();
+    bar.append(copy, go, close);
+    document.body.appendChild(bar);
+  }
   function renderUpdatePanel() {
     const panel = $("native-update");
     if (!panel) return;
@@ -6734,7 +6768,20 @@
     fromSiri = true;
     ask(q);
   }
-  if ("serviceWorker" in navigator && !window.IzukiNative?.installed()) navigator.serviceWorker.register("sw.js").catch(() => {});
+  if ("serviceWorker" in navigator && !window.IzukiNative?.installed()) {
+    watchForNewBuild(navigator.serviceWorker, showReloadBar);
+    navigator.serviceWorker
+      .register("sw.js")
+      .then((reg) => {
+        // The browser looks for a new worker on navigation only; a page left
+        // open never navigates. Look every few hours, and whenever the app
+        // comes back to the front (the usual way a phone app is resumed).
+        const look = () => reg.update().catch(() => {});
+        setInterval(look, 6 * 60 * 60 * 1000);
+        document.addEventListener("visibilitychange", () => { if (!document.hidden) look(); });
+      })
+      .catch(() => {});
+  }
 })();
 </script>
 </body>
