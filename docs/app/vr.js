@@ -115,6 +115,16 @@
     String.raw`help\s+me\s+with\s+(?:my|the|this)\s+(?:pc\s+|computer\s+)?screen`,
     String.raw`what\s+does\s+(?:my|the|this)\s+(?:pc\s+|computer\s+)?screen\s+say`,
   ].join("|") + String.raw`)\b`, "i");
+  // "Show me where": it points and numbers the steps so you do it yourself
+  // (the PC lane does things for you; this one teaches).
+  const GUIDE = new RegExp(LEAD + "(?:" + [
+    String.raw`where\s+(?:do|should|can|would|could)\s+i\s+(?:click|tap|press|select|go|find|put|plug|connect|insert|type|turn|switch)\b`,
+    String.raw`where(?:'s|\s+is|\s+are)\s+the\s+[\w' -]{1,40}?\s*(?:button|setting|option|menu|icon|switch|tab|link|port|plug|key|slot)s?\b`,
+    String.raw`show\s+me\s+where\b`,
+    String.raw`(?:which|what)\s+(?:button|option|setting|menu|icon|key|tab|link)\s+(?:do|should|can|would)\s+i\b`,
+    String.raw`point\s+(?:at|to)\b`,
+    String.raw`(?:how\s+do\s+i|show\s+me\s+how\s+to|guide\s+me\s+(?:to|through)|walk\s+me\s+through)\s+.{2,80}?\s+(?:on|in)\s+(?:my|the|this)\s+(?:pc|computer|laptop|screen)\b`,
+  ].join("|") + String.raw`)`, "i");
   const FOLDER_OF = { photos: "Pictures", pictures: "Pictures", pics: "Pictures", images: "Pictures", gallery: "Pictures", documents: "Documents", docs: "Documents", downloads: "Downloads", desktop: "Desktop", music: "Music", songs: "Music", videos: "Videos" };
   // The room's look: the orb's colours and (without passthrough) the space around you.
   const STYLE = whole(String.raw`(?:change|switch|new)\s+(?:your|the)\s+(?:look|colou?rs?|style|orb)|(?:change|switch)\s+(?:the|my)\s+(?:room|space|background|scene|world)|(?:a\s+)?new\s+(?:look|room|space|background)`);
@@ -137,6 +147,7 @@
     const f = s.match(FILES);
     if (f) return { kind: "files", folder: FOLDER_OF[String(f[1]).toLowerCase()] || "" };
     if (PHOTO_ASK.test(s)) return { kind: "photo-ask" };
+    if (GUIDE.test(s)) return { kind: "guide" };
     if (SCREEN.test(s)) return { kind: "screen" };
     if (WEB_HIDE.test(s)) return { kind: "web-hide" };
     if (WEB_OPEN.test(s)) return { kind: "web", q: "", here: true };
@@ -611,6 +622,12 @@
     /^You are Izuki, looking through the camera[^\n]*/,
     "You are Izuki, looking at one of the person's own photos (from their PC) together with them, in their VR headset.",
   );
+  // Added to a look when they asked to be shown where (numbered steps, drawn as a path).
+  const GUIDE_ADD = [
+    "They want to be SHOWN where, step by step, so they can do it themselves. Don't offer to do it for them.",
+    "Give at most 4 steps in order. Put exactly one mark on the exact thing for each step (the button, menu, tab, field, port or part to click, tap, press or touch), in step order, each labelled with the action in 1 to 3 words, like \"Click File\" or \"Tap Save\".",
+    "In say, give the steps in order in a few short sentences (\"First click File, then Save as.\"). If the next step isn't visible yet, mark the step that gets them there and say what comes after it.",
+  ].join("\n");
   const SCREEN_SYSTEM = LOOK_SYSTEM.replace(
     /^You are Izuki, looking through the camera[^\n]*/,
     "You are Izuki, looking at a picture of the person's PC screen, shown big in their VR headset. Read what's on it and help with what they asked; point at the buttons, words or parts that matter.",
@@ -777,9 +794,9 @@
         if (c.kind === "timer-stop") return done(vr.scene?.timerStop?.() ? "Okay, timer cancelled." : "There's no timer running.");
         if (c.kind === "breathe") { vr.scene?.breathe?.(4); return done("Let's breathe together. Follow me: breathe in as I grow, hold, and breathe out slowly as I shrink."); }
         if (c.kind === "breathe-stop") { vr.scene?.breatheStop?.(); return done("Okay, we'll stop there."); }
-        if (c.kind === "photo-ask" || c.kind === "screen" || c.kind === "look") {
+        if (c.kind === "photo-ask" || c.kind === "screen" || c.kind === "look" || c.kind === "guide") {
           const visit = epoch;
-          const source = await lookSource(c.kind);
+          const source = await lookSource(c.kind, s);
           if (!vr.active || visit !== epoch) return done(lookTrouble(closedError()));
           if (typeof source === "string") return done(source);
           return done(await look(s, visit, source));
@@ -809,7 +826,9 @@
 
   function lookTrouble(e) {
     const n = e?.name || "";
-    if (e?.facing) return "The only camera I can use here faces you, not the room, so I can't see what you mean. On a Quest 3 or 3S, allow the headset camera for this site and ask again.";
+    // Seen on a real Quest 3S: until the headset lets the browser use its room
+    // cameras, websites only get a camera facing you.
+    if (e?.facing) return "Your headset is only letting me use a camera that faces you, so I can't see your room yet. On a Quest 3 or 3S, open Settings, then Privacy and safety, App permissions, Headset cameras, and switch on Browser (or IZUKI NOVA). Then ask me again.";
     if (n === "NotAllowedError" || n === "SecurityError") return "I need your yes to use the headset camera. Allow the camera for this site, then ask again.";
     if (n === "NotFoundError" || n === "NotReadableError") return "The headset camera isn't free right now. Close other apps using it and ask again.";
     if (n === "AbortError") return String(e.message || "Okay, I stopped looking.");
@@ -825,10 +844,22 @@
    *              windows, and Meta lets only its own assistant see those)
    *   look       the camera, else your PC's screen when it's showing
    */
-  async function lookSource(kind) {
+  async function lookSource(kind, question = "") {
     const pcFrame = () => { const f = vr.scene?.pcFrame?.(); if (!f) throw new Error("Your PC's picture isn't showing yet."); return f; };
     const camera = { take: () => cam.frame(), system: LOOK_SYSTEM, shows: "camera" };
     const screen = { take: pcFrame, system: SCREEN_SYSTEM, shows: "screen" };
+    // "Where do I click…": the PC's screen when the question is about software
+    // (or there's no camera), otherwise the real thing in front of you.
+    if (kind === "guide") {
+      const pcShown = !!vr.scene?.pcShown?.();
+      const camOk = await cam.has();
+      const software = /\b(?:pc|computer|laptop|screen|click|double[-\s]?click|button|menu|tab|icon|window|app|settings?|website|page|link|file|folder|desktop|browser)\b/i.test(question);
+      if (pcShown && (software || !camOk)) return { ...screen, system: SCREEN_SYSTEM + "\n" + GUIDE_ADD, steps: true };
+      if (camOk) return { ...camera, system: LOOK_SYSTEM + "\n" + GUIDE_ADD, steps: true };
+      return software
+        ? "Show me your PC first (say \"show my PC\"), then ask again: I'll point at each thing to click, step by step."
+        : "On a Quest 3 or 3S, allow the headset camera for this site and ask again, or show me your PC: I'll point at where to go, step by step.";
+    }
     // "This photo" is the PC photo only while that's what the panel shows.
     if (kind === "photo-ask" && photo && panelShows === "photo" && vr.scene?.lookShown?.()) return { take: () => photo, system: PHOTO_SYSTEM, shows: "photo" };
     const pcOn = !!vr.scene?.pcShown?.();
@@ -866,7 +897,7 @@
       if (!current()) throw closedError();
       if (stale()) throw repicked();
       const { say, marks } = parseLook(reply);
-      vr.scene?.showLook({ url: shot.url, w: shot.w, h: shot.h, marks, say });
+      vr.scene?.showLook({ url: shot.url, w: shot.w, h: shot.h, marks, say, steps: !!source.steps });
       return say;
     } finally {
       if (current()) vr.scene?.orb(appState);
