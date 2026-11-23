@@ -30,7 +30,7 @@ import {
   prefetchCloud,
 } from "../lib/naturalVoice";
 import { voiceFor } from "../lib/personas";
-import { holdMicForVoice, micIsHeadset, pickMicAhead, preloadSpeechInput, releaseMicForVoice, setKeepMicWhileTalking } from "../lib/speechInput";
+import { holdMicForVoice, micIsHeadset, onMicAdvice, pickMicAhead, preloadSpeechInput, releaseMicForVoice, setKeepMicWhileTalking } from "../lib/speechInput";
 import { api, EV, emit, IS_TAURI, on, type ResearchSource, type ResearchUpdate } from "../lib/ipc";
 import { useIzuki } from "../lib/store";
 import type { CaptionPayload, DrawSession, OrbState, SayPayload, Settings, TranscriptPayload } from "../lib/types";
@@ -646,6 +646,8 @@ function tutorPrompt(said: string, first: boolean): string {
 }
 
 export function VoiceEngine() {
+  // A microphone Windows has muted or turned right down: said once, with the fix.
+  useEffect(() => onMicAdvice((advice) => void say(advice, useIzuki.getState().settings, "calm")), []);
   useEffect(() => {
     try {
       if (localStorage.getItem("izuki.island-chat-detached.v1") === "1") void api.showCaptionOverlay().catch(() => undefined);
