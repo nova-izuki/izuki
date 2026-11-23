@@ -1770,6 +1770,7 @@ export async function start({ mode, session, api, tint }) {
   /** Build a hologram from a checked spec (vr.js parseHolo). */
   function holoShow(spec) {
     holoClear();
+    holoPhotoClear();
     holoUi.spec = spec; holoUi.step = -1; holoUi.focus = null; holoUi.t0 = performance.now();
     if (!holoUi.open) placeHolo();
     holoUi.open = true;
@@ -1786,6 +1787,7 @@ export async function start({ mode, session, api, tint }) {
     for (const n of holoUi.nodes) { n.g.position.copy(n.base); n.g.scale.setScalar(calm ? 1 : 0.001); }
     // The projector reaches as wide as the hologram (orbits included).
     const reach = Math.max(0.2, ...holoUi.nodes.map((n) => Math.abs(n.base.x) + n.r + (n.parent ? n.orbitR + Math.abs(n.parent.base.x) : 0)));
+    holoUi.reach = reach;
     projShow(reach + 0.06, true);
     drawHoloBar();
     stepAside("holo");
@@ -1943,6 +1945,45 @@ export async function start({ mode, session, api, tint }) {
     });
   }
 
+  // ---- a real photo beside a hologram (Wikipedia, with its credit) ----------------------
+  const holoPic = { card: null };
+  function holoPhotoClear() {
+    if (!holoPic.card) return;
+    unui(holoPic.card.mesh);
+    holoUi.group.remove(holoPic.card.mesh);
+    holoPic.card.tex.dispose(); holoPic.card.mesh.geometry.dispose(); holoPic.card.mesh.material.dispose();
+    holoPic.card = null;
+  }
+  async function holoPhoto({ url, title, note }) {
+    if (!holoUi.open) return;
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.src = url;
+    try { await img.decode(); } catch { return; }
+    if (!holoUi.open) return;
+    holoPhotoClear();
+    const c = card(0.34, 0.3, 1024);
+    const { ctx, w, h } = c;
+    glass(ctx, w, h, 36);
+    // The photo, cropped to fill its frame, then its name and the credit.
+    const fw = w - 40, fh = h - 150, ir = img.width / img.height, fr = fw / fh;
+    const sw = ir > fr ? img.height * fr : img.width, sh = ir > fr ? img.height : img.width / fr;
+    ctx.save(); rr(ctx, 20, 20, fw, fh, 22); ctx.clip();
+    ctx.drawImage(img, (img.width - sw) / 2, (img.height - sh) / 2, sw, sh, 20, 20, fw, fh);
+    ctx.restore();
+    ctx.font = `600 40px ${DISPLAY}`;
+    write(ctx, ellipsize(ctx, title, w - 60), 30, h - 82, 40, INK, 600, "left", DISPLAY);
+    ctx.font = `500 26px ${FONT}`;
+    write(ctx, ellipsize(ctx, (note ? note + " · " : "") + "Photo: Wikipedia", w - 60), 30, h - 36, 26, INK2, 500);
+    c.update();
+    // Just past the hologram's edge, so it never covers a part.
+    c.mesh.position.set(Math.max(0.62, (holoUi.reach || 0.4) + 0.26), 0.06, 0.04);
+    c.mesh.rotation.y = -0.35;
+    holoUi.group.add(c.mesh);
+    holoPic.card = c;
+    ui(c.mesh, { tap: () => api.ask?.(`Tell me more about ${title}.`), drag: () => holoUi.group });
+  }
+
   /** A lesson's step: its parts light up, the rest dim. null: all lit. */
   function holoFocus(list, step) {
     holoUi.step = step ?? holoUi.step;
@@ -1951,6 +1992,7 @@ export async function start({ mode, session, api, tint }) {
   }
   function holoClose() {
     holoClear();
+    holoPhotoClear();
     proj.group.visible = false;
     holoUi.open = false;
     holoUi.spec = null;
@@ -2621,6 +2663,7 @@ export async function start({ mode, session, api, tint }) {
     holoFocus,
     holoClose,
     holoShown: () => holoUi.open,
+    holoPhoto,
     dreamShow,
     dreamClose,
     dreamShown: () => !!dreamUi.group,

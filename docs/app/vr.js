@@ -375,6 +375,7 @@
     "kind: model = real things in space (planets round a star, an atom, the parts of an engine or a cell; use orbit to put one round another); map = one idea in the middle (item 0) and the ideas around it; steps = a process in order; timeline = events in time; chart = numbers to compare.",
     'items: 3 to 8, each {"label": "1 to 3 words", "note": "up to 7 words", "size": 1-5, "color": "teal|sky|violet|rose|amber|lime|white", "orbit": index of the item it circles or -1, "link": [indexes it connects to], "when": "short date (timeline)", "value": number (chart)}.',
     "say: what you say first, out loud: 2 to 3 short spoken sentences, plain words. title: up to 6 words. unit: the chart's unit, else empty.",
+    'photo: the English Wikipedia article title whose photo shows the real thing (for example "Mount St. Helens", "Human heart", "Saturn V", "Golden Gate Bridge"), or "" when there\'s nothing real to show.',
     'steps: for a lesson or anything with stages, 2 to 5 steps, each {"say": "1 or 2 spoken sentences", "focus": [indexes of the items (or shapes) it is about]}; otherwise [].',
     "Be accurate: sizes and numbers roughly to scale when they are real (if not to scale, say so). Never invent facts. If it's a quiz, test or exam question, teach the idea and never give the answer to fill in.",
   ].join("\n");
@@ -442,7 +443,14 @@
       focus: (Array.isArray(s?.focus) ? s.focus : []).map(index).filter((k) => k >= 0).slice(0, 8),
     })).filter((s) => s.say).slice(0, 5);
     const say = words(d.say, 400) || "Here it is.";
-    return { title: words(d.title, 48) || items[0].label, kind, say, unit: words(d.unit, 12), items, steps };
+    return { title: words(d.title, 48) || items[0].label, kind, say, unit: words(d.unit, 12), items, steps, photo: words(d.photo, 80) };
+  }
+
+  /** A Wikipedia thumbnail address ("//…/60px-x.jpg?…") as a 960 px https one, or "". */
+  function photoUrl(thumb) {
+    const s = String(thumb || "");
+    if (!/^(?:https:)?\/\/(?:upload|thumb)\.wikimedia\.org\//.test(s)) return "";
+    return (s.startsWith("//") ? "https:" : "") + s.replace(/\/\d+px-/, "/960px-");
   }
 
   /** When each step starts in a lesson said in one go (seconds, at a calm ~2.6 words a second). */
@@ -520,7 +528,7 @@
     return { nx: c(u), ny: c(1 - v) };
   }
 
-  const util = { command, onPc, named, forIzuki, timerWords, parseLook, parseHolo, HOLO_SYSTEM, parseDream, DREAM_SYSTEM, VR_CONTEXT, YES, OFFERS_3D, OFFERS_TRIP, lessonTimes, wrapLines, fitLines, followTarget, pcPoint, angleGap, LOOK_SYSTEM, lookPrompt, ROOM_WORDS, ABOUT_THIS, parseSketch, PLACE_WORDS };
+  const util = { command, onPc, named, forIzuki, timerWords, parseLook, parseHolo, HOLO_SYSTEM, parseDream, DREAM_SYSTEM, VR_CONTEXT, YES, OFFERS_3D, OFFERS_TRIP, lessonTimes, wrapLines, fitLines, followTarget, pcPoint, angleGap, LOOK_SYSTEM, lookPrompt, ROOM_WORDS, ABOUT_THIS, parseSketch, PLACE_WORDS, photoUrl };
   if (typeof module !== "undefined" && module.exports) { module.exports = util; return; }
 
   // ===========================================================================
@@ -537,6 +545,13 @@
 
   /** What this browser can open: { ar, vr, headset }. */
   let support = { ar: false, vr: false, headset: HEADSET_UA.test(UA) };
+  // A headset isn't a phone: its tools menu leaves out the phone-only ones.
+  if (support.headset && g.document?.documentElement) {
+    g.document.documentElement.classList.add("on-headset");
+    const st = g.document.createElement("style");
+    st.textContent = ".on-headset #go-drive, .on-headset #tools-health, .on-headset #tools-cockpit, .on-headset #tools-pilot { display: none !important; }";
+    g.document.head?.appendChild(st);
+  }
   const supportReady = (async () => {
     const xr = nav.xr;
     if (!xr?.isSessionSupported) return support;
@@ -847,6 +862,7 @@
     }
     holoNow = h; holoAt = -1;
     vr.scene?.holoShow?.(h);
+    void holoPhoto(h.photo || h.title, my);
     if (h.steps.length && store.get("autoLesson", true) !== false) {
       // Like watching a film: the whole lesson is said in one go and the
       // hologram moves on to each step as the voice gets there.
@@ -854,6 +870,20 @@
       return [h.say].concat(h.steps.map((s) => s.say)).join(" ") + " Say again to replay a step, or ask me anything about it.";
     }
     return h.say + (h.steps.length ? " Say next when you're ready." : " Point at any part to hear more.");
+  }
+  /** A real photo of what a hologram shows, beside it: Wikipedia's (free, no key),
+   *  with its name as the credit. Nothing shows if there's no photo or it's closed. */
+  async function holoPhoto(q, gen) {
+    const topic = String(q || "").trim();
+    if (!topic || typeof g.fetch !== "function") return;
+    try {
+      const r = await g.fetch("https://en.wikipedia.org/w/rest.php/v1/search/page?q=" + encodeURIComponent(topic) + "&limit=1");
+      if (!r.ok) return;
+      const page = (await r.json())?.pages?.[0];
+      const url = photoUrl(page?.thumbnail?.url);
+      if (!url || gen !== holoGen || !holoNow || !vr.active) return;
+      vr.scene?.holoPhoto?.({ url, title: String(page.title || topic).slice(0, 60), note: String(page.description || "").slice(0, 90) });
+    } catch {}
   }
   /** Moves the hologram through its steps in time with the voice; stops if
    *  the voice stops (cut in, a new question, closed, left the room). */
@@ -1329,7 +1359,8 @@
     // screen is the floating Izuki: an orb, captions, Mute and End.
     const float = mk("button", "vr-launch-float", "Float beside my apps");
     float.type = "button";
-    const floatTip = mk("p", "vr-launch-tip", "Your other apps stay open. Grab this window's corner to make it small, and put it anywhere.");
+    const floatTip = mk("p", "vr-launch-tip", "Your other apps stay open, and it listens the whole time: just talk, no \u201cHey Nova\u201d needed. Grab this window's corner to make it small.");
+    const roomTip = mk("p", "vr-launch-tip", "In the room, say \u201cHey Nova\u201d any time. Here in a flat window the headset can't listen for it.");
     const goFloat = () => {
       store.set("launch", "float");
       close();
@@ -1348,7 +1379,7 @@
     };
     box.append(mk("div", "vr-launch-orb"), mk("h2", "", "IZUKI NOVA"),
       mk("p", "", support.ar ? "Your AI, floating in your room. Talk to it, show it things, learn in 3D." : can ? "Your AI, beside you. Talk to it, learn in 3D, see your PC big." : "A 3D preview of the room. The real thing is on a headset."),
-      go, note);
+      go, roomTip, note);
     if (support.headset) box.append(float, floatTip);
     box.append(chat);
     doc.body.appendChild(box);
@@ -1357,7 +1388,7 @@
     // floating beside your apps. The first time, you choose.
     const last = store.get("launch", "");
     if (asApp && last === "float" && support.headset && g.IzukiCore?.ready?.()) void micAllowed().then((ok) => { if (ok && !chosen && box.isConnected) goFloat(); });
-    else if (asApp && last === "room" && can) void straightIn().then((inside) => { if (inside) close(); });
+    else if (asApp && last !== "float" && can) void straightIn().then((inside) => { if (inside) close(); });
   }
   if (wanted) supportReady.then(() => g.setTimeout?.(launcher, 250), () => g.setTimeout?.(launcher, 250));
 
