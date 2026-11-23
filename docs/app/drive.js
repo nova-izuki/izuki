@@ -62,6 +62,34 @@
   .drive-trip { display: none; align-items: baseline; gap: 6px; font-size: 15px; opacity: 0.85; font-variant-numeric: tabular-nums; }
   .drive-trip.on { display: flex; }
   .drive-trip b { font-weight: 700; }
+  /* A phone on its side is only about 360 px tall and the drive HUD is taller
+     than that, so the six buttons used to fall off the bottom with no way to
+     reach them. Sideways, the orb takes the left column, the speed and the
+     buttons the right, and the column scrolls inside itself if a short screen
+     plus a large system font still does not fit. Portrait is untouched. */
+  @media (orientation: landscape) and (max-height: 540px) {
+    #live.driving { display: grid; grid-template-columns: minmax(0, 0.75fr) minmax(0, 1.25fr); grid-template-rows: auto minmax(0, 1fr) auto;
+      grid-template-areas: "top top" "orb hud" "bar bar"; align-items: center; column-gap: 14px; row-gap: 6px; overflow-y: auto; overflow-x: hidden;
+      padding: calc(var(--safe-top) + 8px) 14px calc(var(--safe-bottom) + 8px); }
+    #live.driving .live-top { grid-area: top; text-align: left; }
+    #live.driving .live-top b { display: inline; font-size: 15px; }
+    #live.driving .live-top span { font-size: 11.5px; }
+    #live.driving #live-orb { grid-area: orb; justify-self: center; width: min(34vh, 132px); height: min(34vh, 132px); }
+    #live.driving .drive-hud { grid-area: hud; align-self: stretch; width: 100%; max-width: none; min-height: 0; padding: 0; gap: 7px;
+      overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+    #live.driving .drive-speed { font-size: clamp(32px, 11vh, 52px); letter-spacing: -1px; }
+    #live.driving .drive-side { font-size: 12px; line-height: 1.3; }
+    #live.driving .drive-said { min-height: 0; font-size: 14px; }
+    #live.driving .drive-alert { font-size: 13px; padding: 6px 10px; }
+    #live.driving .drive-grid { gap: 6px; }
+    #live.driving .drive-grid button { min-height: 46px; border-radius: 14px; gap: 2px; font-size: 12px; }
+    #live.driving .drive-grid button span { font-size: 17px; }
+    #live.driving .live-bar { grid-area: bar; justify-self: center; gap: 20px; align-items: center; }
+    #live.driving .round i { width: 46px; height: 46px; }
+    #live.driving .round.end i { width: 52px; height: 52px; }
+    #live.driving .round span { font-size: 11px; }
+    #live.driving .round svg { width: 20px; height: 20px; }
+  }
   `;
 
   function build() {

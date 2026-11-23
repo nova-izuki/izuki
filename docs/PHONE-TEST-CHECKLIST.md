@@ -185,8 +185,17 @@ wake word, lock screen and microphone hand-off. At minimum:
 - [ ] Force-stop Izuki mid-drive (or let Android end the page), reopen it and
       start Drive mode: the same destination and the distance covered are still
       there, and the time left is asked for again rather than the old number.
-- [ ] Rotate the phone and increase the system font size. No control is cut
-      off or unreachable.
+- [ ] Rotate the phone to landscape mid-drive. The orb sits on the left; the
+      speed, the six buttons (Navigate, Gas, Food, Music, On my way, Fun mode)
+      and Mute / End / Type sit on the right, and every one of them can be
+      tapped without scrolling the page. On a short screen with a large system
+      font the right column scrolls inside itself rather than cutting a button
+      off.
+- [ ] **Not yet checked on a real phone:** the landscape layout is only proven
+      by the JavaScript tests and by a resized browser window so far. Portrait
+      at phone width is the only layout that has been seen on hardware.
+- [ ] Rotate back to portrait: the tall layout comes back unchanged.
+- [ ] Increase the system font size. No control is cut off or unreachable.
 
 ## 7. PC pairing and cross-device state
 
