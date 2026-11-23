@@ -282,6 +282,12 @@
   }
   const HOLO_KINDS = ["model", "map", "steps", "timeline", "chart"];
   const HOLO_PALETTE = ["teal", "sky", "violet", "rose", "amber", "lime", "white"];
+  // With a photo open: the real room named means the camera; a question about
+  // "this / it / he / she / here" means the photo.
+  const ROOM_WORDS = /\b(?:in\s+front\s+of\s+me|in\s+my\s+hands?|i'?m\s+holding|am\s+i\s+holding|around\s+me|in\s+(?:my|the)\s+room|over\s+there|real\s+life)\b/i;
+  const ABOUT_THIS = (s) => /\b(?:this|that|it|he|she|they|them|these|those|here|the\s+(?:photo|picture|pic|image))\b/i.test(s) &&
+    (/\?\s*$/.test(s) || /^(?:who|what|where|when|why|how|is|are|was|were|does|do|did|can|could|which|tell\s+me|describe|explain)\b/i.test(s.trim()));
+
   // ---- what the chat brain knows about the room ----------------------------------
   // Seen on a real Quest: a normal question in the room got phone talk, because
   // the chat's own prompt says "your AI companion on their phone".
@@ -478,7 +484,7 @@
     return { nx: c(u), ny: c(1 - v) };
   }
 
-  const util = { command, onPc, named, forIzuki, timerWords, parseLook, parseHolo, HOLO_SYSTEM, parseDream, DREAM_SYSTEM, VR_CONTEXT, YES, OFFERS_3D, OFFERS_TRIP, lessonTimes, wrapLines, fitLines, followTarget, pcPoint, angleGap, LOOK_SYSTEM, lookPrompt };
+  const util = { command, onPc, named, forIzuki, timerWords, parseLook, parseHolo, HOLO_SYSTEM, parseDream, DREAM_SYSTEM, VR_CONTEXT, YES, OFFERS_3D, OFFERS_TRIP, lessonTimes, wrapLines, fitLines, followTarget, pcPoint, angleGap, LOOK_SYSTEM, lookPrompt, ROOM_WORDS, ABOUT_THIS };
   if (typeof module !== "undefined" && module.exports) { module.exports = util; return; }
 
   // ===========================================================================
@@ -890,6 +896,8 @@
       // A lesson's "next", "back", "again" only mean that while a hologram is up.
       if (c?.kind?.startsWith("holo-") && !vr.scene?.holoShown?.()) c = null;
       if (c?.kind === "dream-end" && !vr.scene?.dreamShown?.()) c = null;
+      // "Where was this taken?", "who is he?": with a photo open, about the photo.
+      if (!c && photoOpen() && ABOUT_THIS(s) && !ROOM_WORDS.test(s)) c = { kind: "photo-ask" };
       // With your PC on the big screen, a search is done there (unless you say "in here").
       if (c?.kind === "web" && c.q && !c.here && vr.scene?.pcShown?.()) c = null;
       const done = (say) => ({ done: true, said: s, say });
@@ -1005,6 +1013,8 @@
    *              windows, and Meta lets only its own assistant see those)
    *   look       the camera, else your PC's screen when it's showing
    */
+  /** A photo from your PC is open on the look panel right now. */
+  const photoOpen = () => !!(photo && panelShows === "photo" && vr.scene?.lookShown?.());
   async function lookSource(kind, question = "") {
     const pcFrame = () => { const f = vr.scene?.pcFrame?.(); if (!f) throw new Error("Your PC's picture isn't showing yet."); return f; };
     const camera = { take: () => cam.frame(), system: LOOK_SYSTEM, shows: "camera" };
@@ -1026,7 +1036,10 @@
         : "On a Quest 3 or 3S, allow the headset camera for this site and ask again, or show me your PC: I'll point at where to go, step by step.";
     }
     // "This photo" is the PC photo only while that's what the panel shows.
-    if (kind === "photo-ask" && photo && panelShows === "photo" && vr.scene?.lookShown?.()) return { take: () => photo, system: PHOTO_SYSTEM, shows: "photo" };
+    // A photo you opened is what "this" means (seen on a real Quest: "what's
+    // this?" with a photo open went to the camera and talked about the room),
+    // unless you name the real room ("what am I holding", "in front of me").
+    if ((kind === "photo-ask" || (kind === "look" && !ROOM_WORDS.test(question))) && photoOpen()) return { take: () => photo, system: PHOTO_SYSTEM, shows: "photo" };
     const pcOn = !!vr.scene?.pcShown?.();
     if (kind === "screen") {
       if (pcOn) return screen;

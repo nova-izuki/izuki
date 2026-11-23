@@ -852,6 +852,35 @@ test("a lesson plays by itself, moving step by step in time with the voice, with
   assert.match(scene, /l\.pulse\?\.material\.dispose\(\)/, "and are cleaned up");
 });
 
+test("with a photo open, \"this\" means the photo (seen on a real Quest: it talked about the room)", async () => {
+  const { ROOM_WORDS, ABOUT_THIS } = helpers;
+  assert.ok(ROOM_WORDS.test("what am I holding?") && ROOM_WORDS.test("what's in front of me"));
+  assert.ok(!ROOM_WORDS.test("what's this?"));
+  for (const s of ["where was this taken?", "who is he?", "is that my dog?", "describe it", "what's happening here?"]) assert.ok(ABOUT_THIS(s), s);
+  for (const s of ["tell me a joke", "set a timer", "I like this"]) assert.ok(!ABOUT_THIS(s), s);
+  const pc = { name: "My PC", link: "https://pc.example/", pass: "p" };
+  const open = async () => {
+    const b = browser({ camera: true, pcs: [pc], pcAnswers: { "remote/files/get": {} }, see: async () => '{"say":"A beach at sunset."}' });
+    await b.vr.api().openPhoto("C:\\Pics", { name: "beach.jpg", size: 10 });
+    b.scene.lookOpen = true;
+    return b;
+  };
+  const system = (b) => b.calls.filter((c) => c[0] === "see").map((c) => c[1].system).pop() || "";
+  for (const q of ["what's this?", "where was this taken?", "who is he?"]) {
+    const b = await open();
+    const r = await b.vr.gate(q);
+    assert.ok(r.done, `"${q}" is handled in the room`);
+    assert.match(system(b), /one of the person's own photos/, `"${q}" looks at the open photo`);
+  }
+  // Naming the real room still uses the camera.
+  const b = await open();
+  await b.vr.gate("what am I holding?");
+  const seen = b.calls.filter((c) => c[0] === "see").pop();
+  assert.ok(seen, "it really looked");
+  assert.equal(seen[1].b64, "QUJD", "through the headset camera");
+  assert.doesNotMatch(system(b), /own photos/, "the room named: the camera, not the photo");
+});
+
 (async () => {
   for (const [name, fn] of tests) {
     try { await fn(); passed++; } catch (e) { console.error(`FAIL ${name}\n  ${e.message}`); process.exitCode = 1; }
