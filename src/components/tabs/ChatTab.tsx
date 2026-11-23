@@ -110,8 +110,13 @@ function setChatSessionId(id: string) {
 /** A failure that setting up a brain would fix. */
 const NEEDS_BRAIN = /no chat-capable brain|add an api key|key was rejected|rejected the key|unauthori[sz]ed|\b401\b|invalid api key|api key not valid/i;
 
-/** How long to wait for the first words before saying something's wrong. */
-const FIRST_WORDS_MS = 45_000;
+/**
+ * How long to wait for the first words before saying something's wrong.
+ * 45 s of a silent "Thinking…" read as frozen — and the screen agent spent
+ * a second 45 s behind it. Twenty matches its budget (brain.rs
+ * LOOK_BUDGET), so a dead brain is admitted once, not twice.
+ */
+const FIRST_WORDS_MS = 20_000;
 
 const KEY = "izuki.chat.v1";
 /** The last write number given to either copy of the open chat (LiveCopy). */

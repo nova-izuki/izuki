@@ -2067,6 +2067,15 @@ const TAB_WAIT_OVER: &str = "tab_wait_over: you stayed on another tab";
 // limits. Only a really slow brain gets company now.
 const HEDGE_AFTER: std::time::Duration = std::time::Duration::from_millis(5000);
 
+/// The most a screen look may go with nothing usable before Izuki stops
+/// and says so. This was 45 s: on 2026-11-22 every free brain refused at
+/// once (Groq and OpenRouter rate-limited, OpenAI out of credits, Gemini
+/// unreachable for 20 s, NVIDIA gone), and a look that could never finish
+/// kept the whole app busy for 45 s after the chat had already answered —
+/// the next request waited behind it. A real look on a slow Gemini day is
+/// 9–15 s, so 20 s still leaves room for one hedged answer.
+const LOOK_BUDGET: std::time::Duration = std::time::Duration::from_secs(20);
+
 /// Ask the brains in `chain` order, but don't wait on a slow one: if the
 /// current brain hasn't answered after `HEDGE_AFTER`, the next one is asked
 /// too and whichever answers first wins. A failure moves straight on.
@@ -2264,7 +2273,7 @@ fn ask_racing(
     let mut fallback: Option<(usize, VisionPlan)> = None;
     loop {
         if automation::aborted() { return Err(anyhow!("stopped")); }
-        if began.elapsed() > Duration::from_secs(45) {
+        if began.elapsed() > LOOK_BUDGET {
             return match fallback.take() {
                 Some((_, plan)) => Ok(last_resort(plan, wants_action)),
                 None => Err(anyhow!("the screen model took too long; try a faster brain in Settings")),
@@ -2332,7 +2341,7 @@ fn ask_racing(
                         eprintln!(
                             "[brain] all {} failed, but only temporarily — one more round with {}s left",
                             finished,
-                            Duration::from_secs(45).saturating_sub(began.elapsed()).as_secs()
+                            LOOK_BUDGET.saturating_sub(began.elapsed()).as_secs()
                         );
                         errors.clear();
                         finished = 0;

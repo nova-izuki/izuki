@@ -264,6 +264,19 @@ is("do not explain is not a refusal of the answer", mem.wantsDirectAnswer("Answe
   is("the chat still tries a known site when no app matches", chat.includes("if (!opened && instant.url)"), true);
 }
 
+// A brain that is not answering is admitted in 20 s, not 45: the chat's
+// silent spinner and the screen agent share one budget, so a request whose
+// brains were all rate-limited is over in a fraction of the time (the
+// owner's 2026-11-22 log: 49 s for one typed request, 45 of them after the
+// chat had already answered).
+{
+  const chat = fs.readFileSync(path.join(__dirname, "..", "src", "components", "tabs", "ChatTab.tsx"), "utf8");
+  is("the chat admits a silent brain in 20 s", /const FIRST_WORDS_MS = 20_000;/.test(chat), true);
+  const brain = fs.readFileSync(path.join(__dirname, "..", "src-tauri", "src", "brain.rs"), "utf8");
+  is("a screen look stops after 20 s of nothing", brain.includes("const LOOK_BUDGET: std::time::Duration = std::time::Duration::from_secs(20);"), true);
+  is("the 45 s screen budget is gone", /from_secs(45)/.test(brain), false);
+}
+
 console.log("");
 console.log(`${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);
