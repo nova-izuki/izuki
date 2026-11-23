@@ -1815,6 +1815,11 @@ pub(crate) fn stream_one(cfg: &ProviderConfig, messages: &[Value], stop: &dyn Fn
     let mut rq = client.post(chat_url(cfg)).json(&body);
     if !cfg.api_key.trim().is_empty() {
         rq = rq.bearer_auth(cfg.api_key.trim());
+        // Google's own header too: its newer "AQ." keys are auth keys, and this
+        // is where Google always looks for one (it's harmless for "AIza" keys).
+        if cfg.id == ProviderId::Gemini {
+            rq = rq.header("x-goog-api-key", cfg.api_key.trim());
+        }
     }
     if cfg.id == ProviderId::Openrouter {
         rq = rq.header("HTTP-Referer", "https://github.com/nova-izuki/izuki").header("X-Title", "Izuki");
