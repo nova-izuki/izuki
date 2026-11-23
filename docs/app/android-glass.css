@@ -296,6 +296,8 @@ html[data-os="android"] #open-settings.needs-attention::before {
   align-items: flex-end;
   justify-content: center;
   padding: 14px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   background: rgba(3, 5, 11, 0.62);
   -webkit-backdrop-filter: blur(13px);
   backdrop-filter: blur(13px);
@@ -307,6 +309,13 @@ html[data-os="android"] #open-settings.needs-attention::before {
   width: 100%;
   max-width: 560px;
   padding: 18px 16px calc(18px + var(--safe-bottom));
+  /* Four tiles plus three rows are taller than a short phone: without a cap
+     the sheet grew past the top of the screen and its title and close button
+     sat out of reach. It scrolls now, and the keyboard takes height off the
+     top instead of pushing the panel further off screen. */
+  max-height: calc(100dvh - 28px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   border: 1px solid var(--ag-rim-bright);
   border-radius: 30px;
   background:
