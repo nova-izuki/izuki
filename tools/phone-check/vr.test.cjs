@@ -902,6 +902,38 @@ test("a pinned card takes you back into that chat", async () => {
   assert.match(read("docs/app/vr-scene.src.js"), /api\.resume \? api\.resume\(\{ text, ask \}\)/, "tapping the card resumes it");
 });
 
+test("draw it: the real shape of a thing, checked, and the right words get it", () => {
+  const { parseSketch, PLACE_WORDS } = helpers;
+  // Words: drawing a thing vs dreaming of a place.
+  for (const s of ["draw me a volcano", "sketch how a bridge holds weight", "imagine a rocket", "what does a black hole look like", "Hey Nova, draw a heart"]) {
+    assert.equal(command(s)?.kind, "holo", `"${s}" should draw`);
+  }
+  for (const s of ["imagine a beach at sunset", "imagine I'm in a forest", "take me to a rainforest at night"]) assert.equal(command(s)?.kind, "dream", `"${s}" should dream`);
+  assert.ok(PLACE_WORDS.test("a beach at sunset") && !PLACE_WORDS.test("a rocket"));
+  // The AI's shapes: checked and clamped into the drawing box.
+  assert.equal(parseSketch({ kind: "sketch", shapes: [{ type: "line", points: [[0, 0, 0], [0, 1, 0]] }] }), null, "one shape isn't a drawing");
+  const s = plain(parseSketch({ kind: "sketch", title: "A **volcano**", say: "Here.", shapes: [
+    { type: "cone", center: [0, -0.3, 0], radius: 9, height: 1, color: "lava", label: "Volcano" },
+    { type: "line", points: [[0, -5, 0], [0, 0.2, 0]], flow: true },
+    { type: "dragon", center: [0, 0, 0] },
+    { type: "curve", points: [[0, 0, 0]] },
+    { type: "spiral", center: [0, 0, 0], turns: 40 } ], steps: [{ say: "Magma rises.", focus: [1, 7] }] }));
+  assert.equal(s.kind, "sketch");
+  assert.equal(s.title, "A volcano", "no markdown");
+  assert.equal(s.shapes.length, 3, "unknown types and lines with one point are dropped");
+  assert.equal(s.shapes[0].radius, 1, "sizes are clamped");
+  assert.ok(["teal", "sky", "violet", "rose", "amber", "lime", "white"].includes(s.shapes[0].color), "only the palette");
+  assert.deepEqual(s.shapes[1].points[0], [0, -1, 0], "points stay in the box");
+  assert.equal(s.shapes[1].flow, true);
+  assert.equal(s.shapes[2].turns, 6, "turns are clamped");
+  assert.deepEqual(s.steps[0].focus, [1], "a step only points at shapes that exist");
+  const scene = read("docs/app/vr-scene.src.js");
+  assert.match(scene, /function sketchShow\(spec\)/);
+  assert.match(scene, /if \(spec\.kind === "sketch"\) \{\s*projShow\(sketchShow\(spec\)/, "a sketch stands on the projector");
+  assert.match(scene, /sketchClear\(\);/, "and is cleaned up with its hologram");
+  assert.match(src, /\(Draw it: use kind sketch\.\)/, "drawing words ask the AI for a sketch");
+});
+
 (async () => {
   for (const [name, fn] of tests) {
     try { await fn(); passed++; } catch (e) { console.error(`FAIL ${name}\n  ${e.message}`); process.exitCode = 1; }
