@@ -1,5 +1,7 @@
 # Hand-off: where Izuki's work stands
 
+> **Newest first:** [HANDOFF-2026-11-23-claude-vr.md](HANDOFF-2026-11-23-claude-vr.md) covers Izuki VR, the Meta store submission and release 1.0.222. Each assistant adds a dated hand-off like it after every batch of work (owner's request, 2026-11-23).
+
 Written for the next Claude Code session (e.g. in VS Code on the owner's
 Windows PC) so it can carry on without losing track. Read this whole file,
 then `docs/HOW-IZUKI-WORKS.md`, before changing anything.

@@ -122,3 +122,11 @@ Install the 1.0.217 APK (Settings → Phone → App updates). Android control an
 3. Drive mode → "take me to <a nearby place>": the trip line shows distance and minutes left; "how long is left?" answers with them; parked for a while near the place, it notices you've arrived. "Take me home" with no saved home: it says it doesn't know where home is.
 4. Phone agent: "move the first app icon next to the second" (drag) and "scroll to Battery" in Settings.
 5. Settings → Your orb → Orb colour: the floating orb over other apps takes the colour in every state.
+
+## 1.0.222
+
+- [ ] Type "open Chrome" in the chat: Chrome opens within a couple of seconds, with no screen-agent "thinking" steps.
+- [ ] With every AI brain unreachable (Wi-Fi off), ask something: Izuki says it couldn't reach a brain within about 20 s, and the app isn't left "busy".
+- [ ] Copy a Gemini key that starts with "AQ." and open Izuki: it offers to save it as a Google Gemini key; Settings shows it saved; a chat answer comes back.
+- [ ] Settings → Something wrong? → copy: no key (AIza… or AQ.…) appears in the copied text.
+- [ ] What's New shows the 1.0.222 line.
