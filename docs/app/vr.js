@@ -1133,19 +1133,12 @@
       row.onclick = openSheet;
       list.appendChild(row);
       slot.appendChild(list);
-      // izukinova.ai/vr opens the explainer once, after the AI is set up.
-      // Opened from the Quest app's icon (?vr=app), it tries to go straight
-      // into the room (the icon tap may count as the tap browsers need), and
-      // shows the explainer if the headset says no.
-      if (wanted && !openedOnce && opts.auto !== false) {
-        openedOnce = true;
-        if (asApp && (support.ar || support.vr)) void straightIn().then((inside) => { if (!inside) openSheet(); });
-        else openSheet();
-      }
+      // A ?vr visit (izukinova.ai/vr, the Quest app) gets the launcher
+      // instead: it offers the room, floating beside your apps, or the chat,
+      // and opens this explainer itself when a key or the microphone is missing.
     };
     supportReady.then(fill, fill);
   }
-  let openedOnce = false;
   /** Started as the installed Quest app (quest/twa-manifest.json opens /app/?vr=app). */
   const asApp = (() => { try { return new URLSearchParams(g.location.search).get("vr") === "app"; } catch { return false; } })();
   async function straightIn() {
@@ -1174,12 +1167,14 @@
 .vr-launch-go:disabled{opacity:.6;cursor:default}
 .vr-launch-go:focus-visible,.vr-launch-chat:focus-visible{outline:3px solid #fff;outline-offset:4px}
 .vr-launch-chat{min-height:52px;padding:0 24px;border:1px solid rgba(255,255,255,.18);border-radius:999px;background:transparent;color:#d7e2ec;font:inherit;font-size:18px;cursor:pointer}
+.vr-launch-float{min-width:min(80vw,360px);min-height:64px;padding:0 32px;border:1px solid rgba(126,232,255,.55);border-radius:999px;background:rgba(126,232,255,.08);color:#dff7ff;font:inherit;font-size:clamp(19px,2.6vw,22px);font-weight:600;cursor:pointer}
+.vr-launch-float:focus-visible{outline:3px solid #fff;outline-offset:4px}
+.vr-launch-tip{font-size:15px !important;color:#8fa1b2 !important;max-width:26em !important;margin-top:-8px !important}
 .vr-launch-note:empty{display:none}
 .vr-launch-note{color:#ffd28a !important}`;
   function launcher() {
     const doc = g.document;
     if (!wanted || vr.active || !doc?.body || doc.getElementById("vr-launch")) return;
-    openedOnce = true; // the home card's own explainer doesn't open as well
     if (!doc.getElementById("vr-launch-css")) { const st = doc.createElement("style"); st.id = "vr-launch-css"; st.textContent = LAUNCH_CSS; doc.head.appendChild(st); }
     const can = support.ar || support.vr;
     const box = mk("div", "vr-launch");
@@ -1194,7 +1189,20 @@
     chat.type = "button";
     const close = () => box.remove();
     chat.onclick = close;
+    // Floating beside your other apps: a full room hides them (Meta's rule for
+    // immersive apps), but a window can sit next to them. The hands-free call
+    // screen is the floating Izuki: an orb, captions, Mute and End.
+    const float = mk("button", "vr-launch-float", "Float beside my apps");
+    float.type = "button";
+    const floatTip = mk("p", "vr-launch-tip", "Your other apps stay open. Grab this window's corner to make it small, and put it anywhere.");
+    const goFloat = () => {
+      store.set("launch", "float");
+      close();
+      g.document.getElementById("go-live")?.click();
+    };
+    float.onclick = goFloat;
     go.onclick = async () => {
+      store.set("launch", "room");
       // No key or microphone yet: the explainer walks through both, then goes in.
       if (!can || !g.IzukiCore?.ready?.() || !(await micAllowed())) { close(); void openSheet(); return; }
       go.disabled = true; note.textContent = "";
@@ -1204,11 +1212,16 @@
     };
     box.append(mk("div", "vr-launch-orb"), mk("h2", "", "IZUKI NOVA"),
       mk("p", "", support.ar ? "Your AI, floating in your room. Talk to it, show it things, learn in 3D." : can ? "Your AI, beside you. Talk to it, learn in 3D, see your PC big." : "A 3D preview of the room. The real thing is on a headset."),
-      go, note, chat);
+      go, note);
+    if (support.headset) box.append(float, floatTip);
+    box.append(chat);
     doc.body.appendChild(box);
     try { go.focus({ preventScroll: true }); } catch {}
-    // The icon tap may count as the tap a headset needs: try once on our own.
-    if (asApp && can) void straightIn().then((inside) => { if (inside) close(); });
+    // Your last choice from the app's icon: straight into the room, or
+    // floating beside your apps. The first time, you choose.
+    const last = store.get("launch", "");
+    if (asApp && last === "float" && support.headset && g.IzukiCore?.ready?.()) void micAllowed().then((ok) => { if (ok) goFloat(); });
+    else if (asApp && last === "room" && can) void straightIn().then((inside) => { if (inside) close(); });
   }
   if (wanted) supportReady.then(() => g.setTimeout?.(launcher, 250), () => g.setTimeout?.(launcher, 250));
 
