@@ -4760,6 +4760,14 @@
 
   window.IzukiCore = {
     ask: (t) => ask(String(t || "")),
+    /** Back into an earlier exchange (a pinned card in VR): the chat carries on from it. */
+    recall: (q, a) => {
+      const said = String(a || "").trim();
+      if (!said) return;
+      if (q) history.push({ role: "user", text: String(q) });
+      history.push({ role: "model", text: said });
+      saveAll();
+    },
     /** The headset's browser: { answer, results: [{ url, site, snippet }] } or { error }. */
     search: (q) => webSearch(q),
     /** A result read for the headset: { title, paras } or { error }. */
