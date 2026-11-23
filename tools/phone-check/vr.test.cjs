@@ -1094,6 +1094,34 @@ test("\"play … on YouTube\" leaves the room and opens YouTube (a tap if the he
   assert.match(src, /play\.href = url; play\.target = "_blank"; play\.rel = "noopener";/, "the fallback is a real link: a tap opens it even where a script can't");
 });
 
+test("handle a hologram: spin it, turn it around, bigger, explode it and put it back", async () => {
+  const { HOLO_SAY } = helpers;
+  const cases = { apart: ["explode it", "take it apart", "show me the inside", "what's inside", "Hey Nova, explode it", "break it apart"],
+    together: ["put it back together", "put it back", "assemble it"], spin: ["spin it", "make it spin", "rotate it", "turn it"],
+    still: ["stop spinning", "hold still", "freeze"], around: ["turn it around", "show me the back", "flip it over", "the other side"],
+    bigger: ["make it bigger", "zoom in", "bigger", "I can't see it"], smaller: ["make it smaller", "zoom out", "smaller", "too big"] };
+  for (const [what, list] of Object.entries(cases)) for (const s of list) assert.deepEqual(plain(command(s)), { kind: "holo-view", what }, s);
+  for (const s of ["spin the wheel", "turn it off", "zoom in on mars", "show me mars"]) assert.notEqual(command(s)?.kind, "holo-view", s);
+  for (const k of ["spin", "still", "around", "bigger", "biggest", "smaller", "smallest", "apart", "no-parts", "together"]) assert.ok(HOLO_SAY[k], k);
+  // In the room: only while a hologram is up, and the scene's answer picks the words.
+  const b = browser();
+  const asked = [];
+  b.scene.holoView = (w) => { asked.push(w); return w === "apart" ? "no-parts" : w; };
+  let r = await b.vr.gate("explode it");
+  assert.ok(!r?.done, "nothing up: it goes to the brain");
+  b.scene.holo = true;
+  r = await b.vr.gate("explode it");
+  assert.match(r.say, /doesn't come apart/);
+  r = await b.vr.gate("make it bigger");
+  assert.equal(r.say, "Bigger.");
+  assert.deepEqual(asked, ["apart", "bigger"]);
+  const scene = read("docs/app/vr-scene.src.js");
+  assert.match(scene, /if \(pr\.moved && pr\.turn\) \{ holoUi\.view\.spin = /, "let go mid-turn and it keeps spinning");
+  assert.match(scene, /ui\(body, \{ tap: more, hover: \(on\) => \{ n\.hot = on; \}, turn: \(\) => holoUi\.stage \}\);/, "grab a part to turn it");
+  assert.match(scene, /holoUi\.view = freshView\(\);/, "a new hologram starts unspun, normal size, together");
+  assert.match(scene, /d\.y = Math\.max\(-0\.2, d\.y\);/, "parts never fly down into the projector");
+});
+
 (async () => {
   for (const [name, fn] of tests) {
     try { await fn(); passed++; } catch (e) { console.error(`FAIL ${name}\n  ${e.message}`); process.exitCode = 1; }
