@@ -48,6 +48,12 @@ pub fn recognise(text: &str) -> Option<FoundKey> {
     if t.starts_with("AIza") && t.len() == 39 && tokenish(t) {
         return found("gemini", "Google Gemini key");
     }
+    // Google's newer Gemini keys (AI Studio, 2026): "AQ." and about 50 more characters.
+    if let Some(rest) = t.strip_prefix("AQ.") {
+        if (40..=80).contains(&rest.len()) && tokenish(rest) {
+            return found("gemini", "Google Gemini key");
+        }
+    }
     if t.starts_with("gsk_") && t.len() >= 40 && tokenish(t) {
         return found("groq", "Groq key");
     }
@@ -170,6 +176,9 @@ mod tests {
         assert!(recognise("hello there").is_none());
         assert!(recognise("https://aistudio.google.com/apikey").is_none());
         assert!(recognise(&format!("my key is AIza{}", "x".repeat(35))).is_none());
+        // Google's newer key format.
+        assert_eq!(recognise(&format!("AQ.Ab8R{}", "x".repeat(46))).unwrap().kind, "gemini");
+        assert!(recognise("AQ.short").is_none());
     }
 
     #[test]

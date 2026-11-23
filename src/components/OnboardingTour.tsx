@@ -75,7 +75,7 @@ function KeyStep() {
               setSaved(false);
             }}
             onKeyDown={(e) => e.key === "Enter" && save()}
-            placeholder={gemini?.api_key.trim() ? "Key saved ✓ — paste a new one to replace" : "2. Paste it here (starts with AIza…)"}
+            placeholder={gemini?.api_key.trim() ? "Key saved ✓ — paste a new one to replace" : "2. Paste it here (starts with AQ. or AIza…)"}
             className="izk-no-drag h-[32px] min-w-0 flex-1 rounded-[10px] border border-white/10 bg-white/6 px-2.5 text-[12px] text-izk-ink outline-none placeholder:text-izk-muted/70"
           />
           <button type="button" onClick={save} className="izk-btn-primary izk-no-drag h-[32px] px-3 text-[12px]">

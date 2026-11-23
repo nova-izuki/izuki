@@ -448,7 +448,7 @@ pub fn scrub(s: &str) -> String {
 }
 
 fn scrub_word(w: &str) -> String {
-    const KEY_STARTS: &[&str] = &["AIza", "sk-", "sk_", "rk_", "gsk_", "nvapi-", "xai-", "hf_", "ghp_", "github_pat_", "AKIA", "ak_", "shpat_", "shpca_", "shppa_"];
+    const KEY_STARTS: &[&str] = &["AIza", "AQ.", "sk-", "sk_", "rk_", "gsk_", "nvapi-", "xai-", "hf_", "ghp_", "github_pat_", "AKIA", "ak_", "shpat_", "shpca_", "shppa_"];
     let long = w.chars().count() >= 16;
     if long && KEY_STARTS.iter().any(|p| w.starts_with(p)) {
         return "[key]".into();
@@ -519,6 +519,9 @@ mod tests {
     fn secrets_and_personal_details_never_leave() {
         let s = scrub("gemini key AIzaSyA1b2C3d4E5f6G7h8I9j0KlMnOpQrStUvW failed for sam.jones@gmail.com");
         assert!(!s.contains("AIza") && s.contains("[key]") && s.contains("[email]"), "{s}");
+        // Google's newer key format ("AQ." + ~50 characters) too.
+        let s = scrub("gemini key AQ.Ab8RN6xYz012abcDEF345ghiJKL678mnoPQR901stuVWX234yzAB rejected");
+        assert!(!s.contains("AQ.Ab8") && s.contains("[key]"), "{s}");
         let s = scrub("Authorization: Bearer gsk_abcdefghijklmnopqrstu12345 rejected");
         assert!(!s.contains("gsk_") && s.contains("Bearer [key]"), "{s}");
         // A Composio key must never ride along in a report either.
