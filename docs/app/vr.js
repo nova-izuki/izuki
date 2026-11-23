@@ -282,6 +282,24 @@
   }
   const HOLO_KINDS = ["model", "map", "steps", "timeline", "chart"];
   const HOLO_PALETTE = ["teal", "sky", "violet", "rose", "amber", "lime", "white"];
+  // ---- what the chat brain knows about the room ----------------------------------
+  // Seen on a real Quest: a normal question in the room got phone talk, because
+  // the chat's own prompt says "your AI companion on their phone".
+  const VR_CONTEXT = (pcOn, holoOn, dreamOn) => [
+    "Right now they're wearing a VR headset (Meta Quest) and you are the glowing orb floating in their room or in a virtual space around them. This is not their phone: never talk about phone screens, phone settings, tapping or swiping a phone, or phone apps.",
+    "In the room you can: build a 3D hologram to teach something (they say \"teach me…\", \"show me … in 3D\"); take them into a whole dream world (\"take me to…\", \"dream mode…\"); open a browser panel beside them (\"search the web for…\"); show their PC's screen big and point at where to click (\"show my PC\", \"where do I click…\"); look through the headset camera (\"what's this?\"); set timers; lead a breathing break; pin an answer as a card.",
+    "When something would be much clearer seen than said (how a thing works, a process, a place, sizes, a history), answer in a sentence or two, then offer it in a few words: \"Want me to build it in 3D?\" or \"Want me to take you there?\". Don't offer it every time.",
+    "Answer in one to three short spoken sentences, the most important thing first. No lists, no markdown, no emoji: everything is read aloud and shown as a short caption.",
+    pcOn ? "Their PC's screen is open big in the room." : "",
+    holoOn ? "A hologram you built is showing beside them; questions may be about it." : "",
+    dreamOn ? "They're inside a dream world you built; they can say \"wake up\" to leave it." : "",
+  ].filter(Boolean).join("\n");
+
+  // "Want me to build it in 3D?" … "yes": a short yes builds what they asked about.
+  const YES = whole(String.raw`yes|yeah|yep|yup|sure|ok(?:ay)?|please|do\s+it|go\s+ahead|yes\s+please|let'?s\s+do\s+it|let'?s\s+go|build\s+it|show\s+me|take\s+me(?:\s+there)?|why\s+not|definitely|absolutely|of\s+course`);
+  const OFFERS_3D = /\b(?:build|show|make)\s+(?:it|that|this|you\s+that|one)\s+in\s+3\s?d\b|\bin\s+3\s?d\?/i;
+  const OFFERS_TRIP = /\btake\s+you\s+there\b/i;
+
   // ---- dream mode: a whole world around you, designed from your words ----------
   const DREAM = new RegExp(LEAD + "(?:" + [
     String.raw`dream\s+mode(?:[:,\s]+(?:of\s+|to\s+|in\s+)?(.{2,120}?))?`,
@@ -450,7 +468,7 @@
     return { nx: c(u), ny: c(1 - v) };
   }
 
-  const util = { command, onPc, named, forIzuki, timerWords, parseLook, parseHolo, HOLO_SYSTEM, parseDream, DREAM_SYSTEM, wrapLines, fitLines, followTarget, pcPoint, angleGap, LOOK_SYSTEM, lookPrompt };
+  const util = { command, onPc, named, forIzuki, timerWords, parseLook, parseHolo, HOLO_SYSTEM, parseDream, DREAM_SYSTEM, VR_CONTEXT, YES, OFFERS_3D, wrapLines, fitLines, followTarget, pcPoint, angleGap, LOOK_SYSTEM, lookPrompt };
   if (typeof module !== "undefined" && module.exports) { module.exports = util; return; }
 
   // ===========================================================================
@@ -718,6 +736,8 @@
   // ---- holograms ---------------------------------------------------------------
   // ---- dream mode ---------------------------------------------------------------
   let dreamGen = 0;
+  /** What Izuki last offered to show ("build it in 3D?"), and what they had asked. */
+  let offer = null, lastAsk = "";
   async function dream(ask) {
     const core = g.IzukiCore;
     if (!core?.think || !core.ready?.()) return "Add a free AI key in Settings first, then I can build a world around you.";
@@ -833,6 +853,12 @@
       // With your PC on the big screen, a search is done there (unless you say "in here").
       if (c?.kind === "web" && c.q && !c.here && vr.scene?.pcShown?.()) c = null;
       const done = (say) => ({ done: true, said: s, say });
+      if (!c && offer && Date.now() - offer.at < 90000 && YES.test(s)) {
+        const o = offer;
+        offer = null;
+        try { return done((o.kind === "dream" ? await dream("Take me to " + o.topic) : await holo("Teach me in 3D: " + o.topic)) || "Okay."); }
+        catch (e) { return done(lookTrouble(e)); }
+      }
       // Your PC on the big screen: something to do is done there while you watch.
       if (!c && vr.scene?.pcShown?.() && onPc(s)) {
         const visit = epoch;
@@ -845,7 +871,7 @@
           if (vr.active && visit === epoch) vr.scene?.orb(appState);
         }
       }
-      if (!c) return { said: s };
+      if (!c) { lastAsk = s; return { said: s }; }
       try {
         if (c.kind === "exit") { setTimeout(() => vr.scene?.stop(), 1800); return done("Okay, see you outside."); }
         if (c.kind === "sleep") {
@@ -891,6 +917,7 @@
       } catch (e) {
         return done(lookTrouble(e));
       }
+      lastAsk = s;
       return { said: s };
     },
     orb(m) { appState = m || ""; vr.scene?.orb(m); },
@@ -898,12 +925,19 @@
     said(t) { vr.scene?.said(t); },
     line(who, t, opts) {
       if (who === "izuki" && t && !opts?.thinking) spokeAt = Date.now();
+      // Remember an offer to show it, so a plain "yes" builds it.
+      if (who === "izuki" && t && !opts?.thinking && !opts?.error) {
+        const k = OFFERS_TRIP.test(t) ? "dream" : OFFERS_3D.test(t) ? "holo" : "";
+        offer = k && lastAsk ? { kind: k, topic: lastAsk, at: Date.now() } : null;
+      }
       if (who === "izuki" && t && !opts?.thinking && !opts?.error) lastReply = String(t);
       vr.scene?.line(who, t, opts);
     },
     level(v) { vr.scene?.level(v); },
     /** No voice right now: the room says why (the page's Retry can't be seen in a headset). */
     quiet(t) { vr.scene?.notice?.(t, 15000, true); },
+    /** What the chat brain is told while you're in the room (it used to think it was on a phone). */
+    system() { return VR_CONTEXT(!!vr.scene?.pcShown?.(), !!vr.scene?.holoShown?.(), !!vr.scene?.dreamShown?.()); },
     /** "Hey Nova" in the room: listen hands-free (only a call by name is answered). */
     handsFree(on) { heyNova = !!on; },
     homeCard,

@@ -788,6 +788,52 @@ test("Izuki can float beside your other apps (a room hides them; a window doesn'
   assert.doesNotMatch(src, /openedOnce/, "the old explainer no longer opens under the launcher");
 });
 
+test("in the room the chat brain knows it's in VR, not on a phone", () => {
+  const { VR_CONTEXT } = helpers;
+  const c = VR_CONTEXT(true, false, true);
+  assert.match(c, /VR headset/);
+  assert.match(c, /never talk about phone screens/);
+  assert.match(c, /Want me to build it in 3D\?/);
+  assert.match(c, /PC's screen is open/);
+  assert.match(c, /dream world/);
+  assert.doesNotMatch(VR_CONTEXT(false, false, false), /PC's screen is open|dream world you built/);
+  const page = read("docs/app/index.html");
+  assert.match(page, /window\.IzukiVr\?\.active \? "in their VR headset" : "on their phone"/);
+  assert.match(page, /window\.IzukiVr\?\.active \? window\.IzukiVr\.system\?\.\(\) \|\| "" : ""/);
+});
+
+test("\"Want me to build it in 3D?\" … \"yes\" builds a hologram of what they asked", async () => {
+  const { YES, OFFERS_3D } = helpers;
+  for (const s of ["yes", "Yeah", "sure", "yes please", "do it", "go ahead", "build it", "let's do it"]) assert.ok(YES.test(s), s);
+  for (const s of ["yesterday I went out", "no thanks", "maybe later"]) assert.ok(!YES.test(s), s);
+  assert.ok(OFFERS_3D.test("Lava pushes up through the crust. Want me to build it in 3D?"));
+  assert.ok(!OFFERS_3D.test("It's 3 degrees outside."));
+  const holoJson = JSON.stringify({ title: "Volcano", kind: "steps", say: "Here's how.", items: [{ label: "Magma" }, { label: "Vent" }], steps: [] });
+  const b = browser({ think: async () => holoJson });
+  const first = await b.vr.gate("how do volcanoes erupt");
+  assert.equal(first.said, "how do volcanoes erupt", "an ordinary question goes to the chat brain");
+  b.vr.line("izuki", "Pressure builds until magma bursts out. Want me to build it in 3D?");
+  const r = await b.vr.gate("yes");
+  assert.ok(r.done, "the yes is handled in the room");
+  const call = b.calls.find((c) => c[0] === "think");
+  assert.ok(call && /volcanoes erupt/.test(call[1]), "the hologram is about what they asked");
+  assert.ok(b.calls.some((c) => c[0] === "holoShow"), "and it's built");
+  // An offer is used once; a later "yes" with no offer goes to the brain.
+  const again = await b.vr.gate("yes");
+  assert.ok(!again?.done, "no second hologram from the same offer");
+});
+
+test("in a headset call you can talk over Izuki, and voice bars show it hears you", () => {
+  const page = read("docs/app/index.html");
+  assert.match(page, /bargeWatch\(orbState === "speaking"\)/, "every time Izuki starts speaking, the cut-in watch starts");
+  assert.match(page, /var bargeTimer = null;/, "safe while the page is still starting");
+  assert.match(page, /!window\.IzukiVr\?\.active \|\| store\.get\("bargeIn", true\) === false/, "headset calls only, and it can be switched off");
+  assert.match(page, /loud >= 350\) \{[^}]*hush\(\)/, "about a third of a second of your voice stops Izuki");
+  const scene = read("docs/app/vr-scene.src.js");
+  assert.match(scene, /function voiceBarsTick\(dt, t\)/);
+  assert.match(scene, /const on = view\.state === "listening";/, "bars only while listening");
+});
+
 (async () => {
   for (const [name, fn] of tests) {
     try { await fn(); passed++; } catch (e) { console.error(`FAIL ${name}\n  ${e.message}`); process.exitCode = 1; }

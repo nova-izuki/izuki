@@ -2217,6 +2217,37 @@ export async function start({ mode, session, api, tint }) {
     ringMat.color.setHex(HALO[view.state] || 0x5eead4);
     ring.rotation.z -= dt * (view.state === "thinking" ? 4 : 0.8);
     ring.scale.setScalar(1 + (view.state === "listening" ? view.mic * 0.25 : 0));
+    voiceBarsTick(dt, t);
+  }
+
+  // Voice bars either side of the orb while it listens (the owner missed them
+  // when talking by button): they jump with your voice, tallest nearest the orb.
+  const voiceBars = (() => {
+    const geo = track(new PlaneGeometry(0.008, 1));
+    const mat = track(new MeshBasicMaterial({ color: 0x5eead4, transparent: true, opacity: 0, depthWrite: false, blending: AdditiveBlending }));
+    const bars = [];
+    for (const side of [-1, 1]) for (let k = 0; k < 4; k++) {
+      const m = new Mesh(geo, mat);
+      m.position.set(side * (0.142 + k * 0.016), 0, 0.01);
+      m.userData = { k, phase: Math.random() * 6, h: 0.004 };
+      m.scale.y = 0.004;
+      rig.add(m);
+      bars.push(m);
+    }
+    return { bars, mat };
+  })();
+  function voiceBarsTick(dt, t) {
+    const on = view.state === "listening";
+    voiceBars.mat.opacity += ((on ? 0.9 : 0) - voiceBars.mat.opacity) * Math.min(1, dt * 8);
+    if (voiceBars.mat.opacity < 0.01) return;
+    for (const m of voiceBars.bars) {
+      const { k, phase } = m.userData;
+      // Louder voice, taller bars; a little life of their own so they never sit flat.
+      const wobble = calm ? 0.6 : 0.55 + 0.45 * Math.abs(Math.sin(t * (7 + k * 1.7) + phase));
+      const want = on ? 0.006 + view.mic * 0.07 * (1 - k * 0.18) * wobble : 0.004;
+      m.userData.h += (want - m.userData.h) * Math.min(1, dt * 14);
+      m.scale.y = Math.max(0.004, m.userData.h);
+    }
   }
 
   // The Talk button says what a tap does now; End call shows during a call.
