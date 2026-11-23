@@ -277,6 +277,17 @@ export function wantsToWatch(text: string): boolean {
   return /\b(while i watch|so i can (see|watch)|let me (see|watch)|on (my|the) screen|in front of me|show me (how|as|while)|in (the )?frontend|where i can see)\b/i.test(text);
 }
 
+/**
+ * The Island chat's "Do it for me" and the chat's "Do it on my PC" put
+ * [DO IT] first (IslandChat.tsx, ChatTab.tsx): the person pressed a button
+ * that means "do these steps here, on this screen". A device word inside
+ * the steps ("how do I watch Netflix on my TV?") must not send the whole
+ * job to that device instead. Same rule as Rust's forced_do (commands.rs).
+ */
+export function forcedDoIt(text: string): boolean {
+  return text.trimStart().startsWith("[DO IT]");
+}
+
 export function answersInBackground(text: string): boolean {
   const s = text.toLowerCase();
   if (/\b(show me|open (it|them|that|settings|the)|on (my|the) screen|so i can see|let me see|click)\b/.test(s)) return false;

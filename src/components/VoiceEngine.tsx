@@ -6,7 +6,7 @@ import { useDictation } from "../hooks/useDictation";
 import { isNoteStudyPrompt } from "../lib/notes";
 import { AIR_SLOTS, actionLabel, airBindings, parseAirVoice, slotLabel } from "../lib/airActions";
 import { autoFacts, matchLocalCommand, type LocalCommand } from "../lib/voiceCommands";
-import { answerOnScreenPrompt, answersInBackground, cancelChat, chatLane, directionsTask, looksLikeDirections, MISSION_ADD, needsApps, needsScreen, recentHistory, remember, TUTOR_START, wantsBackground, wantsDirectAnswer, wantsToWatch, type LaneResult } from "../lib/conversation";
+import { answerOnScreenPrompt, answersInBackground, cancelChat, chatLane, directionsTask, forcedDoIt, looksLikeDirections, MISSION_ADD, needsApps, needsScreen, recentHistory, remember, TUTOR_START, wantsBackground, wantsDirectAnswer, wantsToWatch, type LaneResult } from "../lib/conversation";
 import { speakable } from "../lib/speakable";
 import { parseInstant, type Instant } from "../lib/instant";
 import { isEcho, noteSaid, noteStillSaying } from "../lib/echo";
@@ -951,6 +951,10 @@ export function VoiceEngine() {
     // them. Matching commands against `t` once turned the Study log off when
     // someone asked "what's the answer" (the built instruction says "Notes").
     const own = expandShortWords(text.trim());
+    // "Do it for me" / "Do it on my PC" is one job for the screen agent.
+    // The steps inside it can mention a TV or a phone; those words must not
+    // hand the job to that device (forcedDoIt in conversation.ts).
+    const forced = forcedDoIt(text);
     // While dictating, every word is content for the focused box — never a
     // request to look at the screen. Expanding "answer question 5" here would
     // type the whole instruction into their document.
@@ -1177,8 +1181,9 @@ export function VoiceEngine() {
 
     // The TV: "open Netflix on the TV", "turn the TV up" — straight to it,
     // no AI. (Questions about TV — "what's on TV tonight" — go on as usual.)
-    // Any request that mentions the TV is for the TV — never the PC.
-    if (/\b(?:tv|television|roku)\b/i.test(t) && !/^(?:what|what's|whats|who|when|why|how|is|are|do|does|which|can you see)\b/i.test(t)) {
+    // Any request that mentions the TV is for the TV — never the PC. The
+    // exception is the explicit Do it button: its steps often mention the TV.
+    if (!forced && /\b(?:tv|television|roku)\b/i.test(t) && !/^(?:what|what's|whats|who|when|why|how|is|are|do|does|which|can you see)\b/i.test(t)) {
       startSession(from === "voice", "thinking");
       const said = await api.tvDo(t).catch(failure);
       if (requestSeq !== at) return;
@@ -1190,7 +1195,7 @@ export function VoiceEngine() {
     }
 
     // Choose the device BEFORE any Windows shortcuts or local app commands.
-    if (/\b(?:my|the|this|on|open) (?:phone|iphone|android|mobile)\b/i.test(t)) {
+    if (!forced && /\b(?:my|the|this|on|open) (?:phone|iphone|android|mobile)\b/i.test(t)) {
       startSession(from === "voice", "thinking");
       const paired = useIzuki.getState().settings.android_enabled;
       const explicitAndroid = /\bon (?:my|the) android\b/i.test(t) && !/\biphone\b/i.test(t);
