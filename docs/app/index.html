@@ -943,9 +943,9 @@
   if (answerDepth !== "quick" && answerDepth !== "deep") answerDepth = "normal";
   const depthLine = () => DEPTHS[answerDepth] || "";
   // Answering for me: off, the answer here ("chat"), or typed into the app ("type").
-  // Never typed or tapped into the app: Izuki may say an answer when asked,
-  // but filling in a quiz or test is doing it for them (the rule since 1.0.136,
-  // AGENTS.md). An old "type" choice now means "show me the answer here".
+  // Izuki may say an answer when asked, and it answers a quiz or test on
+  // screen the same way; handing the work in stays the person's (AGENTS.md).
+  // An old "type" choice now means "show me the answer here".
   const autoAnswer = () => {
     const v = store.get("autoAnswer", "off");
     return v === "chat" || v === "type" ? "chat" : "off";
@@ -1025,7 +1025,11 @@
   let readAloud = store.get("readAloud", false);
   let brainKeys = store.get("brainKeys", {});
   /** Can Izuki answer at all — a Gemini key, or the chosen brain's key? */
-  const ready = () => !!key || (brain !== "gemini" && !!brainKeys[brain]);
+  /** The person has their own AI key (Gemini, or the brain they picked). */
+  const ownKey = () => !!key || (brain !== "gemini" && !!brainKeys[brain]);
+  // Izuki always has a brain: with no key, the free starter brain answers
+  // (starterBrain), so nobody has to set anything up to start talking.
+  const ready = () => true;
   /** Can Izuki turn a recording into words (Gemini hears it; Groq's Whisper does too)? */
   const canHear = () => !!key || !!brainKeys.groq;
   let pc = store.get("pc", "");
@@ -1258,11 +1262,17 @@
     w.append(
       orbBtn,
       el("p", "hello", greeting()),
-      el("h1", "", ready() ? `I'm ${person().name}. What are we doing today?` : "Hi, I'm Izuki"),
-      el("p", "sub", ready() ? "Tap me and just talk — or type below." : "Your free AI friend. I need one free key from Google to wake up — it takes about a minute."),
+      el("h1", "", `I'm ${person().name}. What are we doing today?`),
+      el("p", "sub", "Tap me and just talk — or type below."),
     );
     log.appendChild(w);
     IzukiOrb.add(cv);
+    // No key yet: Izuki works on the free starter brain. Say so, kindly, with
+    // the one-minute way to make it fast.
+    if (!ownKey()) {
+      const note = el("p", "note starter-note", "Free to use, no key needed. I'm on my starter brain, which answers about once a minute. Add a free key below (about a minute) and I'll answer instantly, see pictures and search the web.");
+      w.append(note, setupCard());
+    }
     if (!ready()) {
       // A previously written conversation is still worth returning to, even
       // if the user has not re-added their local AI key yet.
@@ -2114,7 +2124,7 @@
    */
   let warmAt = 0;
   function warmBrain() {
-    if (Date.now() - warmAt < 45000 || !ready()) return;
+    if (Date.now() - warmAt < 45000 || !ownKey()) return;
     warmAt = Date.now();
     try {
       if (usesGemini()) {
@@ -2140,7 +2150,7 @@
   const SCREEN_SYSTEM = () => [
     "You are Izuki, helping with what is on the person's phone screen right now.",
     "You get the screen's text from top to bottom, and a picture of it when Android allows one. Do what they asked: explain it simply, summarize it, translate it, answer their question about it, or say what to do next and which visible button or field to use (by its label).",
-    "If the screen shows a question, a quiz, a test or an assignment, answer it: give the answer itself, then the reasoning at the detail they asked for. Do not ask whether it is practice or graded, and do not refuse. Never submit or hand anything in — that stays theirs.",
+    "If it's a quiz, test or exam: answer it — give the answer itself, then the reasoning at the detail they asked for. Do not ask whether it is practice or graded. Never say you will submit or hand anything in; that is theirs.",
     "If the screen doesn't show what they asked about, say so plainly. Never invent text that isn't there.",
     depthLine() || "Answer in a few spoken sentences unless they asked for detail: plain words, no markdown, no lists unless they asked.",
     "Answer in the language they used.",
@@ -2191,8 +2201,8 @@
   const agentSees = () => usesGemini();
   /**
    * "Answer this question" while they look at one in another app.
-   * The answer here, at their depth. Never put into the app itself: Izuki
-   * doesn't fill in quizzes or tests (AGENTS.md).
+   * The answer here, at their depth, or worked through on the screen itself.
+   * It never presses Submit, Turn in or Finish (AGENTS.md).
    */
   async function answerForMe(said, onStep) {
     const n = window.IzukiNative;
@@ -2215,7 +2225,60 @@
 
   /** Whoever answers: the chosen brain, with Gemini standing in if it fails.
    *  `system` swaps in different instructions (the apps lane's protocol). */
+  // ---- the free starter brain: no key, no account ----------------------------
+  // Pollinations' free text AI (an open model), reached straight from the page.
+  // Free for anyone, with one catch: one answer every 45 seconds per internet
+  // connection (checked 2026-11-24: 200 in 2 s, then "1 reply every 45
+  // seconds per IP"). Enough to meet Izuki; a free key makes it fast.
+  const STARTER = { name: "Izuki's free starter brain", url: "https://text.pollinations.ai/openai", model: "openai", gap: 45000 };
+  let starterNext = 0;
+  async function starterBrain(contents, onText, system) {
+    if (turnMeta) {
+      turnMeta.provider = STARTER.name;
+      turnMeta.model = "free open model";
+      turnMeta.search.offered = false;
+      turnMeta.search.why = "Web search needs a free Gemini key.";
+    }
+    const wait = Math.ceil((starterNext - Date.now()) / 1000);
+    if (wait > 0) throw new Error(starterBusy(wait));
+    const messages = [{ role: "system", content: system || systemPrompt() }].concat(
+      contents.map((c) => ({
+        role: c.role === "model" ? "assistant" : "user",
+        // Words only: the starter brain can't see pictures.
+        content: c.parts.filter((x) => x.text != null).map((x) => x.text).join("\n") || "(a picture: the free starter brain can't see pictures)",
+      }))
+    );
+    const guard = stallGuard(30000);
+    try {
+      let res;
+      try {
+        res = await fetch(STARTER.url, { method: "POST", signal: guard.signal, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model: STARTER.model, messages }) });
+      } catch (e) {
+        if (e.name === "AbortError") throw new Error(TOO_SLOW);
+        throw new Error("I can't reach my free brain — are you online?");
+      }
+      if (res.status === 402 || res.status === 429) {
+        const text = await res.text().catch(() => "");
+        const secs = Number((text.match(/wait (\d+) seconds?/i) || [])[1]) || Number(res.headers.get("Retry-After")) || 45;
+        starterNext = Date.now() + secs * 1000;
+        throw new Error(starterBusy(secs));
+      }
+      if (!res.ok) throw new Error(`My free brain answered ${res.status} — try again in a moment, or add a free key in Settings.`);
+      const data = await res.json();
+      starterNext = Date.now() + STARTER.gap;
+      const out = String(data.choices?.[0]?.message?.content || "").replace(/<think>[\s\S]*?<\/think>/g, "").trim();
+      if (!out) throw new Error("My free brain went quiet — ask me again in a moment.");
+      onText?.(out);
+      return out;
+    } finally {
+      guard.done();
+    }
+  }
+  const starterBusy = (secs) =>
+    `I'm on my free starter brain, which can answer once every 45 seconds. Ask me again in ${secs} seconds — or add a free Gemini key in Settings (about a minute) and I'll answer instantly, every time.`;
+
   async function think(contents, onText, system) {
+    if (!ownKey()) return starterBrain(contents, onText, system);
     if (usesGemini()) return gemini(contents, onText, undefined, undefined, system);
     try {
       return await otherBrain(contents, onText, undefined, system);

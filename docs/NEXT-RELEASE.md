@@ -9,3 +9,4 @@ into the next `docs/RELEASE-x.y.z.md` when it releases, then clears this list.
 - Izuki no longer backs out of a quiz, test or assignment: it works the question out and picks the choice or types the answer. It still never presses Submit, Turn in or Finish — that one stays yours. [Freebuff]
 - Every AI in Settings now has a working link to its own key page: one line with Gemini, Groq, OpenRouter, Mistral and Meta, and the link opens the phone's browser instead of doing nothing in the app. [Freebuff]
 - On the PC, a quiz or test is answered like any other page: it names the answer and clicks the choice for you. The sentence "I didn't click it … you pick the answer yourself" is gone; it still never presses Submit, Turn in or Finish. [Freebuff]
+- The phone answers a quiz or test on your screen: it names the answer and taps or types it, and the "I didn't click it … you pick the answer yourself" sentence is gone. It still never presses Submit, Turn in or Finish. [Freebuff]
