@@ -255,6 +255,19 @@
   /* typing */
   footer { padding-block: 6px calc(12px + var(--safe-bottom)); display: flex; flex-direction: column; gap: 8px; align-items: center; }
   #status { color: var(--muted); font-size: 13.5px; min-height: 1.3em; text-align: center; }
+
+  /* How much detail, one tap, right where you type. */
+  .depth { display: flex; gap: 5px; justify-content: center; margin: 4px 0 6px; }
+  .depth[hidden] { display: none; }
+  .depth button {
+    min-height: 30px; padding: 0 12px; border-radius: 999px;
+    border: 1px solid var(--line); background: transparent; color: var(--muted);
+    font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer;
+    transition: background 140ms ease, border-color 140ms ease, transform 140ms ease;
+  }
+  .depth button[aria-pressed="true"] { color: inherit; border-color: currentColor; background: rgba(255, 255, 255, 0.08); }
+  .depth button:active { transform: scale(0.96); }
+  html.tv .depth { display: none; }
   /* Thinking: a pulsing dot by the status line and three dots in the reply
      bubble, so it's plain the answer is on its way and not frozen. */
   #status.working::before, #live-status.working::before {
@@ -436,6 +449,11 @@
 
   <footer>
     <div id="status"></div>
+    <div class="depth" id="depth" role="group" aria-label="How much detail Izuki gives">
+      <button type="button" class="depth-opt" data-depth="quick" aria-pressed="false" title="Just the answer">Quick</button>
+      <button type="button" class="depth-opt" data-depth="normal" aria-pressed="true" title="A few sentences">Normal</button>
+      <button type="button" class="depth-opt" data-depth="deep" aria-pressed="false" title="Worked through, step by step">Deep</button>
+    </div>
     <div id="attached"></div>
     <form class="composer" id="form" autocomplete="off">
       <button id="clip" type="button" aria-label="Add a photo, screenshot or file" title="Add a photo, screenshot or file">
@@ -676,6 +694,15 @@
       <p id="native-controls-status" class="note">Checking Android control…</p>
       <div class="row" style="margin-top:8px"><button class="btn" id="open-android-controls" type="button">Enable Android controls</button></div>
       <p class="note">Optional and visible: Android opens its own Accessibility settings. When enabled, Izuki can do the phone navigation you directly ask for: Home, Back, recent apps, notifications, Quick Settings, lock, screenshots, taps, swipes, typing and scrolling. Autopilot runs a short routine one visible step at a time, and never sends, pays or deletes. It never acts in the background by itself.</p>
+      <div class="field" style="margin-top:12px">
+        <label for="answer-for-me">Answer for me, on any screen</label>
+        <select id="answer-for-me">
+          <option value="off">Off — I'll ask like normal</option>
+          <option value="chat">Show me the answer here</option>
+          <option value="type">Type it into the app for me</option>
+        </select>
+        <p class="note" id="answer-for-me-note" style="margin-top:4px"></p>
+      </div>
       <p class="note">The floating glass orb also uses Android Accessibility, so it does <b>not</b> need the “Appear on top” permission and Izuki is deliberately not listed there. If the orb is off, turn Android control on here.</p>
       <p class="note">New: swipe down twice and add <b>Ask Izuki</b> to Android Quick Settings for a one-tap wake from any app.</p>
     </section>
@@ -905,6 +932,36 @@
     },
     set(k, v) { try { localStorage.setItem("izuki." + k, JSON.stringify(v)); } catch {} },
   };
+  // How much detail they want: Quick (just the answer), Normal, Deep (worked
+  // through). It changes the instructions, not the model, so it costs no time.
+  const DEPTHS = {
+    quick: "They set Quick: give the answer in as few words as it allows, the result first, one line of why at most. No preamble, no steps unless the answer is steps.",
+    deep: "They set Deep: say what the question is really asking, work through it in order, give the answer, and name the mistake people usually make. Short paragraphs, no headings.",
+  };
+  let answerDepth = store.get("depth", "normal");
+  if (answerDepth !== "quick" && answerDepth !== "deep") answerDepth = "normal";
+  const depthLine = () => DEPTHS[answerDepth] || "";
+  // Answering for me: off, the answer here ("chat"), or typed into the app ("type").
+  const autoAnswer = () => {
+    const v = store.get("autoAnswer", "off");
+    return v === "chat" || v === "type" ? v : "off";
+  };
+  function paintDepth() {
+    for (const b of document.querySelectorAll("#depth .depth-opt")) {
+      b.setAttribute("aria-pressed", String(b.dataset.depth === answerDepth));
+    }
+  }
+  function setDepth(next) {
+    if (next !== "quick" && next !== "normal" && next !== "deep") return;
+    answerDepth = next;
+    store.set("depth", answerDepth);
+    paintDepth();
+  }
+  document.getElementById("depth")?.addEventListener("click", (e) => {
+    const b = e.target.closest(".depth-opt");
+    if (b) setDepth(b.dataset.depth);
+  });
+  paintDepth();
   let key = store.get("key", "");
   // Other free brains (optional). Gemini stays best here: web search, its
   // voice, and hearing voice notes all come with its key.
@@ -1707,6 +1764,7 @@
       `You are ${person().name}, the user's Izuki — their AI companion ${window.IzukiVr?.active ? "in their VR headset" : "on their phone"}: ${person().style}, like a close friend who's brilliant at everything. Stay in character.`,
       window.IzukiVr?.active ? window.IzukiVr.system?.() || "" : "",
       "Keep replies short and natural (a few sentences) unless they ask for detail. Plain text; a short dash list only when it really helps; an emoji now and then at most.",
+      depthLine(),
       "What you write may be read aloud, so write the way a person talks.",
       talking ? "You're on a live voice call right now: answer in one to three short spoken sentences, the most important thing first. No lists, no markdown, no emoji." : "",
       window.IzukiDrive?.system?.() || "",
@@ -2054,13 +2112,19 @@
   // something there goes to the phone agent instead.
   const SCREEN_HELP = /\b(?:explain (?:this|that|it|what i'?m looking at)|what(?:'s| is) (?:this|that)(?: (?:page|screen|app|message|error|thing|word|button|notification))?(?: about| saying| mean)?(?=\s*[?.!]*\s*$)|what does (?:this|that|it) (?:mean|say)|what am i looking at|help me (?:with |understand |read )?(?:this|that|here)|(?:summari[sz]e|translate|read|check) (?:this|that|it)(?: (?:page|screen|article|message|email|post|text|for me))?|(?:on|of) (?:my|the|this) screen|this (?:page|screen|site|article|message|error|email|post|form|question|chat|notification))\b/i;
   const wantsScreenHelp = (said) => SCREEN_HELP.test(String(said || ""));
-  const SCREEN_SYSTEM = [
+  // "Answer this question" — about a question on the screen in front of them.
+  const ASK_ON_SCREEN = /\b(?:answer|solve|do|work ?out|complete|fill (?:in|out))\b[^.!?]{0,30}\b(?:this|these|that|it|them|the (?:question|quiz|assignment|problem|test|worksheet|exercise)|my (?:quiz|assignment|homework|test))\b/i;
+  const wantsAnswer = (said) => ASK_ON_SCREEN.test(String(said || ""));
+  const SCREEN_SYSTEM = () => [
     "You are Izuki, helping with what is on the person's phone screen right now.",
     "You get the screen's text from top to bottom, and a picture of it when Android allows one. Do what they asked: explain it simply, summarize it, translate it, answer their question about it, or say what to do next and which visible button or field to use (by its label).",
-    "If it's a quiz, test or exam: explain the idea behind the question; state the answer only if they asked for the answer; never say you will choose, type or submit anything.",
+    autoAnswer() === "off"
+      ? "If it's a quiz, test or exam: explain the idea behind the question; state the answer only if they asked for the answer; never say you will choose, type or submit anything."
+      : "If it's a quiz, test or exam: they turned on answering for me, so give the answer clearly with the reasoning. Only they submit it, never you.",
     "If the screen doesn't show what they asked about, say so plainly. Never invent text that isn't there.",
-    "Answer in a few spoken sentences unless they asked for detail: plain words, no markdown, no lists unless they asked. Answer in the language they used.",
-  ].join("\n");
+    depthLine() || "Answer in a few spoken sentences unless they asked for detail: plain words, no markdown, no lists unless they asked.",
+    "Answer in the language they used.",
+  ].filter(Boolean).join("\n");
   async function screenHelp(said, onText) {
     const n = window.IzukiNative;
     // Nothing reads a screen without the person's yes (Settings → What Izuki can see).
@@ -2089,8 +2153,8 @@
     const contents = [{ role: "user", parts }];
     // The screen is the question: no web search, which only slows this down.
     const words = usesGemini()
-      ? await gemini(contents, onText, undefined, true, SCREEN_SYSTEM)
-      : await otherBrain(contents, onText, undefined, SCREEN_SYSTEM).catch((e) => (key ? gemini(contents, onText, undefined, true, SCREEN_SYSTEM) : Promise.reject(e)));
+      ? await gemini(contents, onText, undefined, true, SCREEN_SYSTEM())
+      : await otherBrain(contents, onText, undefined, SCREEN_SYSTEM()).catch((e) => (key ? gemini(contents, onText, undefined, true, SCREEN_SYSTEM()) : Promise.reject(e)));
     return shown(words) || "I looked, but I couldn't make out an answer from this screen.";
   }
 
@@ -2105,6 +2169,38 @@
   }
   /** The phone agent gets screenshots when its brain sees pictures (Gemini). */
   const agentSees = () => usesGemini();
+  /**
+   * "Answer this question" while they look at one in another app.
+   * Show: the answer here, at their depth. Type: the phone agent puts it into
+   * the field itself, one visible step at a time, and stops before anything
+   * is submitted.
+   */
+  async function answerForMe(said, onStep) {
+    const n = window.IzukiNative;
+    const screen = await n?.screen?.().catch(() => null);
+    if (!screen || !Array.isArray(screen.items) || !screen.items.length) {
+      return { error: "I couldn't read the screen. Turn on Android control in Settings → Phone, then ask me again." };
+    }
+    if (screen.app === "com.novaizuki.mobile") {
+      return { error: "Open the question in its own app or page first — I can't read it from inside Izuki." };
+    }
+    if (autoAnswer() !== "type") {
+      return { text: await screenHelp("Answer the question showing on my screen. " + said) };
+    }
+    const goal = [
+      "The person is looking at a question on their screen and asked me to answer it for them.",
+      "Read the question on the screen, work it out, and put the answer in: type it into the answer box, or tap the choice they should pick.",
+      "Do not press Submit, Send, Done, Save, Finish, Turn in or anything that hands it in — stop and tell them it's ready.",
+      "Only use what the screen actually shows. If there's no question on screen, finish with ask.",
+    ].join(" ");
+    const result = await window.IzukiAgent.run(goal, {
+      think: agentThink,
+      see: agentSees(),
+      stopped: () => !!requestEnd,
+      onStep,
+    });
+    return { text: result?.text || "I couldn't find a question I could answer on this screen." };
+  }
   // Autopilot's Run hands anything that isn't a quick routine to the phone
   // agent, with this same brain (only once a key is set).
   window.IzukiBrain = {
@@ -3135,7 +3231,7 @@
       // A voice turn over another app (or Izuki in the background) means that
       // app's screen; typed in Izuki, "explain this" is about the chat unless
       // they name the screen or page.
-      const aboutScreen = wantsScreenHelp(said) && (!!turnCtx || document.hidden || /\b(?:screen|page|site|app)\b/i.test(said));
+      const aboutScreen = (wantsScreenHelp(said) || wantsAnswer(said)) && (!!turnCtx || document.hidden || /\b(?:screen|page|site|app)\b/i.test(said));
       // Which screen, if any: asked, never assumed (Settings → What Izuki can see).
       const chosen = aboutScreen && !files.length ? await screenChoice(out) : { source: "", why: "" };
       // A Stop during the screen question is still a Stop: no deadline is
@@ -3143,6 +3239,40 @@
       if (requestEnd) throw new Error("stopped");
       // Now the reply has a clock of its own, sized for what it will do.
       beginRequest(chosen.source === "pc" || wantsWebRead(said) ? 120000 : 90000);
+      // Answering for me: the question on that screen — answered here, or put
+      // into the app for them by the phone agent, one visible step at a time.
+      if (chosen.source === "phone" && agentReady() && autoAnswer() !== "off" && wantsAnswer(said)) {
+        history.push({ role: "user", text: said });
+        const doing = autoAnswer() === "type" ? "Working on the question…" : "Looking at the question…";
+        out.textContent = doing;
+        stage(doing);
+        if (turnCtx) window.IzukiNative.turnState(turnCtx.id, "think", doing);
+        if (autoAnswer() === "type") extendRequest(180000);
+        agentBusy = true;
+        let res;
+        try {
+          res = await answerForMe(said, (line) => {
+            agentStep = line;
+            out.textContent = line;
+            stage(line);
+            if (turnCtx) window.IzukiNative.turnState(turnCtx.id, "think", line);
+            else syncNativeOrb();
+          });
+        } finally {
+          agentBusy = false;
+          agentStep = "";
+          syncNativeOrb();
+        }
+        if (requestEnd) throw new Error("stopped");
+        reply = res.error || res.text;
+        out.remove();
+        bubble("izuki", reply, { meta: turnMeta });
+        history.push({ role: "model", text: reply });
+        saveAll();
+        answered();
+        await speak(reply);
+        return;
+      }
       if (chosen.why) {
         // No screen data and no permission: say so instead of answering as if
         // the screen had been read.
@@ -5696,6 +5826,24 @@
         store.set("screenOk", !!allow.checked);
         say();
       };
+    }
+    // Answering for me: the two power levels. Off by default, like the rest.
+    const answerPick = $("answer-for-me"), answerNote = $("answer-for-me-note");
+    if (answerPick && answerNote) {
+      answerPick.value = autoAnswer();
+      const sayAnswer = () => {
+        answerNote.textContent = answerPick.value === "type"
+          ? "Reads the question on your screen and puts the answer in for you, one visible step at a time. It stops before Submit, Send or Pay: you press that yourself. Needs Android control."
+          : answerPick.value === "chat"
+            ? "Reads the question on your screen and answers it here, at the detail you picked with Quick, Normal or Deep. Nothing is tapped, typed or sent."
+            : "Off. Say “answer this question” and Izuki explains what's on the screen; it never touches the app.";
+        const noControl = answerPick.value === "type" && !agentReady();
+        answerPick.querySelector('option[value="type"]').textContent = noControl
+          ? "Type it into the app for me — needs Android control"
+          : "Type it into the app for me";
+      };
+      answerPick.onchange = () => { store.set("autoAnswer", answerPick.value); sayAnswer(); };
+      sayAnswer();
     }
   }
 
