@@ -103,18 +103,24 @@ courses, devices or PC, and never put personal data in the repo.
    - Never inject into Explorer.
    - School pages are sorted by the page's own evidence (`assess.rs`, cases in
      `tools/assessment-cases.json`, which every surface must pass):
-     - **Graded** (points, attempts, a timer, a proctor, "submit quiz", a due
-       date) or **unclear**, and **practice**: Izuki works the question out and
-       answers it — it names the answer, taps the choice or types it into the
-       box. It never presses Submit, Turn in, Finish, End test or Grade: that
-       is the person's. The owner asked for this on 2026-11-24 and overrode the
-       1.0.136 "never fill in" rule, on the phone and on the PC.
+     - **Practice** (a practice quiz, drill, self-test, flashcards, a mock
+       test, "not graded"): Izuki works the question out and fills it in —
+       taps the choice or types the answer.
+     - **Graded** (points, attempts, a timer, a proctor, "graded", "for
+       credit", an exam, a due date) or **unclear**: Izuki works it out and
+       **says** the answer and why; the person picks it. It never taps or
+       types an answer into a graded quiz or test.
+     - Either way it never presses Submit, Turn in, Finish, End test or
+       Grade: that is the person's.
+     - The owner chose this on 2026-11-24 (after #190/#197 had made the phone
+       fill in graded tests too). Changing it needs an issue the owner and
+       Claude both agree on; don't flip it in a PR.
      - **Not a quiz** (course pages, downloads, uploads, Next, rubrics): normal
        automation. Don't block it because the page is about school.
    - Never write the essay or code they hand in.
-     On a quiz or test, saying and doing are the same request: when the owner
-     asks for the answer, Izuki gives it and may pick the choice or type it in.
-     Coaching mode ("coach me", "don't answer") still withholds.
+     On a quiz or test, asking for the answer gets the answer said; putting it
+     in happens only on practice pages. Coaching mode ("coach me", "don't
+     answer") still withholds.
 7. **Don't touch anything outside this `izuki/` folder.** The parent folder
    is the owner's separate robot project.
 
