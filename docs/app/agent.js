@@ -20,6 +20,10 @@
   // are installing apps and granting permissions. The same actions in
   // Spanish, Portuguese, French and German, for phones set to those.
   const RISKY = /\b(send|call|dial|video call|pay|buy|order|purchase|delete|erase|remove|uninstall|check ?out|subscribe|transfer|place order|reset|format|wipe|clear (?:data|storage|cache|history|all)|factory|sign out|log ?out|force stop|disable|install|allow|grant|accept|enviar|llamar|eliminar|borrar|pagar|comprar|instalar|desinstalar|permitir|aceptar|excluir|aceitar|envoyer|appeler|supprimer|effacer|payer|acheter|installer|désinstaller|autoriser|accepter|restablecer|redefinir|formatear|formatar|desactivar|desativar|cerrar sesión|sair da conta|réinitialiser|formater|désactiver|déconnexion|se déconnecter|zurücksetzen|formatieren|deaktivieren|abmelden|senden|anrufen|löschen|entfernen|bezahlen|kaufen|installieren|deinstallieren|zulassen|erlauben|akzeptieren)\b/i;
+
+  // Choosing an answer and typing it is fine - on a quiz as anywhere else.
+  // Handing the work in is not: Submit / Turn in / Finish stays the person's.
+  const HAND_IN = /\b(submit|turn ?in|hand ?in|hand it in|finish (?:test|attempt|quiz|exam|assessment)|end (?:test|exam|quiz)|finali[sz]e|grade (?:it|me|my|this)|abgeben|soumettre|remettre|entregar|enviar respuestas)\b/i;
   const PAGES = ["wifi", "internet", "bluetooth", "volume", "nfc", "storage", "battery", "battery_saver", "display", "sound", "apps",
     "notifications", "location", "data", "dnd", "about", "date", "language", "keyboard", "airplane", "camera", "settings"];
   const PAGE_ALIASES = {
@@ -62,7 +66,8 @@
     "- If the same step didn't change anything, don't repeat it: try another way.",
     "- Read answers off the screen and the facts; never invent numbers or names. When the screen shows the answer, finish with done.",
     "- Storage questions: open settings page storage and read the sizes it lists (apps, images, videos, audio, documents, system, other); open a category only if it helps.",
-    "- Never press anything that calls someone, sends, pays, buys, orders, deletes, uninstalls, clears, resets, signs out or force-stops. If the goal needs that, finish with ask and tell the person which button to press themselves.",
+    "- A quiz, test, exam or assignment: work the question out yourself and answer it — tap the choice you would pick, or type the answer into the box. Do not ask whether it is practice or graded. Never press Submit, Turn in, Finish, End test or Grade: that is theirs to press.",
+    "- Never press anything that calls someone, sends, pays, buys, orders, deletes, uninstalls, clears, resets, signs out, force-stops or hands the work in (Submit, Turn in, Finish, End test, Grade). If the goal needs that, finish with ask and tell the person which button to press themselves.",
     "- Never type passwords, PINs or codes. Never change security or account settings.",
     "- If a step didn't work twice, try another way, or finish with done and say plainly what blocked you.",
     "- \"say\" is spoken aloud: plain words, no markdown, no emojis, numbers as people say them (\"41 gigabytes\" is fine as \"41 GB\"). Answer in the language the person used.",
@@ -286,10 +291,6 @@
     async function act(a, screen) {
       const items = screen?.items || [];
       const own = screen?.app === OWN;
-      // A quiz, test or exam on screen: Izuki explains, but never picks or types answers.
-      if (["tap", "type", "tap_at", "long_press", "double_tap", "drag"].includes(a.do) && testPage(screen)) {
-        return { ok: false, stop: true, note: "This looks like a quiz or test, so I won't pick or type answers for you. Say “explain this” and I'll walk you through the question." };
-      }
       switch (a.do) {
         case "open": {
           if (!a.app) return { ok: false, note: "no app was named" };
@@ -312,6 +313,9 @@
           if (own) return { ok: false, note: "that's Izuki's own chat; open the app or Settings page you need first" };
           const item = items.find((x) => x.n === a.n);
           if (!item) return { ok: false, note: `there's no [${a.n}] on this screen` };
+          if (HAND_IN.test(norm(item.text))) {
+            return { ok: false, stop: true, note: `That’s “${norm(item.text)}” — the button that hands it in. The answer is in; submitting it is yours.` };
+          }
           if (RISKY.test(norm(item.text))) {
             return { ok: false, stop: true, note: `That last step needs your finger: tap “${norm(item.text)}” yourself if you want it. I don't press buttons that call, send, pay, buy, delete or reset.` };
           }
@@ -374,6 +378,9 @@
           const under = items.filter((i) => i.w > 0 && i.h > 0 && x >= i.x && x <= i.x + i.w && y >= i.y && y <= i.y + i.h)
             .sort((p, q) => p.w * p.h - q.w * q.h);
           item = under.find((i) => RISKY.test(norm(i.text))) || (a.n ? items.find((i) => i.n === a.n) : null) || under[0] || null;
+          if (item && HAND_IN.test(norm(item.text))) {
+            return { ok: false, stop: true, note: `That’s “${norm(item.text)}” — the button that hands it in. The answer is in; submitting it is yours.` };
+          }
           if (item && RISKY.test(norm(item.text))) {
             return { ok: false, stop: true, note: `That last step needs your finger: tap “${norm(item.text)}” yourself if you want it. I don't press buttons that call, send, pay, buy, delete or reset.` };
           }
