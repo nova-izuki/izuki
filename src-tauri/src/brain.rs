@@ -666,8 +666,6 @@ fn final_button(step: &ActionStep) -> Option<String> {
 /// Never on a guess: typing a command into a terminal (it runs, and can
 /// delete things) unless the user spelled that command out, and writing
 /// notes on the screen unless they asked to be shown or taught something.
-/// Drops those steps (and what came after a held-back command) and says why,
-/// for the next look. `None` when the plan was fine.
 /// A held-back step, said to the person in plain words (the reasons from
 /// `guard_steps` are written for the AI).
 fn plainly(why: &str) -> String {
@@ -681,6 +679,8 @@ fn plainly(why: &str) -> String {
     }
 }
 
+/// Drops held-back steps (and what came after a held-back command) and says
+/// why, for the next look. `None` when the plan was fine.
 fn guard_steps(steps: &mut Vec<ActionStep>, prompt: &str, lesson: bool, front: &str) -> Option<String> {
     let look = this_look();
     guard_steps_with(steps, prompt, lesson, front, &look)
@@ -6787,9 +6787,12 @@ mod speed_tests {
         let mut steps = vec![click("Download template"), click("Upload file"), click("Open rubric")];
         assert!(guard_steps_with(&mut steps, "download the template and open the rubric", false, "chrome", &course).is_none());
         assert_eq!(steps.len(), 3);
-        // The held-back line says what Izuki CAN do.
-        let said = plainly("This is a quiz or test, so the answer wasn't picked: the student chooses.");
-        assert!(said.contains("explain each question") && said.contains("practice"), "{said}");
+        // There is no quiz refusal left to word: a quiz reason falls through to
+        // the ordinary "tell me exactly" line, never a withholding one.
+        let said = plainly("This is a quiz or test, so the answer wasn't picked: the student chooses.").to_lowercase();
+        assert!(!said.contains("quiz or test") && !said.contains("wasn't picked"), "{said}");
+        // The last button is still worded as the person's to press.
+        assert!(plainly("Pressing “Submit quiz”").contains("final button"));
     }
 
     use super::*;
