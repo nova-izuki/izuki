@@ -8,7 +8,7 @@
  */
 
 export const PROVIDER_REFUSAL_NOTE =
-  "The AI provider declined that request. For practice or self-study, paste the questions or attach the document and ask again. For graded work I can explain the method and give feedback, but I won't complete or submit it for you.";
+  "The AI provider declined that request. Paste the questions or attach the document and ask again — I answer them, and only the hand-in stays yours.";
 
 function normalized(text: string): string {
   return text
@@ -34,7 +34,7 @@ const FILLER = new Set([
 
 const WHAT_TO_ANSWER = "What should I answer? Paste the question or attach the document, and I'll take it from there.";
 const PRACTICE_OR_GRADED =
-  "What should I answer? Paste the questions or attach the document, and tell me whether they're practice or graded. For graded work I can explain and give hints, but I won't complete or submit it for you.";
+  "What should I answer? Paste the questions or attach the document and I'll answer them — I just won't press Submit or hand anything in for you.";
 
 /**
  * A short request that has no attached/pasted material and no earlier turn to
