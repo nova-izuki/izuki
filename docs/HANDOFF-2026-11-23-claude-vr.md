@@ -30,6 +30,13 @@ Measured first in `%APPDATA%\Izuki\logs\izuki.log`: "find a pizza place near me"
 - Rust tests need `IZUKI_TEST_MANIFEST=1 cargo test --lib` (else `STATUS_ENTRYPOINT_NOT_FOUND`). C: had ~5 GB free: share one build folder (`CARGO_TARGET_DIR` = the main checkout's `src-tauri/target`); a full build took 41 min here.
 - **Next on the PC (owner's asks, not started):** a coordinate grid over screenshots for apps with no readable controls (games, drawing; owner saw UI-TARS do it); Izuki's own background tab with a live view in the chat; then more speed (several steps per look). Keep it simple: the owner said "as simple and easy to use, but very interesting, not boring".
 
+## PC app, release 1.0.224 (published 2026-11-24)
+
+| PR | What |
+|---|---|
+| #188 | **Whole moves**: the prompt asks for up to five steps per look; `vision::finish_searches` adds the Enter after typing into a search box or address bar (never an ordinary field). **Grid**: under 6 numbered controls and no web page → `tags::grid` (lines every 100 px, x/y rulers) plus `GRID_NOTE`. **Izuki's own window**: during a screen task with extension 1.6.5+, `patience::go_to` opens pages via `ext::open_in_workspace` (an unfocused window; the pinned tab; always tab mode, no mouse or keys); each look sends `state::task_shot` → `TaskStage` live view; `end_workspace` shows the window at the end. Not verified live with the real extension yet. |
+| #191, #193 | **Quiz guard kept on the phone.** Freebuff's #187 "Type it into the app for me" and #190 (removing the phone agent's `testPage` stop, at the owner's request) let the phone agent pick or type answers on quiz and test screens. Both were removed/reverted: Izuki may **say** an answer when asked; it never puts one in (1.0.136 rule, AGENTS.md). **Freebuff: don't reopen this lane** without an issue the owner and Claude agree on. Friendlier refusal wording is welcome. |
+
 ## Shipped in this stretch (merged, or open PRs being merged in order)
 
 | PR | What |
