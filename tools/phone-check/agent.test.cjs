@@ -215,18 +215,29 @@ async function A_run(p, goal, ctx) { return load(p.native).run(goal, ctx); }
     assert.equal(A.busy, false);
   }
 
-  // 9c. A quiz or test on screen: Izuki explains, never picks or types answers.
+  // 9c. A quiz or test on screen: the answer is picked, Submit is not.
   {
     const p = phone();
     p.native.screen = async () => ({ app: "com.android.chrome", items: [
       { n: 1, text: "Question 3 of 20", kind: "text" }, { n: 2, text: "Which port does HTTPS use?", kind: "text" },
-      { n: 3, text: "443", kind: "button" }, { n: 4, text: "80", kind: "button" }, { n: 5, text: "Time remaining 12:40", kind: "text" },
+      { n: 3, text: "443", kind: "button" }, { n: 4, text: "80", kind: "button" }, { n: 5, text: "Submit quiz", kind: "button" },
+      { n: 6, text: "Time remaining 12:40", kind: "text" },
     ] });
     const A = load(p.native);
-    const r = await A.run("answer this", { think: brain(['{"do":"tap","n":3}']).think });
-    assert.equal(r.asked, true);
-    assert.match(r.text, /quiz or test/);
-    assert.ok(!p.calls.some((c) => c.startsWith("act:click")), "no answer was picked");
+    const r = await A.run("answer this", { think: brain(['{"do":"tap","n":3}', '{"do":"done","say":"Port 443."}']).think });
+    assert.ok(p.calls.some((c) => c.startsWith("act:click")), "the answer was picked");
+    assert.equal(r.text, "Port 443.");
+
+    // The Submit button on that same page is never pressed, by number or by point.
+    const s = phone();
+    s.native.screen = async () => ({ app: "com.android.chrome", items: [
+      { n: 1, text: "Question 1 of 5", kind: "text" }, { n: 2, text: "Submit quiz", kind: "button", x: 0, y: 0, w: 200, h: 60 },
+    ] });
+    const SUBMIT = load(s.native);
+    const byNumber = await SUBMIT.run("answer this", { think: brain(['{"do":"tap","n":2}']).think });
+    assert.equal(byNumber.asked, true);
+    assert.match(byNumber.text, /hands it in/);
+    assert.ok(!s.calls.some((c) => c.startsWith("act:click")), "Submit was not pressed by number");
     assert.equal(A._test.testPage({ items: [{ text: "Storage" }, { text: "Apps 38 GB" }] }), false);
     assert.equal(A._test.testPage({ items: [{ text: "Question 3/20" }] }), true, "a compact counter");
     assert.equal(A._test.testPage({ items: [{ text: "Question 3" }, { text: "of 20" }] }), true, "a counter split across items");
