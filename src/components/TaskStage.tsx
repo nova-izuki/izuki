@@ -64,6 +64,8 @@ export function TaskStage({ onActiveChange }: { onActiveChange?: (active: boolea
   const [startedAt, setStartedAt] = useState(0);
   const [clockMs, setClockMs] = useState(0);
   const [dismissed, setDismissed] = useState(false);
+  // A live picture of Izuki's own window while the task works there (Rust: state::task_shot).
+  const [shot, setShot] = useState("");
   const startedRef = useRef(0);
   const lastNumber = useRef(0);
   const lastTotal = useRef(0);
@@ -82,6 +84,16 @@ export function TaskStage({ onActiveChange }: { onActiveChange?: (active: boolea
       alive = false;
       off?.();
     };
+  }, []);
+
+  useEffect(() => {
+    let alive = true;
+    let off: (() => void) | undefined;
+    void on<string>(EV.taskShot, (s) => { if (alive) setShot(typeof s === "string" && s.startsWith("data:image/") ? s : ""); }).then((stop) => {
+      off = stop;
+      if (!alive) stop();
+    });
+    return () => { alive = false; off?.(); };
   }, []);
 
   // The overlay can finish loading just after "Task Stage is ready" was sent.
@@ -344,6 +356,13 @@ export function TaskStage({ onActiveChange }: { onActiveChange?: (active: boolea
               <div className="izk-task-message">{finished && complete ? "Complete" : status?.message}</div>
               {status?.detail && <p className="izk-task-detail">{status.detail}</p>}
             </div>
+
+            {shot && !finished && (
+              <figure className="izk-task-live" aria-label="Izuki's own window, live">
+                <img src={shot} alt="What Izuki's window shows right now" />
+                <figcaption><span className="izk-task-live-dot" />Working in its own window. Your screen is yours.</figcaption>
+              </figure>
+            )}
 
             {recentTrail.length > 0 && (
               <div className="izk-task-trail" aria-label="Completed steps">

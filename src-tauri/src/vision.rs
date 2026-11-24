@@ -210,9 +210,10 @@ downscaled screenshot is what makes marks land badly. ",
     "the job with nothing to check, you may send them with \"done\": true. Need to let something ",
     "happen first (a page loading, an ad before its Skip button shows)? Set \"wait\" to the ",
     "seconds to wait (up to 20) before your next look. While working, `summary` is a few words on ",
-    "what you're doing right now (\"Opening YouTube…\"), said aloud as you go. Give up to ",
-    "three steps per round — everything you can already see is right on this screen, e.g. pick ",
-    "the answer AND click Next together — then look again. ",
+    "what you're doing right now (\"Opening YouTube…\"), said aloud as you go. Do whole moves, ",
+    "not one click per look: give up to five steps per round for everything you can already see ",
+    "on this screen — type in a box AND press enter, fill every field of a form you can see, pick ",
+    "the answer AND click Next — then look again. A look costs the user seconds; a step costs nothing. ",
     "Never stop halfway to ask the user something you can ",
     "decide: pick what they usually pick (see what you remember), otherwise the obvious or first ",
     "choice — and when that reveals a habit (which account or profile they use, which site they ",
@@ -733,6 +734,7 @@ fn finish_plan(cfg: &ProviderConfig, req: &VisionRequest, style: Style, raw: Str
     let had_point: Vec<bool> = steps.iter().map(|s| s.x != 0 || s.y != 0).collect();
     rescale(&mut steps, req);
     resolve_targets(&mut steps, &req.controls, &had_point);
+    finish_searches(&mut steps, &req.controls);
 
     Ok(VisionPlan {
         steps,
@@ -753,6 +755,34 @@ fn finish_plan(cfg: &ProviderConfig, req: &VisionRequest, style: Style, raw: Str
     })
 }
 
+/// Typing into a search box or the address bar always gets its Enter in the
+/// same round. Seen 2026-11-23: a model typed "pizza place near me" into
+/// Google's box, then spent three more rounds (and ~20 s each on a busy free
+/// brain) saying "I'll go ahead and press Enter". A search isn't a final
+/// button (sending, paying), so pressing Enter there is always what was meant.
+fn finish_searches(steps: &mut Vec<ActionStep>, controls: &[crate::uia::Control]) {
+    let mut i = 0;
+    while i < steps.len() {
+        let s = &steps[i];
+        let typed = s.text_to_type.as_deref().unwrap_or("");
+        let named = s.target.and_then(|id| controls.iter().find(|c| c.id == id)).map(|c| format!("{} {}", c.kind, c.name).to_lowercase()).unwrap_or_default();
+        let searchy = named.contains("search") || named.contains("address") || named.contains("omnibox");
+        if s.action == Intent::Type && searchy && !typed.trim().is_empty() && !typed.ends_with('\n') {
+            let next_is_go = steps.get(i + 1).is_some_and(|n| {
+                (n.action == Intent::Key && n.key.as_deref().is_some_and(|k| k.eq_ignore_ascii_case("enter") || k.eq_ignore_ascii_case("return")))
+                    || matches!(n.action, Intent::Click | Intent::Auto)
+            });
+            if !next_is_go {
+                if let Ok(enter) = serde_json::from_value::<ActionStep>(json!({ "action": "key", "key": "enter", "confidence": 1.0, "reasoning": "run the search" })) {
+                    steps.insert(i + 1, enter);
+                    i += 1;
+                }
+            }
+        }
+        i += 1;
+    }
+}
+
 /// A plan from Easy Mode's command lines: steps mapped onto the desktop and
 /// pinned to the real controls, like the JSON path.
 fn plan_from_lines(cfg: &ProviderConfig, req: &VisionRequest, reply: crate::easy::Reply, started: Instant) -> VisionPlan {
@@ -760,6 +790,7 @@ fn plan_from_lines(cfg: &ProviderConfig, req: &VisionRequest, reply: crate::easy
     let had_point: Vec<bool> = steps.iter().map(|s| s.x != 0 || s.y != 0).collect();
     rescale(&mut steps, req);
     resolve_targets(&mut steps, &req.controls, &had_point);
+    finish_searches(&mut steps, &req.controls);
     let summary = reply.say.unwrap_or_else(|| {
         if !steps.is_empty() {
             "On it.".to_string()
@@ -2008,6 +2039,30 @@ Safety Categories: PII/Privacy"));
         // Older replies without the field: one round, as before.
         assert!(!parse_more(r#"{"summary":"Done.","steps":[]}"#));
         assert!(!parse_more("just prose"));
+    }
+
+    #[test]
+    fn a_search_box_gets_its_enter_in_the_same_round() {
+        let mut search = control(4, 100, 50);
+        search.kind = "Edit".into();
+        search.name = "Search Google or type a URL".into();
+        let mut name = control(5, 100, 90);
+        name.kind = "Edit".into();
+        name.name = "First name".into();
+        let controls = vec![search, name];
+        let mut steps = vec![step(json!({ "action": "type", "target": 4, "text_to_type": "pizza near me" }))];
+        finish_searches(&mut steps, &controls);
+        assert_eq!(steps.len(), 2);
+        assert_eq!(steps[1].action, Intent::Key);
+        assert_eq!(steps[1].key.as_deref(), Some("enter"));
+        // Already followed by Enter or a click: nothing added.
+        let mut done = vec![step(json!({ "action": "type", "target": 4, "text_to_type": "pizza" })), step(json!({ "action": "key", "key": "enter" }))];
+        finish_searches(&mut done, &controls);
+        assert_eq!(done.len(), 2);
+        // An ordinary form field never gets an Enter (that could send the form).
+        let mut form = vec![step(json!({ "action": "type", "target": 5, "text_to_type": "Sam" }))];
+        finish_searches(&mut form, &controls);
+        assert_eq!(form.len(), 1);
     }
 
     #[test]

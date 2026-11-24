@@ -112,6 +112,61 @@ fn badge(img: &mut Frame, x: i32, y: i32, w: i32, h: i32, text: &str) {
     }
 }
 
+/// Grid lines over the whole picture, for apps with nothing to number (a
+/// game, a drawing, a map, a canvas): thin lines every [`GRID_STEP`] picture
+/// pixels with their x along the top and y down the left, so the brain reads
+/// a position off the ruler instead of guessing. (UI-TARS-style screen
+/// agents draw the same kind of grid; the owner saw one work well.)
+pub const GRID_STEP: u32 = 100;
+pub fn grid(img: &mut Frame) {
+    let (w, h) = (img.width as i32, img.height as i32);
+    let step = GRID_STEP as i32;
+    // Lines first, faint, so the picture still reads.
+    let mut x = step;
+    while x < w {
+        blend(img, x, 0, 1, h, (94, 234, 212), 0.45);
+        x += step;
+    }
+    let mut y = step;
+    while y < h {
+        blend(img, 0, y, w, 1, (94, 234, 212), 0.45);
+        y += step;
+    }
+    // Then the numbers, on top, at each line.
+    let th = (5 * SCALE + 2 * PAD) as i32;
+    let label = |n: i32| -> (String, i32) {
+        let text = n.to_string();
+        let tw = text.len() as i32 * (4 * SCALE) as i32 - SCALE as i32 + 2 * PAD as i32;
+        (text, tw)
+    };
+    let mut x = step;
+    while x < w {
+        let (text, tw) = label(x);
+        badge(img, (x - tw / 2).clamp(1, w - tw - 1), 1, tw, th, &text);
+        x += step;
+    }
+    let mut y = step;
+    while y < h {
+        let (text, tw) = label(y);
+        badge(img, 1, (y - th / 2).clamp(1, h - th - 1), tw, th, &text);
+        y += step;
+    }
+}
+
+/// Paint over a rectangle at `alpha` (0–1), keeping what's underneath visible.
+fn blend(img: &mut Frame, x: i32, y: i32, w: i32, h: i32, (r, g, b): (u8, u8, u8), alpha: f32) {
+    let (iw, ih) = (img.width as i32, img.height as i32);
+    let mix = |old: u8, new: u8| (old as f32 * (1.0 - alpha) + new as f32 * alpha).round() as u8;
+    for yy in y.max(0)..(y + h).min(ih) {
+        for xx in x.max(0)..(x + w).min(iw) {
+            let i = ((yy * iw + xx) * 4) as usize;
+            img.bgra[i] = mix(img.bgra[i], b);
+            img.bgra[i + 1] = mix(img.bgra[i + 1], g);
+            img.bgra[i + 2] = mix(img.bgra[i + 2], r);
+        }
+    }
+}
+
 fn fill(img: &mut Frame, x: i32, y: i32, w: i32, h: i32, (r, g, b): (u8, u8, u8)) {
     let (iw, ih) = (img.width as i32, img.height as i32);
     for yy in y.max(0)..(y + h).min(ih) {
@@ -142,6 +197,21 @@ mod tests {
             section: String::new(),
             identity: None,
         }
+    }
+
+    #[test]
+    fn the_grid_draws_lines_and_rulers_without_hiding_the_picture() {
+        let mut img = Frame { width: 450, height: 250, origin: (0, 0), bgra: vec![255; 450 * 250 * 4] };
+        grid(&mut img);
+        let px = |x: usize, y: usize| { let i = (y * 450 + x) * 4; (img.bgra[i], img.bgra[i + 1], img.bgra[i + 2]) };
+        // A line at x=100 (mid-picture, away from the rulers): tinted, not painted over.
+        let (b, g, r) = px(100, 150);
+        assert!(r < 255 && g > 200 && b > 200, "a faint line: {r},{g},{b}");
+        // Between lines the picture is untouched.
+        assert_eq!(px(150, 150), (255, 255, 255));
+        // A ruler number at the top of the line (yellow badge).
+        let (b, g, r) = px(100, 3);
+        assert!((r, g, b) == (255, 214, 0) || (r, g, b) == (0, 0, 0), "a ruler badge at the top: {r},{g},{b}");
     }
 
     #[test]

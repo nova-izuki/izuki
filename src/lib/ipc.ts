@@ -1438,6 +1438,8 @@ export const EV = {
   pushToTalk: "izuki://push-to-talk",
   pushToTalkRelease: "izuki://push-to-talk-release",
   dictate: "izuki://dictate",
+  /** Rust → overlay: a live picture of Izuki's own window while a task works there ("" clears it). */
+  taskShot: "izuki://task-shot",
   /** Rust → overlay: Alt+Space, open or close the ask bar. */
   askBar: "izuki://ask-bar",
   dictateRelease: "izuki://dictate-release",
