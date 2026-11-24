@@ -1220,3 +1220,16 @@ html.izos #izuki-pilot::-webkit-scrollbar-thumb {
     font-size: 18px;
   }
 }
+
+/* Answer depth: three quiet pills above the box you type in. */
+html.izos .depth { gap: 6px; margin-bottom: 10px; }
+html.izos .depth button {
+  min-height: 33px;
+  border-radius: 999px;
+  border-color: color-mix(in srgb, currentColor 20%, transparent);
+  background: rgba(255, 255, 255, 0.035);
+}
+html.izos .depth button[aria-pressed="true"] {
+  background: rgba(255, 255, 255, 0.10);
+  border-color: color-mix(in srgb, currentColor 48%, transparent);
+}
