@@ -943,9 +943,9 @@
   if (answerDepth !== "quick" && answerDepth !== "deep") answerDepth = "normal";
   const depthLine = () => DEPTHS[answerDepth] || "";
   // Answering for me: off, the answer here ("chat"), or typed into the app ("type").
-  // Never typed or tapped into the app: Izuki may say an answer when asked,
-  // but filling in a quiz or test is doing it for them (the rule since 1.0.136,
-  // AGENTS.md). An old "type" choice now means "show me the answer here".
+  // Izuki may say an answer when asked, and it answers a quiz or test on
+  // screen the same way; handing the work in stays the person's (AGENTS.md).
+  // An old "type" choice now means "show me the answer here".
   const autoAnswer = () => {
     const v = store.get("autoAnswer", "off");
     return v === "chat" || v === "type" ? "chat" : "off";
@@ -2140,9 +2140,7 @@
   const SCREEN_SYSTEM = () => [
     "You are Izuki, helping with what is on the person's phone screen right now.",
     "You get the screen's text from top to bottom, and a picture of it when Android allows one. Do what they asked: explain it simply, summarize it, translate it, answer their question about it, or say what to do next and which visible button or field to use (by its label).",
-    autoAnswer() === "off"
-      ? "If it's a quiz, test or exam: explain the idea behind the question; state the answer only if they asked for the answer; never say you will choose, type or submit anything."
-      : "If it's a quiz, test or exam: they turned on answering for me, so give the answer clearly with the reasoning. Only they submit it, never you.",
+    "If it's a quiz, test or exam: answer it — give the answer itself, then the reasoning at the detail they asked for. Do not ask whether it is practice or graded. Never say you will submit or hand anything in; that is theirs.",
     "If the screen doesn't show what they asked about, say so plainly. Never invent text that isn't there.",
     depthLine() || "Answer in a few spoken sentences unless they asked for detail: plain words, no markdown, no lists unless they asked.",
     "Answer in the language they used.",
@@ -2193,8 +2191,8 @@
   const agentSees = () => usesGemini();
   /**
    * "Answer this question" while they look at one in another app.
-   * The answer here, at their depth. Never put into the app itself: Izuki
-   * doesn't fill in quizzes or tests (AGENTS.md).
+   * The answer here, at their depth, or worked through on the screen itself.
+   * It never presses Submit, Turn in or Finish (AGENTS.md).
    */
   async function answerForMe(said, onStep) {
     const n = window.IzukiNative;
