@@ -508,7 +508,7 @@ fn reads_as_choice(name: &str) -> bool {
 }
 
 /// Told to the brain while a quiz or test is on screen.
-const QUIZ_PROMPT: &str = "QUIZ OR TEST IN PROGRESS: the student answers it. Explain what the question asks and the idea behind it, point at the key words in the question, and help them reason it out — but never say, hint at or mark which choice is correct, and never confirm or reject a choice they picked. Never click or type an answer. Going to the next question when they ask is fine.\n";
+const QUIZ_PROMPT: &str = "QUIZ OR TEST IN PROGRESS: work the question out and answer it. Say the answer plainly, point at the key words that make it right, and pick the choice on the page (or type the answer into its box) the way any other answer would be given. Never press Submit, Turn in or Finish: that stays the person's. Going to the next question when they ask is fine.\n";
 
 /// The owner asked for direct answers when explicitly requested. Coaching
 /// remains a separate mode; answering never authorizes a click or submission.
@@ -555,7 +555,7 @@ pub(crate) fn direct_answer_requested(prompt: &str) -> bool {
 /// then said in a line. It used to
 /// get DIRECT_ANSWER_PROMPT's "explanation-only" on every page, so Izuki named
 /// the answer and never clicked it, even where acting was allowed.
-const ANSWER_ON_PAGE_PROMPT: &str = "The user asked you to answer what's on the page, and it is not a graded quiz or test, so do it on the page: click the right choice or type the answer into its box (by its control number), then say in one short line which you picked and why. If several questions are visible, answer the one they mean (the first unanswered one if that's unclear). Never press Submit, Finish or Send unless they said so in this request.\n";
+const ANSWER_ON_PAGE_PROMPT: &str = "The user asked you to answer what's on the page, so do it on the page: click the right choice or type the answer into its box (by its control number), then say in one short line which you picked and why. If several questions are visible, answer the one they mean (the first unanswered one if that's unclear). Never press Submit, Finish or Send unless they said so in this request.\n";
 
 const DIRECT_ANSWER_PROMPT: &str = "The user explicitly asked for the answer. Answer the visible factual question directly: answer first, with the option label only when clearly visible, then a short explanation. Do not refuse to name a factual answer or turn this into a walkthrough. Do not guess unreadable choices. If you are not certain of the fact, say which part you are unsure about instead of stating it confidently — being wrong costs them marks, and saying it is probably B but they should check whether X applies is far more use than a confident wrong letter. This is an explanation-only request: do not select, click, type or submit answers. Do not offer to save Notes.\n";
 
@@ -582,38 +582,10 @@ fn keep_answers_out(plan: &mut VisionPlan, steps: &mut Vec<ActionStep>, look: &L
     }
 }
 
-/// Added to an answer named on a graded quiz.
-const GRADED_NOT_CLICKED: &str = "(I didn't click it: this looks like a graded quiz, so you pick the answer yourself. If the page says it's practice, I can pick answers with you.)";
-
-fn apply_answer_mode(plan: &mut VisionPlan, steps: &mut Vec<ActionStep>, look: &Look, prompt: &str) {
-    // Only a quiz or test needs the answer kept out of Izuki's hands. On an
-    // ordinary page this used to throw away the scroll that reaches the
-    // question and the ask that says "I can't read the choices".
-    if !look.test_page {
-        return keep_answers_out(plan, steps, look);
-    }
-    if direct_answer_requested(prompt) {
-        // Naming a fact is not permission to act on the test or page.
-        let latest = prompt.split("\n\n(The conversation just before,").next().unwrap_or(prompt).to_lowercase();
-        steps.retain(|step| {
-            let name = step.snapped_to.as_deref().unwrap_or("").trim().to_lowercase();
-            let navigation = match name.as_str() {
-                "next" | "next question" => latest.contains("next question") || latest.contains("click next"),
-                "previous" | "previous question" | "back" => latest.contains("previous question") || latest.contains("click back"),
-                _ => false,
-            };
-            navigation && matches!(step.action, Intent::Click | Intent::Auto)
-                && !look.options.contains(&name)
-        });
-        plan.ask = None;
-        // Said, never clicked — and the reply says so, or "Option D" reads
-        // as if it had been picked on the page.
-        if !plan.summary.trim().is_empty() && !plan.summary.contains(GRADED_NOT_CLICKED) {
-            plan.summary = format!("{} {GRADED_NOT_CLICKED}", plan.summary.trim());
-        }
-    } else {
-        keep_answers_out(plan, steps, look);
-    }
+/// A quiz or a test is answered like any other page: the answer goes in, and
+/// only handing it in stays the person's (guard_steps_with holds Submit,
+/// Turn in and Finish). This used to strip the pick and tell them to choose.
+fn apply_answer_mode(_plan: &mut VisionPlan, _steps: &mut Vec<ActionStep>, _look: &Look, _prompt: &str) {
 }
 
 /// A pen mark or pointer on one of the answer choices: by its control, by
@@ -701,8 +673,6 @@ fn final_button(step: &ActionStep) -> Option<String> {
 fn plainly(why: &str) -> String {
     if why.contains("Typing a command into a terminal") {
         "I didn't type that command into your terminal — I only run commands you spell out exactly. Tell me the exact command, or say what you want done (like “clear the safe stuff” to free up space) and I'll do it my own way.".into()
-    } else if why.contains("This is a quiz or test") {
-        crate::assess::what_i_can_do(crate::assess::Kind::Graded).into()
     } else if let Some(rest) = why.strip_prefix("Pressing “") {
         let name = rest.split('”').next().unwrap_or("that");
         format!("I stopped before pressing “{name}” — it's a final button, so I only press it when you tell me to exactly.")
@@ -716,7 +686,7 @@ fn guard_steps(steps: &mut Vec<ActionStep>, prompt: &str, lesson: bool, front: &
     guard_steps_with(steps, prompt, lesson, front, &look)
 }
 
-fn guard_steps_with(steps: &mut Vec<ActionStep>, prompt: &str, lesson: bool, front: &str, look: &Look) -> Option<String> {
+fn guard_steps_with(steps: &mut Vec<ActionStep>, prompt: &str, lesson: bool, front: &str, _look: &Look) -> Option<String> {
     let asked = prompt.to_lowercase();
     let mut why = Vec::new();
     // 0. A final button (Submit, End test, Send, Pay…) only when the user said
@@ -737,20 +707,8 @@ fn guard_steps_with(steps: &mut Vec<ActionStep>, prompt: &str, lesson: bool, fro
         steps.truncate(i);
         why.push(format!("Pressing “{name}” wasn't done: it's final. Stop right before it and set \"ask\" to check with the user first (\"Want me to {phrase} it?\")."));
     }
-    // 0b. On a quiz or test the student picks the answers: Izuki explains,
-    //     points at the key words and lets them choose (academic honesty).
-    if look.test_page {
-        let before = steps.len();
-        steps.retain(|s| {
-            let picks_answer = matches!(s.action, Intent::Click | Intent::DoubleClick | Intent::Auto)
-                && s.snapped_to.as_deref().is_some_and(|n| look.options.contains(&n.trim().to_lowercase()));
-            let types_answer = s.action == Intent::Type && s.text_to_type.as_deref().is_some_and(|t| !asked.contains(&t.trim().to_lowercase()));
-            !(picks_answer || types_answer)
-        });
-        if steps.len() < before {
-            why.push("This is a quiz or test, so the answer wasn't picked: the student chooses. Explain the question and the idea behind it, point at the key words, and let them click their answer — then you can tell them why it's right or wrong.".to_string());
-        }
-    }
+    // 0b. A quiz is answered like anything else. Submit/Turn in/Finish above
+    //     is the only thing held back, and it is held back everywhere.
     // 1. Commands.
     let terminal = TERMINALS.contains(&front);
     let cut = steps.iter().position(|s| {
@@ -6509,8 +6467,8 @@ mod speed_tests {
         let mut steps = vec![serde_json::from_value(serde_json::json!({"action":"click","x":10,"y":10})).unwrap()];
         super::apply_answer_mode(&mut plan, &mut steps, &look, "give me the answer");
         assert!(plan.summary.starts_with("B. Botnet."));
-        assert!(plan.summary.contains("didn't click it"), "the reply says the answer wasn't picked on the page");
-        assert!(steps.is_empty(), "an answer request cannot authorize page actions");
+        assert!(!plan.summary.contains("didn't click it"), "a quiz is answered like any other page now");
+        assert_eq!(steps.len(), 1, "the click the model planned stays: the answer is picked");
     }
 
     #[test]
@@ -6754,11 +6712,11 @@ mod speed_tests {
         // Not final.
         let mut steps = vec![click("Sending options"), click("Postcode")];
         assert!(guard_steps_with(&mut steps, "open settings", false, "chrome", &none).is_none(), "words that merely start the same aren't final");
-        // On a test page, the answer is the student's.
+        // On a test page the answer is clicked now, and Next still stands.
         let quiz = Look { options: vec!["a. phishing".into(), "b. personally identifiable information".into()], test_page: true, ..Default::default() };
         let mut steps = vec![click("B. Personally identifiable information"), click("Next")];
-        assert!(guard_steps_with(&mut steps, "help me with this question", true, "chrome", &quiz).is_some());
-        assert_eq!(steps.len(), 1, "the answer isn't clicked; Next is the student's call but harmless");
+        assert!(guard_steps_with(&mut steps, "help me with this question", true, "chrome", &quiz).is_none());
+        assert_eq!(steps.len(), 2, "the answer and Next both stay");
         let controls = vec![
             radio(1, "A. Phishing"),
             radio(2, "B. PII"),
@@ -6815,12 +6773,12 @@ mod speed_tests {
         assert_eq!(steps.len(), 3, "every step stays on practice");
         // Practice worth points, or with attempts: graded after all.
         assert!(Look::of(&controls, "Practice Test (10 points) Question 1", "Practice Test").test_page);
-        // Graded: the answer stays the student's, everything else still works.
+        // Graded: answered too, and nothing on the page is held back.
         let quiz = Look::of(&controls, "Question 3 of 20", "Quiz: Module 11");
         assert!(quiz.test_page);
         let mut steps = vec![click("B. PII"), click("Next"), click("Download slides"), click("Open the rubric")];
-        assert!(guard_steps_with(&mut steps, "go to the next one", false, "chrome", &quiz).is_some());
-        assert_eq!(steps.len(), 3, "only the answer click is held back: {steps:?}");
+        assert!(guard_steps_with(&mut steps, "go to the next one", false, "chrome", &quiz).is_none());
+        assert_eq!(steps.len(), 4, "every step stays on a graded quiz: {steps:?}");
         // An ordinary course page with "Risk Assessment" in its name and real
         // buttons (download, upload, open): not a quiz, nothing held back.
         let page = vec![button(1, "Download template"), button(2, "Upload file"), button(3, "Open rubric")];
@@ -7348,14 +7306,14 @@ mod honesty_tests {
     fn a_held_back_step_is_never_narrated_as_happening() {
         let quiz = "This is a quiz or test, so the answer wasn't picked: the student chooses.";
         let said = progress_line("Answering all the quiz questions for you.", Some(quiz));
-        assert!(said.starts_with("This looks like a graded quiz or test, so I won't pick"), "{said}");
+        assert!(said.starts_with("I didn't do that part"), "{said}");
         assert!(!said.to_lowercase().contains("answering all"), "{said}");
         // Nothing held back, or only a note on the screen: the model's line.
         assert_eq!(progress_line("Opening Blackboard", None), strip_filler("Opening Blackboard"));
         let notes = "Notes written on the screen weren't shown: the user didn't ask to be taught or shown anything, so just do the task.";
         assert_eq!(progress_line("Opening Blackboard", Some(notes)), strip_filler("Opening Blackboard"));
         // The real thing comes first when both were held back.
-        assert!(progress_line("Picking B", Some(&format!("{quiz} {notes}"))).starts_with("This looks like a graded quiz"));
+        assert!(progress_line("Picking B", Some(&format!("{quiz} {notes}"))).starts_with("I didn't do that part"));
     }
 
     #[test]
