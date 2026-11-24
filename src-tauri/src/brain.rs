@@ -896,6 +896,11 @@ fn better_text(from_window: String, from_pixels: String) -> String {
 /// page-only look wasn't enough (see [`page_look`]).
 static PICTURE_NEXT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
+/// Fewer numbered controls than this: draw the grid (tags::grid).
+const GRID_BELOW: usize = 6;
+/// What a gridded look tells the brain.
+const GRID_NOTE: &str = "GRID ON THE PICTURE: this app has almost nothing to number, so thin lines are drawn every 100 pixels with their x along the top edge and y down the left edge (yellow numbers). For a click, drag or stroke with no number, read the position off the grid: count from the nearest lines. Coordinates are still pixels in this picture.";
+
 /// What a page-only look tells the brain.
 const PAGE_LOOK: &str = "READING THE PAGE ITSELF (no screenshot this look, it's faster): the numbered page elements and the page's text below ARE what's on screen right now. Act on them by number. If you truly need to see it (a picture, a chart, the layout), give no steps and say so, and you'll get a screenshot on the next look.";
 
@@ -1001,6 +1006,12 @@ fn ask_model(
              Act only on the numbered page elements with \"target\" (click, type) or scroll the page; nothing else can happen until they come back.\n{page_text}"
         );
         eprintln!("[agent] working in the pinned tab while you're on another one");
+        // In Izuki's own window: show what it looks like now, in the task panel.
+        if crate::ext::in_workspace() {
+            if let Some(shot) = crate::ext::workspace_shot() {
+                crate::state::task_shot(shot);
+            }
+        }
     } else if crate::ext::connected() && is_browser(&uia::foreground_app()) {
         if let Some(page) = crate::ext::snapshot() {
             // A question whose answer may be behind a link: read the most
@@ -1027,6 +1038,15 @@ fn ask_model(
         });
     }
     crate::tags::draw(&mut scaled, &desktop, &controls);
+    // Almost nothing to number (a game, a drawing app, a map, a canvas): a
+    // grid with rulers, so a bare x/y is read off it rather than guessed.
+    let gridded = !tab_mode && controls.len() < GRID_BELOW && crate::ext::snapshot_url_cached().is_none();
+    if gridded {
+        crate::tags::grid(&mut scaled);
+        eprintln!("[brain] {} things to number here — drew a grid on the picture", controls.len());
+        page_text = format!("{GRID_NOTE}
+{page_text}");
+    }
     let picture_asked = PICTURE_NEXT.swap(false, std::sync::atomic::Ordering::SeqCst);
     let text_only = !tab_mode && page_controls > 0 && page_look(&session.prompt, page_controls, &page_text, zoomed, picture_asked);
     if text_only {
@@ -4131,6 +4151,9 @@ fn submit_task(
             if let Some(pin) = self.0 {
                 crate::ext::unpin_own(pin);
             }
+            // Done in Izuki's own window: show it (the result is there).
+            crate::ext::end_workspace();
+            crate::state::task_shot(String::new());
         }
     }
     uia::hold_window(uia::target_window());

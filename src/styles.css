@@ -2611,3 +2611,8 @@ html.izuki-overlay .izk-task-pill button {
   .izk-ask-ring, .izk-ask-orb, .izk-ask-orb-busy, .izk-ask-dots span { animation: none; }
   .izk-ask-dots span { opacity: 1; }
 }
+
+/* The task panel's live view of Izuki's own window (TaskStage.tsx). */
+.izk-task-live { margin: 8px 0 2px; }
+.izk-task-live img { display: block; width: 100%; max-height: 170px; object-fit: cover; object-position: top; border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.12); }
+.izk-task-live figcaption { display: flex; align-items: center; gap: 6px; margin-top: 5px; font-size: 11px; color: rgba(255, 255, 255, 0.6); }

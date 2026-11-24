@@ -100,6 +100,15 @@ pub fn trace(line: impl Into<String>) {
     }
 }
 
+/// A live picture of Izuki's own window (a data: URL; "" clears it), for
+/// the task panel while a task works there out of your way.
+pub fn task_shot(shot: String) {
+    use tauri::Emitter;
+    if let Some(app) = APP.get() {
+        let _ = app.emit_to("overlay", "izuki://task-shot", shot);
+    }
+}
+
 /// A provider's name without its "(free tier)" / "· model" extras.
 pub fn short_name(label: &str) -> String {
     let base = label.split(" · ").next().unwrap_or(label);

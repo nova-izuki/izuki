@@ -39,7 +39,7 @@ static WAKE: Mutex<Option<Sender<()>>> = Mutex::new(None);
 
 /// The newest extension (extension/manifest.json). Older copies don't know
 /// every request Izuki makes (Blackboard, finding your school's tab).
-pub const LATEST: &str = "1.6.4";
+pub const LATEST: &str = "1.6.5";
 /// The connected extension's version; empty: one from before 1.4.1, which
 /// didn't say.
 static VERSION: Mutex<String> = Mutex::new(String::new());
@@ -110,6 +110,53 @@ pub fn unpin_own(gen: u64) {
     }
 }
 
+/// The tab in Izuki's own window, while a task works there.
+static WORKSPACE: Mutex<Option<i64>> = Mutex::new(None);
+
+/// The extension can open Izuki's own window (1.6.5+).
+pub fn workspace_ready() -> bool {
+    connected() && version().is_some_and(|v| parts(&v) >= (1, 6, 5))
+}
+
+/// Open `url` in Izuki's own browser window (created unfocused, or reused)
+/// and make it the task's tab: from here on the task works there through
+/// the page itself — no screenshot of your screen, no mouse, no keys — and
+/// you keep using your PC.
+pub fn open_in_workspace(url: &str) -> Result<String> {
+    let v = request("workspace", json!({ "url": url }), Duration::from_secs(20))?;
+    let id = v["tab"].as_i64().ok_or_else(|| anyhow!("Izuki's window didn't open"))?;
+    *PINNED.lock() = Some(id);
+    *WORKSPACE.lock() = Some(id);
+    TAB_HIDDEN.store(true, std::sync::atomic::Ordering::SeqCst);
+    let title = v["title"].as_str().unwrap_or("").to_string();
+    eprintln!("[ext] working in Izuki's own window: {title}");
+    Ok(title)
+}
+
+/// The task is working in Izuki's own window.
+pub fn in_workspace() -> bool {
+    matches!((*PINNED.lock(), *WORKSPACE.lock()), (Some(p), Some(w)) if p == w)
+}
+
+/// A picture of Izuki's window now (a data: URL), for the live view.
+pub fn workspace_shot() -> Option<String> {
+    let v = request("workspace_shot", json!({}), Duration::from_secs(4)).ok()?;
+    v["shot"].as_str().filter(|s| s.starts_with("data:image/")).map(str::to_string)
+}
+
+/// The task is over: show Izuki's window (that's where the result is) and
+/// let page requests go to the tab in front again.
+pub fn end_workspace() {
+    let had = WORKSPACE.lock().take();
+    if let Some(id) = had {
+        if *PINNED.lock() == Some(id) {
+            PINNED.lock().take();
+            TAB_HIDDEN.store(false, std::sync::atomic::Ordering::SeqCst);
+        }
+        let _ = request("workspace_show", json!({}), Duration::from_secs(3));
+    }
+}
+
 /// A tab is pinned for the running task.
 pub fn pinned() -> bool {
     PINNED.lock().is_some()
@@ -118,6 +165,22 @@ pub fn pinned() -> bool {
 /// Is the task's tab out of sight (you switched to another tab, or minimised
 /// the browser)? Checked with the extension and remembered for the steps.
 pub fn check_tab_hidden() -> bool {
+    // Izuki's own window: always worked through the page, even while you
+    // can see it — your mouse and keyboard stay yours.
+    if in_workspace() {
+        let id = (*PINNED.lock()).unwrap_or_default();
+        if let Ok(v) = request("tabinfo", json!({ "tab": id }), Duration::from_secs(2)) {
+            if v["open"].as_bool() == Some(false) {
+                // You closed it: carry on in front.
+                PINNED.lock().take();
+                WORKSPACE.lock().take();
+                TAB_HIDDEN.store(false, std::sync::atomic::Ordering::SeqCst);
+                return false;
+            }
+        }
+        TAB_HIDDEN.store(true, std::sync::atomic::Ordering::SeqCst);
+        return true;
+    }
     let Some(id) = *PINNED.lock() else {
         TAB_HIDDEN.store(false, std::sync::atomic::Ordering::SeqCst);
         return false;

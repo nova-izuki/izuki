@@ -141,6 +141,18 @@ fn remember_tab() {
 /// `true` if it stayed in the same tab.
 pub fn go_to(url: &str) -> Result<bool> {
     let full = if url.starts_with("http://") || url.starts_with("https://") { url.to_string() } else { format!("https://{url}") };
+    // During a screen task, with the extension: in Izuki's own window, so
+    // your screen, mouse and keyboard stay yours (a plain search you asked
+    // for, outside a task, still opens in front of you).
+    if crate::brain::task_running() && crate::ext::workspace_ready() {
+        match crate::ext::open_in_workspace(&full) {
+            Ok(_) => {
+                remember_tab();
+                return Ok(false);
+            }
+            Err(e) => eprintln!("[ext] Izuki's own window didn't open ({e}) — using your browser"),
+        }
+    }
     if browser_in_front() && tab_is_ours(&crate::uia::foreground_title()) {
         crate::uia::focus_target_window();
         std::thread::sleep(Duration::from_millis(60));

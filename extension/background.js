@@ -139,6 +139,47 @@ async function run(op, args) {
     const w = await chrome.windows.get(t.windowId);
     return { open: true, tab: t.id, windowId: t.windowId, focused: !!w.focused, visible: !!t.active && w.state !== "minimized", url: t.url, title: t.title || "" };
   }
+  // Izuki's own window for a task: pages open there, never taking your focus,
+  // and Izuki works in them through the page itself (no mouse, no keys on
+  // your screen). One window, reused; it comes forward when the task is done.
+  if (op === "workspace") {
+    const url = String(args.url || "");
+    if (!/^https?:\/\//.test(url)) throw new Error("not a web address");
+    const { izukiWorkspace } = await chrome.storage.session.get("izukiWorkspace");
+    let win = null;
+    if (izukiWorkspace) win = await chrome.windows.get(izukiWorkspace.windowId, { populate: true }).catch(() => null);
+    let tab;
+    if (win && win.tabs && win.tabs.length) {
+      tab = await chrome.tabs.update(win.tabs.find((t) => t.active)?.id ?? win.tabs[0].id, { url });
+    } else {
+      win = await chrome.windows.create({ url, focused: false, width: 1100, height: 760, type: "normal" });
+      tab = win.tabs[0];
+      await chrome.storage.session.set({ izukiWorkspace: { windowId: win.id, tab: tab.id } });
+    }
+    // Wait for the page (up to 15 s), so the first look reads the real thing.
+    for (let i = 0; i < 60; i++) {
+      const t = await chrome.tabs.get(tab.id).catch(() => null);
+      if (!t || t.status === "complete") break;
+      await new Promise((r) => setTimeout(r, 250));
+    }
+    const t = await chrome.tabs.get(tab.id);
+    return { tab: t.id, windowId: t.windowId, url: t.url, title: t.title || "" };
+  }
+  // A picture of Izuki's window as it is now, for the live view in Izuki.
+  if (op === "workspace_shot") {
+    const { izukiWorkspace } = await chrome.storage.session.get("izukiWorkspace");
+    if (!izukiWorkspace) return { shot: "" };
+    const win = await chrome.windows.get(izukiWorkspace.windowId).catch(() => null);
+    if (!win || win.state === "minimized") return { shot: "" };
+    const shot = await chrome.tabs.captureVisibleTab(win.id, { format: "jpeg", quality: 55 }).catch(() => "");
+    return { shot };
+  }
+  // The task is done: show its window.
+  if (op === "workspace_show") {
+    const { izukiWorkspace } = await chrome.storage.session.get("izukiWorkspace");
+    if (izukiWorkspace) await chrome.windows.update(izukiWorkspace.windowId, { focused: true, state: "normal" }).catch(() => null);
+    return { shown: !!izukiWorkspace };
+  }
   const tab = await targetTab(args);
   switch (op) {
     case "snapshot":
