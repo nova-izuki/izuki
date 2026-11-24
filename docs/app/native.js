@@ -112,6 +112,12 @@
   window.IzukiNative = {
     installed: () => !!window.Capacitor?.isNativePlatform?.(),
     platform,
+    /** A page in the phone's own browser; null where there is no bridge. */
+    openSite(url) {
+      const u = String(url || "");
+      if (!/^https?:\/\//i.test(u)) return null;
+      try { return control()?.openLink?.({ url: u }) ?? null; } catch { return null; }
+    },
     /** Match the Android setting; app launches only leave a resting orb when this is on. */
     setOrbOverApps(on) {
       orbOverApps = !!on;

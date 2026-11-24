@@ -905,6 +905,28 @@ public class IzukiControlPlugin extends Plugin {
   }
 
   /**
+   * A real page in the phone's own browser: the "get a key" pages, help, the
+   * download page. A WebView has no tabs, so a target="_blank" link does
+   * nothing there — this hands the address to Android instead.
+   */
+  @PluginMethod
+  public void openLink(PluginCall call) {
+    String url = String.valueOf(call.getString("url", "")).trim();
+    if (!url.startsWith("https://") && !url.startsWith("http://")) {
+      call.reject("That isn't a web address.");
+      return;
+    }
+    try {
+      Intent go = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+      go.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+      getContext().startActivity(go);
+      call.resolve();
+    } catch (Exception e) {
+      call.reject("No browser to open that page.");
+    }
+  }
+
+  /**
    * One honest health check for the setup card. Each value maps to a settings
    * screen the person can open directly, instead of a paragraph of directions.
    */
