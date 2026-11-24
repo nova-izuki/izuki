@@ -268,6 +268,7 @@
   .depth button[aria-pressed="true"] { color: inherit; border-color: currentColor; background: rgba(255, 255, 255, 0.08); }
   .depth button:active { transform: scale(0.96); }
   html.tv .depth { display: none; }
+  #brain-key-links a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
   /* Thinking: a pulsing dot by the status line and three dots in the reply
      bubble, so it's plain the answer is on its way and not frozen. */
   #status.working::before, #live-status.working::before {
@@ -530,6 +531,7 @@
           <option value="mistral">Mistral — free plan</option>
           <option value="meta">Meta Llama — free preview (US)</option>
         </select>
+        <p class="note" id="brain-key-links" style="margin-top:6px"></p>
       </div>
       <div id="brain-extra" hidden>
         <div class="row" style="margin-top: 10px"><a class="chip" id="brain-get" href="#" target="_blank" rel="noopener">Get a free key ↗</a></div>
@@ -958,6 +960,24 @@
     answerDepth = next;
     store.set("depth", answerDepth);
     paintDepth();
+
+  // A "get a key" link has to arrive somewhere. In the Android app there are no
+  // tabs, so the page asks Android for the phone's browser; a browser gets its
+  // own tab. Last resort is a same-tab jump, which the app hands to the browser
+  // rather than loading the site inside Izuki.
+  function openSite(url) {
+    const u = String(url || "");
+    if (!/^https?:\/\//i.test(u)) return;
+    if (window.IzukiNative?.openSite?.(u)) return;
+    try { if (window.open(u, "_blank", "noopener")) return; } catch {}
+    try { location.href = u; } catch {}
+  }
+  document.addEventListener("click", (e) => {
+    const a = e.target?.closest?.('a[target="_blank"][href]');
+    if (!a) return;
+    e.preventDefault();
+    openSite(a.href);
+  });
   }
   document.getElementById("depth")?.addEventListener("click", (e) => {
     const b = e.target.closest(".depth-opt");
@@ -5128,6 +5148,23 @@
       box.appendChild(row);
     });
   }
+  // Every brain's key page, one tap away, whichever one is picked now.
+  (function fillKeyLinks() {
+    const box = $("brain-key-links");
+    if (!box) return;
+    const all = [["gemini", { name: "Gemini", get: "https://aistudio.google.com/apikey" }]].concat(Object.entries(BRAINS));
+    box.textContent = "Get a key: ";
+    all.forEach(([, b], i) => {
+      if (i) box.append(" · ");
+      const a = document.createElement("a");
+      a.href = b.get;
+      a.target = "_blank";
+      a.rel = "noopener";
+      a.textContent = b.name;
+      box.append(a);
+    });
+  })();
+
   function showBrain() {
     const b = BRAINS[$("brain").value];
     $("brain-extra").hidden = !b;
