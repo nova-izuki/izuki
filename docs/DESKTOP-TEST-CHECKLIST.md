@@ -139,3 +139,11 @@ Install the 1.0.217 APK (Settings → Phone → App updates). Android control an
 - [ ] A task in the browser (extension connected): the log says "reading the page itself — N elements, no screenshot this look"; the step happens; "what's this picture?" still takes a screenshot.
 - [ ] Mute the mic in Windows Sound settings, then say "Hey Nova" or press the talk key: Izuki says Windows has it muted; typed "unmute my mic" turns it on (Sound settings show it unmuted, level 80%).
 - [ ] Change the dictate shortcut in Settings: the new one works without a restart.
+
+## 1.0.224
+
+- [ ] Update the browser extension to 1.6.5 when Izuki offers it (or reload it in edge://extensions).
+- [ ] "Find the cheapest flight from Lagos to Abuja next Friday" (a screen task): a separate browser window opens without taking focus; the task panel shows its live picture; your mouse and keyboard are never moved; the window comes forward at the end. Log: "working in Izuki's own window".
+- [ ] A plain "search for pizza near me" (no task) still opens Google in front of you.
+- [ ] A task that types into a search box: the log shows type + enter in the same round (no extra "press Enter" round).
+- [ ] Open Paint (or a game) and ask Izuki to draw a circle in the middle: the log says "drew a grid on the picture".
