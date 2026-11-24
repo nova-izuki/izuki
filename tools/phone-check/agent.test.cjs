@@ -215,18 +215,31 @@ async function A_run(p, goal, ctx) { return load(p.native).run(goal, ctx); }
     assert.equal(A.busy, false);
   }
 
-  // 9c. A quiz or test on screen: the answer is picked, Submit is not.
+  // 9c. Quizzes (owner's choice, 2026-11-24): a graded one gets the answer said, not tapped;
+  // a practice one is filled in; Submit is never pressed on either.
   {
-    const p = phone();
-    p.native.screen = async () => ({ app: "com.android.chrome", items: [
+    const graded = phone();
+    graded.native.screen = async () => ({ app: "com.android.chrome", items: [
       { n: 1, text: "Question 3 of 20", kind: "text" }, { n: 2, text: "Which port does HTTPS use?", kind: "text" },
       { n: 3, text: "443", kind: "button" }, { n: 4, text: "80", kind: "button" }, { n: 5, text: "Submit quiz", kind: "button" },
       { n: 6, text: "Time remaining 12:40", kind: "text" },
     ] });
+    const G = load(graded.native);
+    const told = await G.run("answer this", { think: brain(['{"do":"tap","n":3}']).think });
+    assert.ok(!graded.calls.some((c) => c.startsWith("act:click")), "a graded quiz's answer is not tapped");
+    assert.match(told.text, /The answer is “443”.*graded/);
+
+    const p = phone();
+    p.native.screen = async () => ({ app: "com.android.chrome", items: [
+      { n: 1, text: "Practice quiz · Question 3 of 20", kind: "text" }, { n: 2, text: "Which port does HTTPS use?", kind: "text" },
+      { n: 3, text: "443", kind: "button" }, { n: 4, text: "80", kind: "button" }, { n: 5, text: "Submit quiz", kind: "button" },
+    ] });
     const A = load(p.native);
     const r = await A.run("answer this", { think: brain(['{"do":"tap","n":3}', '{"do":"done","say":"Port 443."}']).think });
-    assert.ok(p.calls.some((c) => c.startsWith("act:click")), "the answer was picked");
+    assert.ok(p.calls.some((c) => c.startsWith("act:click")), "a practice quiz's answer is picked");
     assert.equal(r.text, "Port 443.");
+    assert.equal(A._test.practicePage({ items: [{ text: "Practice exam" }, { text: "Question 2 of 10" }] }), true);
+    assert.equal(A._test.gradedPage({ items: [{ text: "Practice quiz (graded, 10 points possible)" }, { text: "Question 2 of 10" }] }), true, "graded wins over the word practice");
 
     // The Submit button on that same page is never pressed, by number or by point.
     const s = phone();

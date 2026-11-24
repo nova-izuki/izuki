@@ -66,7 +66,7 @@
     "- If the same step didn't change anything, don't repeat it: try another way.",
     "- Read answers off the screen and the facts; never invent numbers or names. When the screen shows the answer, finish with done.",
     "- Storage questions: open settings page storage and read the sizes it lists (apps, images, videos, audio, documents, system, other); open a category only if it helps.",
-    "- A quiz, test, exam or assignment: work the question out yourself and answer it — tap the choice you would pick, or type the answer into the box. Do not ask whether it is practice or graded. Never press Submit, Turn in, Finish, End test or Grade: that is theirs to press.",
+    "- A quiz, test, exam or assignment: work the question out. On a practice quiz, drill or self-test, answer it: tap the choice or type the answer. On a graded quiz or exam (or if you can't tell), don't tap or type: finish with done and say the answer and why, so they can pick it. Never press Submit, Turn in, Finish, End test or Grade: that is theirs to press.",
     "- Never press anything that calls someone, sends, pays, buys, orders, deletes, uninstalls, clears, resets, signs out, force-stops or hands the work in (Submit, Turn in, Finish, End test, Grade). If the goal needs that, finish with ask and tell the person which button to press themselves.",
     "- Never type passwords, PINs or codes. Never change security or account settings.",
     "- If a step didn't work twice, try another way, or finish with done and say plainly what blocked you.",
@@ -173,6 +173,14 @@
   // A timer alone is a video or a download; with questions or answers it's a test.
   const TIMED = /\btime (?:left|remaining)\b/i;
   const ASKS = /\b(?:question|answer)s?\b/i;
+  // Practice (fill it in) or graded (say the answer, they tap it): the owner's
+  // choice on 2026-11-24. "Graded", "for credit", an exam, a proctor or points
+  // win over the word practice; if it can't be told, it counts as graded.
+  const PRACTICE = /\b(practice|self[- ]?(?:test|check|assessment|quiz)|drills?|flash ?cards?|review (?:quiz|questions)|ungraded|not graded|no grade|knowledge check|learning check|try it|quiz yourself|study mode|mock (?:test|exam|quiz))\b/i;
+  const GRADED = /\b(graded|for (?:a )?(?:credit|grade)|counts? toward|points? possible|proctor(?:ed|ing)?|final exam|midterm|exam(?:ination)? in progress|official (?:test|exam))\b/i;
+  const screenText = (screen) => norm((screen?.items || []).slice(0, 120).map((i) => i.text || "").join(" "));
+  const practicePage = (screen) => { const t = screenText(screen); return PRACTICE.test(t) && !GRADED.test(t); };
+  const gradedPage = (screen) => testPage(screen) && !practicePage(screen);
   const testPage = (screen) => {
     // One line of text: a marker split across items ("Question 3" / "of 20") still reads as one.
     const text = norm((screen?.items || []).slice(0, 120).map((i) => i.text || "").join(" "));
@@ -291,6 +299,16 @@
     async function act(a, screen) {
       const items = screen?.items || [];
       const own = screen?.app === OWN;
+      // A graded quiz or test: the answer is said, never put in. They tap it themselves.
+      // (A practice quiz, drill or self-test: Izuki fills it in.)
+      if (["tap", "type", "tap_at", "long_press", "double_tap", "drag"].includes(a.do) && gradedPage(screen)) {
+        const pick = a.do === "type" ? String(a.text || "").trim() : String(items.find((i) => i.n === a.n)?.text || "").trim();
+        // Submit / Turn in on a graded page: the hand-in guard below answers that.
+        if (!HAND_IN.test(norm(pick))) {
+        const said = pick ? `The answer is “${pick}”. ` : "";
+        return { ok: false, stop: true, note: `${said}This looks like a graded quiz or test, so I'm telling you instead of tapping it: you pick it and you submit it. On a practice quiz I can fill it in for you.` };
+        }
+      }
       switch (a.do) {
         case "open": {
           if (!a.app) return { ok: false, note: "no app was named" };
@@ -598,5 +616,5 @@
   /** Autopilot and the agent take turns: both use Android's one numbered screen list. */
   let agentBusy = false;
 
-  window.IzukiAgent = { run, get busy() { return agentBusy; }, _test: { parse, describe, facts, RISKY, SYSTEM, PAGES, testPage } };
+  window.IzukiAgent = { run, get busy() { return agentBusy; }, _test: { parse, describe, facts, RISKY, SYSTEM, PAGES, testPage, practicePage, gradedPage } };
 })();
