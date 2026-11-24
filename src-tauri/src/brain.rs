@@ -1207,7 +1207,30 @@ pub const OFFLINE: &str = "You're offline right now — check your Wi-Fi, then a
 pub fn brain_chain() -> Vec<crate::settings::ProviderConfig> {
     let mut chain = offline_only(brain_chain_inner());
     swap_local_text_model(&mut chain, tiny_describer, false);
+    with_starter(&mut chain);
     chain
+}
+
+/// No key at all: Izuki's free starter brain, so nobody has to set anything
+/// up to start (owner, 2026-11-24: "free everywhere, no stress"). Pollinations'
+/// free text AI: an open model, no key or account, about one answer every 45
+/// seconds per internet connection. It can't see pictures (a look is sent
+/// again as words). A free key in Settings makes everything fast.
+pub fn starter_brain() -> crate::settings::ProviderConfig {
+    crate::settings::ProviderConfig {
+        id: crate::settings::ProviderId::Openai,
+        label: "Izuki's free starter brain".into(),
+        base_url: "https://text.pollinations.ai/openai".into(),
+        model: "openai".into(),
+        api_key: String::new(),
+        enabled: true,
+    }
+}
+
+fn with_starter(chain: &mut Vec<crate::settings::ProviderConfig>) {
+    if chain.is_empty() && online() && !RESTING.lock().iter().any(|(p, until)| *p == crate::settings::ProviderId::Openai && *until > std::time::Instant::now()) {
+        chain.push(starter_brain());
+    }
 }
 
 /// Chat needs a text model. Ollama happily returns `moondream`, a
@@ -1223,6 +1246,7 @@ pub fn chat_chain() -> Vec<crate::settings::ProviderConfig> {
     if switches_freely() {
         use_siblings_for_resting(&mut chain);
     }
+    with_starter(&mut chain);
     chain
 }
 
@@ -1591,7 +1615,7 @@ fn rest_for(err: &str) -> Option<std::time::Duration> {
     if e.contains("request too large") || e.contains("too large for model") || e.contains("context length") {
         return None;
     }
-    let limited = e.contains("429") || e.contains("too many requests") || e.contains("rate-limit") || e.contains("rate limit");
+    let limited = e.contains("429") || e.contains("too many requests") || e.contains("rate-limit") || e.contains("rate limit") || e.contains("free limit reached");
     if !limited {
         return None;
     }
@@ -1619,7 +1643,7 @@ fn unreachable_rest(err: &str) -> Option<std::time::Duration> {
 /// "please try again in 7.2s", "retry in 1m30s", "retry after 12 seconds",
 /// "retry_after: 20" → that long.
 fn retry_after(e: &str) -> Option<std::time::Duration> {
-    let at = ["try again in ", "retry in ", "retry after ", "retry_after\":", "retry_after:", "retry-after:", "retrydelay\":\""]
+    let at = ["try again in ", "retry in ", "retry after ", "please wait ", "retry_after\":", "retry_after:", "retry-after:", "retrydelay\":\""]
         .iter()
         .find_map(|k| e.find(k).map(|i| i + k.len()))?;
     let rest: Vec<char> = e[at..].trim_start_matches([' ', '"']).chars().take(16).collect();
@@ -1977,7 +2001,9 @@ fn is_hopeless(err: &str) -> bool {
     let e = err.to_ascii_lowercase();
     let out_of_money = ["no credits", "insufficient_quota", "billing"].iter().any(|p| e.contains(p));
     // "Too many requests" is waiting, not broken — unless it says the money ran out.
-    let limited = has_status(&e, "429") || e.contains("too many requests") || e.contains("rate limit") || e.contains("rate-limit");
+    // The free starter brain answers "402 … Free limit reached … wait 44
+    // seconds": a wait, not an empty wallet.
+    let limited = has_status(&e, "429") || e.contains("too many requests") || e.contains("rate limit") || e.contains("rate-limit") || e.contains("free limit reached");
     if limited && !out_of_money {
         return false;
     }
@@ -6835,6 +6861,15 @@ mod speed_tests {
     }
 
     use super::*;
+
+    #[test]
+    fn the_free_starter_brain_waits_out_its_limit_instead_of_being_benched() {
+        let e = "starter answered 402 Payment Required: Free limit reached: 1 reply every 45 seconds per IP. Please wait 44 seconds or get unlimited replies, then try again.";
+        assert!(!is_hopeless(e), "a 45-second wait is not an empty wallet");
+        assert_eq!(rest_for(e), Some(std::time::Duration::from_secs(44)));
+        let s = starter_brain();
+        assert!(s.api_key.is_empty() && s.base_url.starts_with("https://text.pollinations.ai/"));
+    }
 
     #[test]
     fn a_web_page_is_read_not_photographed_unless_the_picture_matters() {
