@@ -1174,7 +1174,11 @@ impl Default for Settings {
                 },
                 ProviderConfig {
                     id: ProviderId::NineRouter,
-                    label: "9Router (local, free providers)".into(),
+                    // OmniRoute (github.com/diegosouzapw/OmniRoute) grew out of
+                    // 9Router and listens on the same address, so this brain
+                    // reaches either one; with OmniRoute, model "auto" lets it
+                    // pick a free model you've connected.
+                    label: "9Router or OmniRoute (local, free providers)".into(),
                     base_url: "http://localhost:20128/v1".into(),
                     // Kiro AI's `kr/` models, routed through 9Router — Claude
                     // reads images natively, and it's one of the few free
