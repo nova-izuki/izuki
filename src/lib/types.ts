@@ -838,3 +838,53 @@ export interface AirSafety {
   /** This build lets the eye lane move the real mouse (false: the eye cursor is drawn only). */
   eye_mouse: boolean;
 }
+
+
+/** A file the Smart File Organizer would move, and where to. */
+export interface OrganizerMove {
+  from: string;
+  to: string;
+  /** The folder it lands in, e.g. `Music_Production`. */
+  category: string;
+  bytes: number;
+}
+
+/** Something the organizer deliberately leaves alone, and why. */
+export interface OrganizerSkip {
+  path: string;
+  why: string;
+}
+
+/** What an organization would do. Nothing has moved yet. */
+export interface OrganizerPlan {
+  root: string;
+  sources: string[];
+  moves: OrganizerMove[];
+  skipped: OrganizerSkip[];
+  /** Skipped entries left out of `skipped` because the list was long. */
+  skipped_more: number;
+  bytes: number;
+  folders: string[];
+}
+
+/** What an organization did. */
+export interface OrganizerDone {
+  moved: number;
+  bytes: number;
+  /** The undo log, written before the first file moved. */
+  undo_log: string;
+  problems: string[];
+}
+
+/** What an undo did. */
+export interface OrganizerRestored {
+  restored: number;
+  problems: string[];
+}
+
+/** The last organization still waiting to be undone. */
+export interface OrganizerLast {
+  at: string;
+  files: number;
+  root: string;
+}

@@ -2,7 +2,7 @@ import { ScrollButtons } from "./ScrollButtons";
 import { DrawCommandBar } from "./TalkToIzuki";
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { Layers, MessageCircle, Minus, PenLine, Settings2, X, Eye, Blocks, Maximize2, Minimize2, NotebookPen, Palette } from "lucide-react";
+import { Layers, MessageCircle, Minus, PenLine, Settings2, X, Eye, Blocks, Maximize2, Minimize2, NotebookPen, Palette, FolderOpen } from "lucide-react";
 import { IzukiMark } from "./IzukiMark";
 import { Segmented, cx } from "./ui";
 import { DrawTab } from "./tabs/DrawTab";
@@ -13,6 +13,7 @@ import { FlowLibrary } from "./tabs/FlowLibrary";
 import { WatcherManager } from "./tabs/WatcherManager";
 import { SettingsTab } from "./tabs/SettingsTab";
 import { StyleTab } from "./tabs/StyleTab";
+import { FilesTab } from "./tabs/FilesTab";
 import { StatusToast } from "./StatusToast";
 import { VoiceEngine } from "./VoiceEngine";
 import { OnboardingTour } from "./OnboardingTour";
@@ -34,6 +35,7 @@ const TABS: Array<{ value: TabId; label: string; icon: React.ReactNode }> = [
   { value: "chat", label: "Chat", icon: <MessageCircle size={13} strokeWidth={2.4} /> },
   { value: "apps", label: "Apps", icon: <Blocks size={13} strokeWidth={2.4} /> },
   { value: "notes", label: "Notes", icon: <NotebookPen size={13} strokeWidth={2.4} /> },
+  { value: "files", label: "Files", icon: <FolderOpen size={13} strokeWidth={2.4} /> },
   { value: "flows", label: "Flows", icon: <Layers size={13} strokeWidth={2.4} /> },
   { value: "watchers", label: "Watchers", icon: <Eye size={13} strokeWidth={2.4} /> },
   { value: "style", label: "Style", icon: <Palette size={13} strokeWidth={2.4} /> },
@@ -288,6 +290,7 @@ export function GlassConfigPanel() {
               {tab === "chat" && <ChatTab />}
               {tab === "apps" && <AppsTab />}
               {tab === "notes" && <NotesTab />}
+              {tab === "files" && <FilesTab />}
               {tab === "flows" && <FlowLibrary />}
               {tab === "watchers" && <WatcherManager />}
               {tab === "style" && <StyleTab />}

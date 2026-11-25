@@ -14,6 +14,7 @@ pub mod agent_notes;
 /// `--features devvision` so release builds never carry it (milestone §5).
 #[cfg(feature = "devvision")]
 pub mod observer;
+pub mod organizer;
 /// The private Developer Control system: three independent dev-only switches
 /// (Smart Vision, Claude Live Auto-Review, Smart Real Testing) with Stop All
 /// and Capture Bug. The module itself is always compiled — the panel needs
@@ -371,6 +372,10 @@ pub fn run() {
             commands::list_wakewords,
             commands::open_wakewords_folder,
             commands::open_path,
+            commands::organizer_plan,
+            commands::organizer_run,
+            commands::organizer_undo,
+            commands::organizer_last,
             commands::import_wakewords,
             commands::chat_stream,
             commands::read_chat_attachment,

@@ -126,3 +126,20 @@ the owner for the folder.
 - The laptop mic "hearing nothing" since 11-12 was **Windows' own mute** (28%);
   Izuki now says so, and "unmute my mic" fixes it.
 - Never write `@name` in PR text for agents (it pings real GitHub users).
+## Smart File Organizer (Freebuff, 2026-11-25)
+
+The owner asked for a native organizer for the loose files on the Desktop and
+in Downloads. It is built and waiting for review, as a new **Files** tab.
+
+- Logic is all in `src-tauri/src/organizer.rs`, with the commands in
+  `commands.rs` and the tab in `FileOrganizer.tsx` / `tabs/FilesTab.tsx`.
+- The preview is the approval: `scan()` never writes, and `organizer_run` only
+  moves what that list said.
+- The undo log is written to `%APPDATA%/Izuki/organizer/` before the first file
+  moves; `undo_log_*.undone.json` marks one that has been undone, so it is not
+  offered again.
+- A project folder (`.git`, `package.json`, `Cargo.toml`, `pyproject.toml`,
+  `.env`) is never moved or split; ordinary folders are not descended into.
+- Still to do by hand: run it once on a real Desktop/Downloads folder and look
+  at the preview, then press Undo and confirm every file is back. Nothing has
+  been moved on this laptop.

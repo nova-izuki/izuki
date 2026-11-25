@@ -23,7 +23,8 @@ import type {
   NoteLinks,
   VoiceCatalog,
   FoundKey,
-  N8nImport, AirSafety, FreeSearch, StatusEvent} from "./types";
+  N8nImport, AirSafety, FreeSearch, StatusEvent,
+  OrganizerPlan, OrganizerDone, OrganizerRestored, OrganizerLast} from "./types";
 
 export const IS_TAURI =
   typeof window !== "undefined" &&
@@ -945,6 +946,26 @@ export const api = {
       throw new Error("Not running inside Izuki.");
     }),
   appsTest: (key: string) => call<void>("apps_test", { key }, () => undefined),
+  /** What tidying the Desktop and Downloads would move (reads only). */
+  organizerPlan: () =>
+    call<OrganizerPlan>("organizer_plan", undefined, () => ({
+      root: "",
+      sources: [],
+      moves: [],
+      skipped: [],
+      skipped_more: 0,
+      bytes: 0,
+      folders: [],
+    })),
+  /** Do exactly what the preview showed, after the user approved it. */
+  organizerRun: () =>
+    call<OrganizerDone>("organizer_run", undefined, () => {
+      throw new Error("Organizing files only works inside Izuki on your PC.");
+    }),
+  /** Put every file of the last organization back. */
+  organizerUndo: () => call<OrganizerRestored>("organizer_undo", undefined, () => ({ restored: 0, problems: [] })),
+  /** The last organization that can still be undone. */
+  organizerLast: () => call<OrganizerLast | null>("organizer_last", undefined, () => null),
   /** Apps linked through Composio ("gmail", "googlecalendar"…). */
   appsConnected: () => call<string[]>("apps_connected", undefined, () => ["gmail"]),
   /** A sign-in page for linking one app. */

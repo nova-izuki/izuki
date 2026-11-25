@@ -27,6 +27,7 @@ export const FEATURES: Feature[] = [
   { label: "Voice & accent", hint: "voice, accent, character voice, male, female, dre, nia, british, nigerian, speak responses", tab: "draw", id: "draw-voice" },
   { label: "Chat with Izuki", hint: "Conversation, files and voice", tab: "chat" },
   { label: "Connected apps", hint: "Search accounts, email, socials and integrations", tab: "apps" },
+  { label: "Tidy my files", hint: "organize my desktop, clean up my downloads, loose files, file organizer, sort my files into folders, messy desktop, tidy up, move my files, undo the last organize", tab: "files" },
   { label: "Draw on your screen", hint: "Point, annotate and give a screen task", tab: "draw" },
   { label: "Saved flows", hint: "Find, run and organise your workflows", tab: "flows" },
   { label: "Watchers", hint: "Screen changes and background checks", tab: "watchers" },

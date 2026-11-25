@@ -3047,3 +3047,31 @@ pub async fn android_type(text: String) -> Result<(), String> {
     })
     .await?
 }
+
+
+// ---- Smart File Organizer (organizer.rs) ----
+
+/// What tidying the Desktop and Downloads would do. Reads only; nothing moves
+/// until the owner approves the preview with `organizer_run`.
+#[tauri::command]
+pub async fn organizer_plan() -> R<crate::organizer::Plan> {
+    blocking(crate::organizer::preview).await?
+}
+
+/// Tidy the loose files on the Desktop and in Downloads into Izuki_Organized.
+#[tauri::command]
+pub async fn organizer_run() -> R<crate::organizer::Done> {
+    blocking(|| crate::organizer::organize().map(|(_, done)| done)).await?
+}
+
+/// Put every file the last organization moved back where it came from.
+#[tauri::command]
+pub async fn organizer_undo() -> R<crate::organizer::Restored> {
+    blocking(crate::organizer::undo_last).await?
+}
+
+/// The last organization still waiting to be undone, if there is one.
+#[tauri::command]
+pub async fn organizer_last() -> Option<crate::organizer::Last> {
+    blocking(crate::organizer::last).await.ok().flatten()
+}
