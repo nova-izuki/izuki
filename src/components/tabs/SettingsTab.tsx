@@ -331,7 +331,7 @@ export function SettingsTab() {
                               : p.id === "nvidia"
                                 ? "nvapi-… (free from build.nvidia.com → Settings → API Keys)"
                               : p.id === "9router"
-                                ? "not needed — 9Router holds its own provider keys"
+                                ? "not needed — 9Router or OmniRoute holds its own provider keys (with OmniRoute, set the model to auto)"
                                 : "paste your key"
                           }
                         />

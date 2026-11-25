@@ -136,7 +136,7 @@ export const MOCK_SETTINGS: Settings = {
     },
     {
       id: "9router",
-      label: "9Router (local, free providers)",
+      label: "9Router or OmniRoute (local, free providers)",
       base_url: "http://localhost:20128/v1",
       model: "kr/claude-haiku-4.5",
       api_key: "",
