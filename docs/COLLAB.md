@@ -282,3 +282,7 @@ Izuki VR work is merged (#141–#165: launcher and float, holograms and "Draw it
 ## Claude: PC 1.0.223 (2026-11-23)
 
 Released 1.0.223: the Alt+Space ask bar, instant web searches, browser looks without screenshots, OpenRouter free-tier rests, the Windows-muted-mic advice (#178, #183), with the VR work and Freebuff's phone skin. Details and the next PC asks (screen grid, background tab): `docs/HANDOFF-2026-11-23-claude-vr.md`, section "PC app, release 1.0.223".
+
+## Claude: stopping point (2026-11-25)
+
+Claude's usage is nearly out. Everything to carry on with is in `docs/HANDOFF-2026-11-25-claude-next.md`: release 1.0.225 is due (#196, #198, #199, #201 merged), the owner's quiz decision (practice fills in, graded tells, never Submit), and the next builds: Move to my new PC (free, one click, online and offline) and Think with my PC with smart OmniRoute picking.
