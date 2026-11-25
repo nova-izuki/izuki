@@ -27,6 +27,7 @@ import { UpdateNotice } from "./UpdateNotice";
 import { FeatureFinder } from "./FeatureFinder";
 import { WhatsNew, WhatsNewButton, useWhatsNew } from "./WhatsNew";
 import { applyTheme } from "../lib/themes";
+import { LiveField } from "./LiveField";
 
 const TABS: Array<{ value: TabId; label: string; icon: React.ReactNode }> = [
   { value: "draw", label: "Draw", icon: <PenLine size={13} strokeWidth={2.4} /> },
@@ -203,6 +204,12 @@ export function GlassConfigPanel() {
         </div>
         <div className="izk-cosmic" aria-hidden="true" />
         <div className="izk-pointer-light" aria-hidden="true" />
+        {/* Real-time graphics: the live field, moving with Izuki's voice and
+            with the work it is doing. Behind everything, and it never takes a
+            pointer event. */}
+        <div className="izk-live" aria-hidden="true">
+          <LiveField />
+        </div>
 
         {/* ---------------- title bar ---------------- */}
         {/* Tauri's own drag handling looks for `data-tauri-drag-region` on

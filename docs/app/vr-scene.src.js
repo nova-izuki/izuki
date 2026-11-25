@@ -25,6 +25,7 @@ import {
   PerspectiveCamera, PlaneGeometry, Points, PointsMaterial, Quaternion, Raycaster, RingGeometry, Scene, ShaderMaterial,
   SphereGeometry, Sprite, SpriteMaterial, SRGBColorSpace, TorusGeometry, Vector2, Vector3, WebGLRenderer, WireframeGeometry,
 } from "three";
+import { LIVE_FIELD_FRAG, LIVE_SCENE_VERT, LIVE_STATE } from "./live-field.js";
 
 // The room's type: IZUKI NOVA's own faces (the site's self-hosted Sora for
 // labels, Manrope for words), loaded before the first card is drawn.
@@ -273,6 +274,8 @@ export async function start({ mode, session, api, tint }) {
   // ---- the palette: the room's look (THEMES); the first, IZUKI NOVA's own,
   // leans to the person's orb colour when they picked one ----------------------
   const base = { a: new Color(), b: new Color(), c: new Color() };
+  /** The live field's material, once the orb exists (made below). */
+  let liveMat = null;
   let themeAt = 0, haloIdle = 0x7dd3fc;
   /** A light sky behind the buttons (Pearl, without passthrough): their labels go dark. */
   let lightRoom = false;
@@ -286,6 +289,13 @@ export async function start({ mode, session, api, tint }) {
       base.a.lerp(c, 0.6); base.b.lerp(c, 0.35); base.c.lerp(c, 0.45);
     }
     haloIdle = t.halo;
+    // The live field carries the room's own colours, so changing the look
+    // changes it too.
+    if (liveMat) {
+      liveMat.uniforms.uA.value.copy(base.a);
+      liveMat.uniforms.uB.value.copy(base.b);
+      liveMat.uniforms.uC.value.copy(base.c);
+    }
     space?.set(t);
     const light = !!t.light && !!space;
     if (light !== lightRoom) { lightRoom = light; for (const b of buttons) b.draw(); }
@@ -322,6 +332,25 @@ export async function start({ mode, session, api, tint }) {
   const bloom = new Mesh(track(new TorusGeometry(0.1, 0.0016, 8, 160)), bloomMat);
   bloom.visible = false;
   rig.add(halo, orb, ring, bloom);
+
+  // ---- the live field: real-time light behind the orb -------------------------------
+  // The same fragment shader the PC panel draws (live-field.js): it drifts at
+  // rest, breathes with your voice, swirls with a scan line while Izuki thinks
+  // and ripples when it speaks. A plane behind the orb, not a flat overlay, so
+  // it sits in the room's depth like everything else.
+  liveMat = track(new ShaderMaterial({
+    uniforms: {
+      uTime: { value: 0 }, uEnergy: { value: 0 }, uPulse: { value: 0 }, uState: { value: 0 },
+      uAspect: { value: 1.6 }, uOpacity: { value: 0.55 },
+      uA: { value: base.a.clone() }, uB: { value: base.b.clone() }, uC: { value: base.c.clone() },
+    },
+    vertexShader: LIVE_SCENE_VERT, fragmentShader: LIVE_FIELD_FRAG,
+    transparent: true, depthWrite: false, blending: AdditiveBlending,
+  }));
+  const live = new Mesh(track(new PlaneGeometry(0.86, 0.54)), liveMat);
+  live.position.set(0, 0.01, -0.14);
+  live.renderOrder = 0;
+  rig.add(live);
 
   const caption = card(0.56, 0.19);
   caption.mesh.position.set(0, -0.2, 0.01);
@@ -2902,6 +2931,12 @@ export async function start({ mode, session, api, tint }) {
     orbMat.uniforms.uTime.value = t;
     orbMat.uniforms.uEnergy.value = view.energy;
     orbMat.uniforms.uThink.value = view.think;
+    // The field follows the same state the orb does. Reduced motion: it holds
+    // one frame instead of moving.
+    liveMat.uniforms.uTime.value = calm ? 0.6 : t;
+    liveMat.uniforms.uEnergy.value = view.energy;
+    liveMat.uniforms.uState.value = LIVE_STATE[view.state] ?? 0;
+    liveMat.uniforms.uPulse.value = view.state === "thinking" ? 0.22 + view.energy * 0.3 : 0;
     const s = (1 + Math.sin(t * 1.7) * 0.012 + view.energy * 0.1) * (view.hovered ? 1.06 : 1) * (1 + breath.grow * 0.45);
     orb.scale.setScalar(s);
     // The orb's own light: quiet at rest, rising with a voice.
