@@ -1,5 +1,13 @@
 # Desktop checklist: what only your real PC can prove
 
+## 1.0.225 — still requires device checks
+
+1. On a clean profile with no provider keys, ask a short text question. The free starter brain should answer or explain its current wait; it must not claim it can see a screenshot.
+2. On a clearly labelled practice page, ask for an answer: filling in is allowed. On a graded page or an unclear page, the answer should be said without selecting or typing it. Submit, Turn in and Finish should remain untouched. Ask for coaching to check that the answer stays back.
+3. Check the field of light in the desktop app and VR room. Hide the window or enable reduced motion and check that the effect pauses or holds still.
+4. If you use 9Router or OmniRoute, check its Settings label and a real request through your local router. Automatic model discovery is future work.
+5. The real Quest 3S voice, hologram and browser checks and a live extension-own-window task remain unverified. Do not mark them passed from CI alone.
+
 CI builds Izuki and runs its tests, but it has no screen, no signed-in browser
 and no administrator prompt. These checks are for the installed app on your
 PC after an update. Each one says what should happen. If something doesn't,

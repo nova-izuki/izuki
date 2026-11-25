@@ -33,15 +33,15 @@ export function LiveField() {
     if (!canvas) return;
     const field = createLiveField(canvas, { opacity: 0.9 });
     if (!field) return;
+    const surface = field.canvas;
+    if (surface !== canvas) canvas.replaceWith(surface);
 
-    const box = canvas.parentElement;
+    const box = surface.parentElement;
     const fit = () => {
       const rect = box?.getBoundingClientRect();
-      field.resize(rect?.width || canvas.clientWidth, rect?.height || canvas.clientHeight, window.devicePixelRatio || 1);
+      field.resize(rect?.width || surface.clientWidth, rect?.height || surface.clientHeight, window.devicePixelRatio || 1);
     };
     fit();
-    const watcher = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(fit);
-    if (box && watcher) watcher.observe(box);
 
     // Your voice, and a spike for every step the core takes.
     let level = 0;
@@ -54,30 +54,47 @@ export function LiveField() {
     let last = performance.now();
 
     const tick = (now: number) => {
-      raf = requestAnimationFrame(tick);
-      const dt = Math.min(0.1, (now - last) / 1000);
-      last = now;
+      raf = 0;
+      // Nobody is looking: the field costs nothing at all.
+      if (document.hidden || document.documentElement.classList.contains("izk-away")) return;
       if (calm.matches) {
         field.still(stateRef.current, level);
         return;
       }
-      // Nobody is looking: the field costs nothing at all.
-      if (document.hidden || document.documentElement.classList.contains("izk-away")) return;
+      raf = requestAnimationFrame(tick);
+      const elapsed = (now - last) / 1000;
       const at = stateRef.current;
       // A soft field reads as smooth at 30; at rest it only drifts.
-      if (dt < 1 / (at === "idle" ? 8 : 30)) return;
+      if (elapsed + 0.000001 < 1 / (at === "idle" ? 8 : 30)) return;
+      last = now;
       field.pulse(pulse);
       pulse *= 0.92;
-      field.frame(at, level, dt);
+      field.frame(at, level, Math.min(0.1, elapsed));
     };
+    const restart = () => {
+      cancelAnimationFrame(raf);
+      last = performance.now();
+      raf = requestAnimationFrame(tick);
+    };
+    calm.addEventListener("change", restart);
+    document.addEventListener("visibilitychange", restart);
+    const focusWatcher = new MutationObserver(restart);
+    focusWatcher.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+    const watcher = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => { fit(); restart(); });
+    if (box && watcher) watcher.observe(box);
     raf = requestAnimationFrame(tick);
 
     return () => {
       cancelAnimationFrame(raf);
+      calm.removeEventListener("change", restart);
+      document.removeEventListener("visibilitychange", restart);
+      focusWatcher.disconnect();
       void offLevel.then((f) => f());
       void offTrace.then((f) => f());
       watcher?.disconnect();
       field.dispose();
+      // React retains the original ref, including during StrictMode's remount.
+      if (surface !== canvas) surface.replaceWith(canvas);
     };
   }, []);
 

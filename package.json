@@ -1,10 +1,11 @@
 {
   "name": "izuki",
   "private": true,
-  "version": "1.0.224",
+  "version": "1.0.225",
   "type": "module",
   "description": "IZUKI â€” YO IZUKI, DO IT. Draw on your screen, Izuki does it.",
   "scripts": {
+    "test:live-field": "node tools/live-field-check.mjs",
     "test:rescue": "node tools/rescue-check.mjs",
     "dev": "vite",
     "build": "tsc --noEmit && vite build",

@@ -177,15 +177,17 @@
   // choice on 2026-11-24. "Graded", "for credit", an exam, a proctor or points
   // win over the word practice; if it can't be told, it counts as graded.
   const PRACTICE = /\b(practice|self[- ]?(?:test|check|assessment|quiz)|drills?|flash ?cards?|review (?:quiz|questions)|ungraded|not graded|no grade|knowledge check|learning check|try it|quiz yourself|study mode|mock (?:test|exam|quiz))\b/i;
-  const GRADED = /\b(graded|for (?:a )?(?:credit|grade)|counts? toward|points? possible|proctor(?:ed|ing)?|final exam|midterm|exam(?:ination)? in progress|official (?:test|exam))\b/i;
+  const GRADED = /\b(graded|for (?:a )?(?:credit|grade)|counts? toward|points? possible|\d+(?:\.\d+)?\s*(?:points?|pts?)\b|attempts? (?:remaining|allowed|left|due)|time (?:limit|left|remaining)|due date|due(?=:)|proctor(?:ed|ing)?|final exam|midterm|exam(?:ination)? in progress|official (?:test|exam))\b/i;
   const screenText = (screen) => norm((screen?.items || []).slice(0, 120).map((i) => i.text || "").join(" "));
-  const practicePage = (screen) => { const t = screenText(screen); return PRACTICE.test(t) && !GRADED.test(t); };
+  const practicePage = (screen) => { const t = screenText(screen); const positive = t.replace(/\b(?:not graded|ungraded|no grade|won[’']t be graded|will not be graded)\b/gi, " "); return PRACTICE.test(t) && !GRADED.test(positive); };
   const gradedPage = (screen) => testPage(screen) && !practicePage(screen);
   const testPage = (screen) => {
     // One line of text: a marker split across items ("Question 3" / "of 20") still reads as one.
     const text = norm((screen?.items || []).slice(0, 120).map((i) => i.text || "").join(" "));
     return TEST_WORDS.test(text) || (TIMED.test(text) && ASKS.test(text));
   };
+
+  const handInControl = (text, screen) => HAND_IN.test(norm(text)) || (testPage(screen) && /^(?:finish|end|grade)$/i.test(norm(text)));
 
   const SEARCHY = /(^|[^a-z])(search|find|query|url|address|omnibox|urlbar|searchbar|searchbox)([^a-z]|$)/i;
   const forSearch = (item) => !!item && (SEARCHY.test(String(item.hint || "")) || SEARCHY.test(String(item.id || "")) || SEARCHY.test(String(item.desc || "")));
@@ -304,7 +306,7 @@
       if (["tap", "type", "tap_at", "long_press", "double_tap", "drag"].includes(a.do) && gradedPage(screen)) {
         const pick = a.do === "type" ? String(a.text || "").trim() : String(items.find((i) => i.n === a.n)?.text || "").trim();
         // Submit / Turn in on a graded page: the hand-in guard below answers that.
-        if (!HAND_IN.test(norm(pick))) {
+        if (a.do === "type" || !handInControl(pick, screen)) {
         const said = pick ? `The answer is “${pick}”. ` : "";
         return { ok: false, stop: true, note: `${said}This looks like a graded quiz or test, so I'm telling you instead of tapping it: you pick it and you submit it. On a practice quiz I can fill it in for you.` };
         }
@@ -331,7 +333,7 @@
           if (own) return { ok: false, note: "that's Izuki's own chat; open the app or Settings page you need first" };
           const item = items.find((x) => x.n === a.n);
           if (!item) return { ok: false, note: `there's no [${a.n}] on this screen` };
-          if (HAND_IN.test(norm(item.text))) {
+          if (handInControl(item.text, screen)) {
             return { ok: false, stop: true, note: `That’s “${norm(item.text)}” — the button that hands it in. The answer is in; submitting it is yours.` };
           }
           if (RISKY.test(norm(item.text))) {
@@ -396,7 +398,7 @@
           const under = items.filter((i) => i.w > 0 && i.h > 0 && x >= i.x && x <= i.x + i.w && y >= i.y && y <= i.y + i.h)
             .sort((p, q) => p.w * p.h - q.w * q.h);
           item = under.find((i) => RISKY.test(norm(i.text))) || (a.n ? items.find((i) => i.n === a.n) : null) || under[0] || null;
-          if (item && HAND_IN.test(norm(item.text))) {
+          if (item && handInControl(item.text, screen)) {
             return { ok: false, stop: true, note: `That’s “${norm(item.text)}” — the button that hands it in. The answer is in; submitting it is yours.` };
           }
           if (item && RISKY.test(norm(item.text))) {

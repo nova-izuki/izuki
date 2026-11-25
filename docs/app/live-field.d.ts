@@ -4,6 +4,8 @@ export const LIVE_SCENE_VERT: string;
 export const LIVE_FIELD_FRAG: string;
 export function tintRgb(tint: string | number[]): number[];
 export interface LiveField {
+  /** Drawing surface; may be a fresh canvas after a shader failure. */
+  readonly canvas: HTMLCanvasElement;
   /** True when the GPU shader is live; false for the plain 2D fallback. */
   gpu: boolean;
   readonly time: number;

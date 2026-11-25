@@ -127,6 +127,10 @@ const fixture = '<!doctype html><body><button id="target">Continue</button><form
   assert(await evaluate('!document.getElementById("face-tune").hidden'), 'face customise panel did not appear');
   await evaluate(`document.getElementById('orb-style').value='liquid';document.getElementById('orb-style').dispatchEvent(new Event('change'))`);
   assert(await evaluate('!!document.getElementById("apps-refresh")'));
+  // Phone settings fold their later sections. Open the real heading first;
+  // scrolling a display:none preview cannot render it.
+  await evaluate(`(()=>{const section=document.getElementById('orb-preview').closest('section');const head=section.querySelector('.fold-head');if(head?.getAttribute('aria-expanded')==='false')head.click();})()`);
+  assert(await evaluate('document.getElementById("orb-preview").checkVisibility()'), 'opening the orb section should reveal its preview');
   await evaluate('document.getElementById("orb-preview").scrollIntoView({block:"center"})');
   await pause(250);
   assert(await evaluate('document.getElementById("orb-preview").getContext("2d").getImageData(0,0,100,100).data.some((v,i)=>i%4===3&&v>0)'), 'visible Orb Studio should render');

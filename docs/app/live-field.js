@@ -148,19 +148,26 @@ export function createLiveField(canvas, opts = {}) {
 
   const gl = canvas.getContext("webgl2", { alpha: true, antialias: false, depth: false, premultipliedAlpha: true, powerPreference: "low-power" })
     || canvas.getContext("webgl", { alpha: true, antialias: false, depth: false, premultipliedAlpha: true, powerPreference: "low-power" });
-  if (!gl) return canvasField(canvas, colors);
+  if (!gl) return canvasField(canvas, colors, opts);
 
   let program;
   try {
     program = gl.createProgram();
-    gl.attachShader(program, compile(gl, gl.VERTEX_SHADER, LIVE_QUAD_VERT));
-    gl.attachShader(program, compile(gl, gl.FRAGMENT_SHADER, LIVE_FIELD_FRAG));
+    for (const [type, source] of [[gl.VERTEX_SHADER, LIVE_QUAD_VERT], [gl.FRAGMENT_SHADER, LIVE_FIELD_FRAG]]) {
+      const shader = compile(gl, type, source);
+      gl.attachShader(program, shader);
+      // The program retains its attached shaders until it is deleted.
+      gl.deleteShader(shader);
+    }
     gl.linkProgram(program);
     if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw new Error("live field: " + gl.getProgramInfoLog(program));
   } catch (err) {
     // An old driver that cannot compile it still gets a field, just a smooth one.
     console.warn(err?.message || err);
-    return canvasField(canvas, colors);
+    // Once WebGL owns a canvas it cannot acquire a 2D context. Give the host
+    // a fresh drawing surface, retaining its attributes and CSS sizing.
+    if (program) gl.deleteProgram(program);
+    return canvasField(canvas.cloneNode(false), colors, opts);
   }
 
   const buffer = gl.createBuffer();
@@ -182,7 +189,7 @@ export function createLiveField(canvas, opts = {}) {
   gl.useProgram(program);
   setColors(colors);
   gl.enable(gl.BLEND);
-  gl.blendFunc(gl.SRC_ALPHA, gl.ONE);   // additive: light on the glass
+  gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE, gl.ONE, gl.ONE); // additive light, premultiplied alpha
   gl.uniform1f(u.uTime, 0);
   gl.uniform1f(u.uOpacity, opts.opacity ?? 1);
 
@@ -205,6 +212,7 @@ export function createLiveField(canvas, opts = {}) {
   };
 
   return {
+    canvas,
     /** True when the GPU path is live (false only for the fallback below). */
     gpu: true,
     get time() { return time; },
@@ -244,7 +252,7 @@ export function createLiveField(canvas, opts = {}) {
  * No WebGL (a locked-down WebView, a very old driver): three soft blobs of
  * the same colours, moving slowly. Nothing to compile, nothing to lose.
  */
-function canvasField(canvas, colors) {
+function canvasField(canvas, colors, opts) {
   const ctx = canvas.getContext("2d");
   if (!ctx) return null;
   const rgb = colors.map((c) => tintRgb(c));
@@ -272,6 +280,7 @@ function canvasField(canvas, colors) {
     ctx.globalCompositeOperation = "source-over";
   };
   return {
+    canvas,
     gpu: false,
     get time() { return time; },
     frame(state, level, dt) { draw(state, level, dt); },
@@ -279,9 +288,12 @@ function canvasField(canvas, colors) {
     pulse(at = 1) { pulseAt = 1 + Math.max(0, Math.min(1, at)) * 0.8; },
     recolour() {},
     resize(cssWidth, cssHeight, dpr = 1) {
-      const scale = Math.min(1.5, Math.max(0.5, dpr || 1));
-      const w = Math.max(1, Math.round(cssWidth * scale));
-      const h = Math.max(1, Math.round(cssHeight * scale));
+      const scale = Math.min(opts.maxDpr ?? 1.5, Math.max(0.5, dpr || 1));
+      let w = Math.max(1, Math.round(cssWidth * scale));
+      let h = Math.max(1, Math.round(cssHeight * scale));
+      const cap = opts.maxPixels ?? 1_400_000;
+      const px = w * h;
+      if (px > cap) { const k = Math.sqrt(cap / px); w = Math.max(1, Math.round(w * k)); h = Math.max(1, Math.round(h * k)); }
       if (w === canvas.width && h === canvas.height) return;
       canvas.width = w;
       canvas.height = h;
