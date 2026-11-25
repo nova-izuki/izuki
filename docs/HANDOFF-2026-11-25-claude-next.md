@@ -4,6 +4,16 @@ Claude's usage is nearly out. Freebuff or Codex: this is everything the owner
 and Claude agreed, in order. Read `docs/HANDOFF-2026-11-23-claude-vr.md` too
 (VR, the store, 1.0.222–1.0.224) and AGENTS.md (the rules).
 
+## Continuation updates — Codex, 2026-11-25 (newest)
+
+- The owner resumed Codex and explicitly asked that this handoff be updated after changes and discussions. Keep decisions, actual test results, remaining work and release state here after every batch; do not rely on a private agent memory file.
+- Read the entire pasted continuation, not only Claude's first handoff: the later discussion makes **Move to my new PC optional**, with Windows Backup, a WinGet app list and USB copying sufficient for now. **Think with my PC + smart OmniRoute picking is the next feature**, then the clip-to-video workflow. The numbered sections below are corrected accordingly.
+- **Graphify setup completed locally:** existing `graphifyy` 0.9.120 was already installed. Its Python Scripts directory was missing from the user's PATH. Added that directory to user PATH without replacing existing entries; installed the official bundled Claude Code and Codex skills with references; verified both skill files and `graphify --version` in a new PowerShell child process. Existing terminal sessions may need reopening. No repository graph extraction, semantic LLM analysis or code upload was run. Ponytail remains owner-reported installed, not newly verified.
+- The last pasted question also asked for simpler steps to move large files and Claude's notes. See [PC-MOVE-GUIDE.md](PC-MOVE-GUIDE.md). No actual file transfer was started: no destination drive or new-PC path has been selected.
+- Pre-release review completed with 22 findings. Confirmed phone quiz, provider/assessment, animation and VR reliability bugs are being repaired with regression coverage before publication. The real-browser suite now opens the folded phone Orb Studio through its heading and passes; the blank hidden preview was a test setup problem. Full default native tests passed (769 passed, 49 ignored by existing test annotations); devvision and final-source reruns remain pending.
+- **Freebuff took over this lane (2026-11-25).** Codex stopped with the review repairs and the 1.0.225 release files uncommitted on `codex/continue-next`. The only thing actually broken was test plumbing: the new `honesty_tests` called `chain_for`, `starter_allowed`, `swap_local_text_model`, `picture_only_model` and `local_model_issue` without importing them, so `cargo test --lib` stopped on 17 compile errors before a single test ran. The import list is fixed; no shipped behaviour changed. Checked on the final source: `npm run build` (tsc + vite), `test:live-field` 16/16, `test:phone` (all files, including `vr.test.cjs`'s 74 checks), `test:conversation` 93, `test:html` (encoding 684 files + HTML), `test:site` (9 pages, 28 sitemap images, quest 18), `tools/browser-check.cjs` (phone home/settings/orb, four toolbar widths, native iPhone settings, website cards), `node tools/build-vr.cjs` (rebuilt bundle is byte-identical, so `vr-scene.js` matches its source), `cargo test --lib` 773 passed / 0 failed / 49 ignored, `cargo test --lib --features devvision` 785 passed / 0 failed / 49 ignored. Still device-only: the Quest 3S voice/hologram/browser checks, a live task through the PC's own extension window, and the starter brain's real wait on a clean install.
+- Main was checked at `06a5a08` (#202). Latest published release was verified as **1.0.224**. **1.0.225 remains due** until its build, publication, updater and download checks really finish. Earlier completed branch checks do not establish a new release. Work is isolated on `codex/continue-next`; shared dirty work remains untouched.
+
 ## Released
 
 - **1.0.224** (Latest): Izuki's own browser window with a live view, whole moves
@@ -22,8 +32,10 @@ and Claude agreed, in order. Read `docs/HANDOFF-2026-11-23-claude-vr.md` too
 To release: bump every version file to 1.0.225 (`node tools/check-versions.mjs`
 must agree), write `docs/RELEASE-1.0.225.md`, add a What's New item, add the
 checklist block, move `docs/NEXT-RELEASE.md` lines into the note, PR, merge;
-`auto-release.yml` tags it after Verify passes. AGENTS.md says Claude is the
-release coordinator: ask the owner before releasing in Claude's place.
+`auto-release.yml` tags it after Verify passes. Coordinate a single release
+under the owner's standing authorization recorded in AGENTS.md; do not ask
+again for routine release approval already granted. All required checks and
+actionable review findings must be handled before publication.
 
 ## Decisions the owner made (don't reopen without the owner)
 
@@ -42,9 +54,22 @@ release coordinator: ask the owner before releasing in Claude's place.
 
 ## Build next, in this order
 
-### 1. "Move to my new PC": free, one click (the owner's top ask)
+### 1. "Think with my PC" + smart OmniRoute picking (next feature)
 
-Replaces paid PCmover / EaseUS for Izuki users.
+- One switch on the phone and in VR: questions go to the **paired PC**, which
+  answers with whatever brains it has (OmniRoute, keys). No keys on the phone
+  or headset. Off unless turned on; only while the PC is on.
+- On the PC, treat OmniRoute like the free-key providers in `freebrains.rs`:
+  read its `/v1/models`, keep the strongest models that can see screenshots,
+  order the best first, and keep Izuki's existing checks (a reply with no real
+  step or broken JSON loses; the next brain answers). OmniRoute's own `auto`
+  model also works.
+
+### 2. "Move to my new PC": optional future feature
+
+The later discussion made this optional, after the owner accepted Windows
+Backup, WinGet export/import and USB copying for now. The design below is a
+proposal, not a built feature or a promise to transfer every application.
 
 - **Flow:** Izuki on both PCs. On the old one: "move me to my new PC" (or a
   button). It finds the new PC (same Wi-Fi), shows a code on both screens to
@@ -65,17 +90,6 @@ Replaces paid PCmover / EaseUS for Izuki users.
   same Microsoft account → Restore." Only on Windows.
 - Test on the owner's real laptop and new PC.
 
-### 2. "Think with my PC" + smart OmniRoute picking
-
-- One switch on the phone and in VR: questions go to the **paired PC**, which
-  answers with whatever brains it has (OmniRoute, keys). No keys on the phone
-  or headset. Off unless turned on; only while the PC is on.
-- On the PC, treat OmniRoute like the free-key providers in `freebrains.rs`:
-  read its `/v1/models`, keep the strongest models that can see screenshots,
-  order the best first, and keep Izuki's existing checks (a reply with no real
-  step or broken JSON loses; the next brain answers). OmniRoute's own `auto`
-  model also works.
-
 ### 3. "Drop your clips, get a video" (later)
 
 The owner films PC-build steps and wants to paste all the clips and get one
@@ -86,7 +100,7 @@ the owner for the folder.
 ### 4. Smaller asks still open
 
 - Test everything new in VR **on the real Quest 3S** (plug in USB, allow USB
-  debugging; adb is at `C:\Users\nwach\tools\android-sdk\platform-tools\adb.exe`).
+  debugging; use `adb` from PATH or your Android SDK’s `platform-tools/adb.exe`).
   Not yet done.
 - The PC "Izuki's own window" (extension 1.6.5) has not run against the real
   extension; test it with a web task.
@@ -97,9 +111,12 @@ the owner for the folder.
 
 - **ponytail** (Claude Code plugin, DietrichGebert/ponytail, MIT): installed by
   the owner. In VS Code `/plugin` doesn't exist; use the terminal `claude`.
-- **graphify** (Graphify Labs, Apache-2.0; code parsed locally, nothing
-  uploaded): not installed yet. `pip install graphifyy` (two y's), then in the
-  izuki folder `graphify install`.
+- **graphify** (Graphify Labs): CLI and Claude/Codex skills installed and verified
+  by Codex on 2026-11-25. Reopen PowerShell if an old terminal still cannot find
+  `graphify`. Claude Code uses `/graphify`; Codex uses `$graphify` on a new turn.
+  Parsing code can run locally; semantic extraction may use an external model,
+  so do not describe all Graphify workflows as uploading nothing. Only setup
+  was performed in this continuation, with no repository extraction.
 - **agent skills:** Anthropic's official pack is already installed.
 
 ## Traps from this stretch

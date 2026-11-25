@@ -956,8 +956,9 @@ export async function start({ mode, session, api, tint }) {
           if (r?.ok === false) { if (my === pcUi.gen) { pcUi.err = r.error || ""; drawBar(); } return; }
           // Closed, reopened or lost the picture while the pointer moved: no click.
           if (!still()) return;
-          await api.pc.send({ op: "click", button: "left" }, pcUi.target);
-        }).catch(() => {});
+          const clicked = await api.pc.send({ op: "click", button: "left" }, pcUi.target);
+          if (still()) { pcUi.err = clicked?.ok === true ? "" : clicked?.error || "The click wasn't confirmed. Check the PC before trying again."; drawBar(); }
+        }).catch((e) => { if (still()) { pcUi.err = String(e?.message || "The click wasn't confirmed. Check the PC before trying again."); drawBar(); } });
       },
       scroll: (n) => { if (pcUi.live) void api.pc.send({ op: "scroll", dy: n }, pcUi.target); },
     });
@@ -1295,7 +1296,8 @@ export async function start({ mode, session, api, tint }) {
   // itself can't be drawn inside VR, so your AI reads the page and the panel
   // shows its words.
   const WEB_W = 1.0, WEB_TOP = 0.1, WEB_BODY = 0.62, WEB_ROWS = 5;
-  const webUi = { group: new Group(), head: card(WEB_W, WEB_TOP), body: card(WEB_W, WEB_BODY), handle: card(0.3, 0.035), open: false, gen: 0, q: "", typed: "", mode: "", results: [], page: null, title: "", paras: [], first: 0, more: false, err: "", btns: [], rows: [] };
+  const webUi = { group: new Group(), head: card(WEB_W, WEB_TOP), body: card(WEB_W, WEB_BODY), handle: card(0.3, 0.035), open: false, gen: 0, q: "", typed: "", mode: "", results: [], page: null, title: "", paras: [], first: 0, line: 0, next: null, history: [], more: false, err: "", btns: [], rows: [] };
+  let webControls = null;
   webUi.group.visible = false;
   scene.add(webUi.group);
   webUi.group.add(webUi.head.mesh, webUi.body.mesh, webUi.handle.mesh);
@@ -1327,7 +1329,7 @@ export async function start({ mode, session, api, tint }) {
       bx -= d + 18;
     };
     control("close", () => webClose());
-    if (reading()) control("back", () => { webUi.gen++; webUi.mode = "results"; drawWeb(); });
+    if (reading()) control("back", webBack);
     const x0 = 30, bw = bx - 12 - x0, bh = h * 0.66;
     rr(ctx, x0, cy - bh / 2, bw, bh, bh / 2);
     ctx.fillStyle = "rgba(255,255,255,0.06)"; ctx.fill();
@@ -1387,18 +1389,56 @@ export async function start({ mode, session, api, tint }) {
       ctx.font = `500 36px ${FONT}`;
       const room = h - 70;
       webUi.more = false;
-      for (let i = webUi.first; i < webUi.paras.length; i++) {
+      webUi.next = null;
+      paragraphs: for (let i = webUi.first; i < webUi.paras.length; i++) {
         const lines = util.wrapLines(webUi.paras[i], w - pad * 2, (s) => ctx.measureText(s).width);
-        if (y + lines.length * 50 > room && i > webUi.first) { webUi.more = true; break; }
-        for (const l of lines) { if ((y += 50) > room) { webUi.more = true; break; } write(ctx, l, pad, y, 36, INK, 500); }
+        if (y + lines.length * 50 > room && i > webUi.first) { webUi.next = { first: i, line: 0 }; break; }
+        for (let j = i === webUi.first ? webUi.line : 0; j < lines.length; j++) {
+          if (y + 50 > room) { webUi.next = { first: i, line: j }; break paragraphs; }
+          write(ctx, lines[j], pad, (y += 50), 36, INK, 500);
+        }
         y += 20;
       }
+      webUi.more = !!webUi.next;
       const where = `${webUi.first + 1} / ${webUi.paras.length}` + (webUi.more ? "  ·  thumbstick or tap for more" : "");
       write(ctx, where, w - pad, h - 28, 26, INK2, 500, "right");
     }
     webUi.body.update();
+    drawWebControls();
   }
   function drawWeb() { drawWebHead(); drawWebBody(); }
+  function webBack() { webUi.gen++; webUi.mode = "results"; drawWeb(); }
+  function flatButton(label, act) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = label;
+    Object.assign(b.style, { font: `600 14px ${FONT}`, color: INK, background: "rgba(255,255,255,.1)", border: "1px solid rgba(255,255,255,.12)", borderRadius: "999px", padding: "8px 14px", cursor: "pointer", whiteSpace: "normal" });
+    b.onclick = act;
+    return b;
+  }
+  function drawWebControls() {
+    if (!webControls) return;
+    const focused = document.activeElement;
+    const focusKey = webControls.contains(focused) ? focused.dataset.webAction : null;
+    webControls.replaceChildren();
+    webControls.hidden = !webUi.open;
+    if (!webUi.open) return;
+    const add = (key, label, act, disabled = false) => {
+      const b = flatButton(label, act);
+      b.dataset.webAction = key;
+      b.disabled = disabled;
+      webControls.append(b);
+      return b;
+    };
+    if (reading()) add("back", "Back to results", webBack);
+    if (webUi.mode === "results") webUi.results.slice(0, WEB_ROWS).forEach((r, i) => add("result-" + i, r.site || "Read result " + (i + 1), () => void webOpen(r)));
+    if (webUi.mode === "reading") {
+      add("previous", "Previous page", () => webScroll(-1), !webUi.history.length);
+      add("next", "Next page", () => webScroll(1), !webUi.more);
+    }
+    const close = add("close", "Close web", webClose);
+    if (focusKey) ([...webControls.children].find((b) => b.dataset.webAction === focusKey && !b.disabled) || close).focus();
+  }
   ui(webUi.head.mesh, {
     tap: (hit) => {
       if (!hit?.uv) return;
@@ -1421,9 +1461,11 @@ export async function start({ mode, session, api, tint }) {
   });
   function webScroll(n) {
     if (webUi.mode !== "reading") return;
-    const next = Math.max(0, Math.min(webUi.paras.length - 1, webUi.first + Math.sign(n)));
-    if (next === webUi.first || (n > 0 && !webUi.more)) return;
-    webUi.first = next;
+    if (!n) return;
+    const next = n > 0 ? webUi.next : webUi.history.pop();
+    if (!next) return;
+    if (n > 0) webUi.history.push({ first: webUi.first, line: webUi.line });
+    Object.assign(webUi, next);
     drawWebBody();
   }
   /** The orb beside the bar while it types (it steps back out of the way after). */
@@ -1489,7 +1531,7 @@ export async function start({ mode, session, api, tint }) {
   /** Read one result here: its words on the panel, the start read out loud. */
   async function webOpen(r) {
     const my = ++webUi.gen;
-    Object.assign(webUi, { mode: "page-loading", page: r, paras: [], first: 0, title: "", err: "" });
+    Object.assign(webUi, { mode: "page-loading", page: r, paras: [], first: 0, line: 0, next: null, history: [], title: "", err: "" });
     drawWeb();
     let p;
     try { p = await api.read(r, webUi.q); } catch (e) { p = { error: String(e?.message || e) }; }
@@ -1507,6 +1549,7 @@ export async function start({ mode, session, api, tint }) {
     webUi.open = false;
     webUi.gen++;
     webUi.group.visible = false;
+    drawWebControls();
     if (rig.userData.placed === "web") { if (pcUi.open) { rig.userData.placed = false; stepAside("pc"); } else if (holoUi.open) { rig.userData.placed = false; stepAside("holo"); } else comeHere(); }
   }
 
@@ -1609,6 +1652,7 @@ export async function start({ mode, session, api, tint }) {
   }
   /** Everything a hologram made for itself goes when it does. */
   function holoClear() {
+    holoPic.gen++;
     for (const n of holoUi.nodes) {
       for (const m of [n.mat, n.glow.material, n.label.mesh.material]) m.dispose();
       n.label.tex.dispose(); n.label.mesh.geometry.dispose();
@@ -1844,6 +1888,7 @@ export async function start({ mode, session, api, tint }) {
   const SK = 0.32;
   const sketchUi = { parts: [], made: [], turnables: [] };
   function sketchClear() {
+    for (const p of sketchUi.parts) if (p.label) unui(p.label.mesh);
     for (const o of sketchUi.made) { try { o.dispose(); } catch {} }
     for (const m of sketchUi.turnables) unui(m);
     sketchUi.parts = []; sketchUi.made = []; sketchUi.turnables = [];
@@ -1993,8 +2038,9 @@ export async function start({ mode, session, api, tint }) {
   }
 
   // ---- a real photo beside a hologram (Wikipedia, with its credit) ----------------------
-  const holoPic = { card: null };
+  const holoPic = { card: null, gen: 0 };
   function holoPhotoClear() {
+    holoPic.gen++;
     if (!holoPic.card) return;
     unui(holoPic.card.mesh);
     holoUi.group.remove(holoPic.card.mesh);
@@ -2003,11 +2049,12 @@ export async function start({ mode, session, api, tint }) {
   }
   async function holoPhoto({ url, title, note }) {
     if (!holoUi.open) return;
+    const my = ++holoPic.gen;
     const img = new Image();
     img.crossOrigin = "anonymous";
     img.src = url;
     try { await img.decode(); } catch { return; }
-    if (!holoUi.open) return;
+    if (!holoUi.open || my !== holoPic.gen) return;
     holoPhotoClear();
     const c = card(0.34, 0.3, 1024);
     const { ctx, w, h } = c;
@@ -3097,15 +3144,13 @@ export async function start({ mode, session, api, tint }) {
     words.textContent = "3D preview · click the orb to talk, drag to look";
     Object.assign(words.style, { color: INK2, textAlign: "center", flex: "1 1 auto" });
     // The same actions as the 3D buttons, reachable with the keyboard too.
-    const domButton = (label, act) => {
-      const b = document.createElement("button");
-      b.type = "button";
-      b.textContent = label;
-      Object.assign(b.style, { font: `600 14px ${FONT}`, color: INK, background: "rgba(255,255,255,.1)", border: "1px solid rgba(255,255,255,.12)", borderRadius: "999px", padding: "8px 14px", cursor: "pointer", whiteSpace: "nowrap" });
-      b.onclick = act;
-      return b;
-    };
-    overlay.append(words, domButton("Talk", () => api.tapOrb()), domButton("Photos", togglePhotos), domButton("My PC", togglePc), domButton("Pin", pinLast), domButton("Style", restyle), domButton("Leave", () => stop()));
+    overlay.append(words, flatButton("Talk", () => api.tapOrb()), flatButton("Photos", togglePhotos), flatButton("My PC", togglePc), flatButton("Pin", pinLast), flatButton("Style", restyle), flatButton("Leave", () => stop()));
+    webControls = document.createElement("div");
+    webControls.setAttribute("role", "group");
+    webControls.setAttribute("aria-label", "Web browser");
+    Object.assign(webControls.style, { flexBasis: "100%", maxHeight: "40vh", overflowY: "auto" });
+    overlay.append(webControls);
+    drawWebControls();
     // What the canvas says (Izuki's words, a photo's answer), for screen readers.
     spoken = document.createElement("span");
     spoken.setAttribute("aria-live", "polite");
@@ -3113,10 +3158,10 @@ export async function start({ mode, session, api, tint }) {
     overlay.append(spoken);
     document.body.appendChild(overlay);
   } else {
-    on(session, "end", () => stop());
+    on(session, "end", () => stop(false));
   }
 
-  function stop() {
+  function stop(endSession = true) {
     if (stopped) return;
     stopped = true;
     pcClose();
@@ -3126,7 +3171,7 @@ export async function start({ mode, session, api, tint }) {
     dreamClose();
     clearTimeout(noticeTimer);
     renderer.setAnimationLoop(null);
-    if (!flat) { try { session.end(); } catch {} }
+    if (!flat && endSession) { try { Promise.resolve(session.end()).catch(() => {}); } catch {} }
     for (const off of cleanups) { try { off(); } catch {} }
     overlay?.remove();
     canvas.remove();

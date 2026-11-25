@@ -1122,6 +1122,164 @@ test("handle a hologram: spin it, turn it around, bigger, explode it and put it 
   assert.match(scene, /d\.y = Math\.max\(-0\.2, d\.y\);/, "parts never fly down into the projector");
 });
 
+// Exercise the actual room functions with small host stand-ins; no GPU/headset required.
+const roomSource = read("docs/app/vr-scene.src.js");
+const ts = require("typescript");
+const roomAst = ts.createSourceFile("vr-scene.src.js", roomSource, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+function roomFunctions(names, context) {
+  const found = new Map();
+  const visit = (node) => {
+    if (ts.isFunctionDeclaration(node) && names.includes(node.name?.text)) found.set(node.name.text, node.getText(roomAst));
+    ts.forEachChild(node, visit);
+  };
+  visit(roomAst);
+  assert.equal(found.size, names.length, "all tested room functions exist");
+  const sandbox = vm.createContext(context);
+  vm.runInContext([...found.values()].join("\n"), sandbox);
+  return sandbox;
+}
+
+test("XR ends clean locally; Leave requests shutdown once and catches async rejection", async () => {
+  for (const initiatedByHeadset of [true, false]) {
+    let ended = 0, cleaned = 0, exited = 0;
+    const noop = () => {};
+    const s = roomFunctions(["stop"], { stopped: false, flat: false,
+      session: { end() { ended++; return Promise.reject(new Error("already ended")); } },
+      pcClose: noop, filesClose: noop, webClose: noop, holoClose: noop, dreamClose: noop,
+      clearTimeout: noop, noticeTimer: null, cleanups: [() => cleaned++], disposables: [],
+      overlay: { remove: noop }, canvas: { remove: noop }, scene: { traverse: noop },
+      renderer: { setAnimationLoop: noop, dispose: noop }, api: { exited() { exited++; } },
+    });
+    s.stop(!initiatedByHeadset);
+    s.stop();
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(ended, initiatedByHeadset ? 0 : 1);
+    assert.equal(cleaned, 1);
+    assert.equal(exited, 1);
+  }
+  assert.match(roomSource, /on\(session, "end", \(\) => stop\(false\)\)/);
+});
+
+function readerRoom(paras) {
+  let drawn = [];
+  const ctx = { measureText: (s) => ({ width: s.length }), clearRect() {} };
+  const webUi = { open: true, mode: "reading", title: "Title", paras, first: 0, line: 0, history: [], body: { ctx, w: 1000, h: 400, update() {} }, results: [] };
+  const s = roomFunctions(["drawWebBody", "webScroll"], {
+    webUi, glass() {}, FONT: "sans", DISPLAY: "sans", INK: "ink", INK2: "muted", WARN: "warn", WEB_ROWS: 5,
+    util: { wrapLines: (text) => text.split("|") }, write: (_, text, x, y, size) => { if (size === 36) drawn.push(text); }, drawWebControls() {},
+  });
+  return { s, webUi, draw() { drawn = []; s.drawWebBody(); return [...drawn]; }, lines: () => [...drawn] };
+}
+
+test("the reader visits every line of a single long paragraph, then returns to its exact previous page", () => {
+  const expected = Array.from({ length: 17 }, (_, i) => "line " + i);
+  const r = readerRoom([expected.join("|")]);
+  const all = r.draw();
+  const firstPage = [...all];
+  let pages = 1;
+  while (r.webUi.more && pages++ < 30) {
+    const before = r.lines().length;
+    r.s.webScroll(1);
+    all.push(...r.lines().slice(before));
+  }
+  assert.deepEqual(all, expected, "no lines skipped or repeated");
+  assert.ok(pages > 1);
+  while (r.webUi.history.length) r.s.webScroll(-1);
+  assert.equal(r.webUi.first, 0);
+  assert.equal(r.webUi.line, 0);
+  assert.deepEqual(r.draw(), firstPage);
+});
+
+test("reader pagination carries on to later paragraphs without skipping or duplicating lines", () => {
+  const r = readerRoom(["a|b", "c|d|e|f|g|h|i", "j|k"]);
+  const all = r.draw();
+  let pages = 0;
+  while (r.webUi.more && pages++ < 30) {
+    const before = r.lines().length;
+    r.s.webScroll(1);
+    all.push(...r.lines().slice(before));
+  }
+  assert.deepEqual(all, "abcdefghijk".split(""));
+});
+
+test("preview web buttons open results, page both ways, and go back using the existing room actions", () => {
+  const calls = [];
+  const document = { activeElement: null, createElement: () => ({ style: {}, dataset: {}, focus() { document.activeElement = this; } }) };
+  const webControls = { children: [], contains(el) { return this.children.includes(el); }, replaceChildren() { this.children = []; }, append(b) { this.children.push(b); } };
+  const webUi = { open: true, mode: "results", results: [{ site: "Example" }], history: [], more: true };
+  const s = roomFunctions(["flatButton", "drawWebControls"], { document, webControls, webUi, FONT: "sans", INK: "ink", WEB_ROWS: 5,
+    reading: () => webUi.mode === "reading", webOpen: (r) => calls.push(["open", r.site]), webScroll: (n) => calls.push(["scroll", n]), webBack: () => calls.push(["back"]), webClose: () => calls.push(["close"]),
+  });
+  s.drawWebControls();
+  webControls.children[0].onclick();
+  webUi.mode = "reading";
+  webUi.history.push({ first: 0, line: 0 });
+  s.drawWebControls();
+  for (const label of ["Previous page", "Next page", "Back to results", "Close web"]) webControls.children.find((b) => b.textContent === label).onclick();
+  assert.deepEqual(calls, [["open", "Example"], ["scroll", -1], ["scroll", 1], ["back"], ["close"]]);
+  assert.ok(webControls.children.every((b) => b.type === "button"));
+  webUi.more = false; webUi.history = []; s.drawWebControls();
+  assert.ok(webControls.children.find((b) => b.textContent === "Next page").disabled);
+  assert.ok(webControls.children.find((b) => b.textContent === "Previous page").disabled);
+  webUi.open = false; s.drawWebControls(); assert.ok(webControls.hidden);
+});
+
+test("late hologram photos cannot replace a newer photo or survive a hologram change/close", async () => {
+  const pending = [], attached = [];
+  const noop = () => {};
+  const mesh = () => ({ position: { set: noop }, rotation: {}, geometry: { dispose: noop }, material: { dispose: noop } });
+  const holoPic = { card: null, gen: 0 };
+  const holoUi = { open: true, group: { add: (m) => attached.push(m), remove: noop }, reach: 0.4 };
+  const s = roomFunctions(["holoPhoto", "holoPhotoClear"], {
+    holoPic, holoUi, Image: class { constructor() { this.width = 100; this.height = 100; } decode() { return new Promise((resolve) => pending.push(resolve)); } },
+    card: () => ({ mesh: mesh(), ctx: { save: noop, clip: noop, drawImage: noop, restore: noop }, w: 300, h: 300, update: noop, tex: { dispose: noop } }),
+    glass: noop, rr: noop, write: noop, ellipsize: (_, text) => text, FONT: "sans", DISPLAY: "sans", INK: "ink", INK2: "muted", ui: noop, unui: noop,
+  });
+  const a = s.holoPhoto({ url: "a", title: "A" }), b = s.holoPhoto({ url: "b", title: "B" });
+  pending[1](); await b;
+  const newest = holoPic.card;
+  pending[0](); await a;
+  assert.equal(holoPic.card, newest);
+  assert.equal(attached.length, 1);
+  const c = s.holoPhoto({ url: "c" });
+  s.holoPhotoClear(); // All show/close paths clear the photo.
+  pending[2](); await c;
+  assert.equal(holoPic.card, null);
+  const d = s.holoPhoto({ url: "d" });
+  holoUi.open = false; pending[3](); await d;
+  assert.equal(attached.length, 1);
+  assert.match(roomSource, /function holoClear\(\) \{\s*holoPic\.gen\+\+;/, "building a replacement also invalidates pending photos");
+});
+
+test("sketch cleanup unregisters labels before disposing their resources", () => {
+  const label = {}, solid = {}, active = new Set([label, solid]);
+  const sketchUi = { parts: [{ label: { mesh: label } }, { label: null }], turnables: [solid], made: [{ dispose() { assert.ok(!active.has(label)); } }] };
+  const s = roomFunctions(["sketchClear"], { sketchUi, unui: (m) => active.delete(m) });
+  s.sketchClear();
+  assert.equal(active.size, 0);
+  assert.equal(sketchUi.parts.length, 0);
+});
+
+test("PC panel reports failed/rejected/unconfirmed clicks and never retries them", async () => {
+  for (const outcome of [{ ok: false, error: "PC refused" }, null, "reject", { ok: true }]) {
+    const sent = []; let tap, redraws = 0;
+    const noop = () => {};
+    const pcUi = { screen: null, group: { add: noop, remove: noop }, handle: { mesh: { position: { set: noop } } }, bar: { mesh: { position: { set: noop } } }, open: true, live: true, gen: 1, clicks: Promise.resolve(), target: {}, err: "" };
+    const s = roomFunctions(["makeScreen"], {
+      pcUi, card: () => ({ mesh: { material: {}, position: {} }, tex: {}, w: 100, h: 100 }), ui: (_, actions) => { tap = actions.tap; }, unui: noop,
+      clickRing: noop, drawBar: () => redraws++, util: { pcPoint: () => ({ nx: 0.3, ny: 0.4 }) },
+      api: { pc: { send: async (op) => { sent.push(op.op); if (op.op === "point") return { ok: true }; if (outcome === "reject") throw new Error("Disconnected"); return outcome; } } },
+    });
+    s.makeScreen(1280, 720);
+    tap({ uv: { x: 0.3, y: 0.4 }, point: {} });
+    await pcUi.clicks;
+    assert.deepEqual(sent, ["point", "click"]);
+    assert.equal(redraws, 1);
+    if (outcome?.ok === true) assert.equal(pcUi.err, "");
+    else assert.ok(pcUi.err.length, "the person sees the failure or uncertainty");
+  }
+});
+
 (async () => {
   for (const [name, fn] of tests) {
     try { await fn(); passed++; } catch (e) { console.error(`FAIL ${name}\n  ${e.message}`); process.exitCode = 1; }

@@ -241,6 +241,29 @@ async function A_run(p, goal, ctx) { return load(p.native).run(goal, ctx); }
     assert.equal(A._test.practicePage({ items: [{ text: "Practice exam" }, { text: "Question 2 of 10" }] }), true);
     assert.equal(A._test.gradedPage({ items: [{ text: "Practice quiz (graded, 10 points possible)" }, { text: "Question 2 of 10" }] }), true, "graded wins over the word practice");
 
+    // Typed answers that happen to name a final action must not bypass the
+    // graded guard; only the actual target control can be a hand-in button.
+    const gradedTyped = phone();
+    gradedTyped.native.screen = async () => ({ app: "com.android.chrome", items: [
+      { n: 1, text: "Question 1 of 5", kind: "text" }, { n: 2, text: "Answer", kind: "box" },
+    ] });
+    const typedResult = await load(gradedTyped.native).run("answer this", { think: brain(['{"do":"type","n":2,"text":"submit"}', '{"do":"done","say":"done"}']).think });
+    assert.equal(gradedTyped.calls.length, 0, "a graded answer named submit must never be typed or focused");
+    assert.match(typedResult.text, /graded/);
+    for (const evidence of ["Attempts remaining: 2", "Time limit: 10 minutes", "Time remaining: 3:00", "2 points", "0.5 pts", "Due date: Friday", "Due: tomorrow"]) {
+      assert.equal(A._test.gradedPage({ items: [{ text: "Practice quiz - Question 1 of 5" }, { text: evidence }] }), true, evidence + " overrides practice");
+    }
+    assert.equal(A._test.practicePage({ items: [{ text: "Question 1 of 5 - not graded" }] }), true, "negative grading language is practice");
+    assert.equal(A._test.gradedPage({ items: [{ text: "Practice quiz, not graded - for credit. Question 1 of 5" }] }), true, "positive credit evidence still wins");
+
+    const finish = phone();
+    finish.native.screen = async () => ({ app: "com.android.chrome", items: [
+      { n: 1, text: "Practice quiz - Question 1 of 5", kind: "text" }, { n: 2, text: "Finish", kind: "button" },
+    ] });
+    const finishResult = await load(finish.native).run("complete this practice quiz", { think: brain(['{"do":"tap","n":2}', '{"do":"done","say":"done"}']).think });
+    assert.equal(finish.calls.length, 0, "plain Finish on a practice quiz is still the person's control");
+    assert.match(finishResult.text, /hands it in/);
+
     // The Submit button on that same page is never pressed, by number or by point.
     const s = phone();
     s.native.screen = async () => ({ app: "com.android.chrome", items: [

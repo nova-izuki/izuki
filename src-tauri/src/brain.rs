@@ -462,6 +462,8 @@ pub struct Look {
     /// A quiz the page itself calls practice, with choices on screen: Izuki
     /// may answer it on the page when asked.
     pub practice_page: bool,
+    /// A school assignment or assessment: handing it in always stays the user's.
+    pub school_page: bool,
     /// Where each answer choice is on screen (a mark there marks the choice).
     pub choice_rects: Vec<Rect>,
 }
@@ -494,7 +496,14 @@ impl Look {
         let options: Vec<String> = chosen.iter().map(|c| c.name.trim().to_lowercase()).collect();
         let choice_rects = chosen.iter().map(|c| c.rect).collect();
         let choices = options.len() >= 2;
-        Look { test_page: kind == crate::assess::Kind::Graded && choices, practice_page: kind == crate::assess::Kind::Practice && choices, options, choice_rects }
+        // Written-answer quizzes have no radio buttons. Keep ordinary course
+        // uploads/downloads available even when their title says "assessment".
+        let words = words_of(&format!("{title} {page_text}"));
+        let answering = choices
+            || controls.iter().any(|c| matches!(c.kind.as_str(), "Edit" | "TextBox"))
+            || [" quiz ", " test ", " exam ", " question ", " attempts remaining ", " finish attempt "].iter().any(|w| words.contains(w));
+        let school_page = testy || [" assignment ", " homework ", " worksheet ", " course ", " lesson "].iter().any(|w| words.contains(w));
+        Look { test_page: kind == crate::assess::Kind::Graded && answering, practice_page: kind == crate::assess::Kind::Practice, school_page, options, choice_rects }
     }
 }
 
@@ -508,7 +517,7 @@ fn reads_as_choice(name: &str) -> bool {
 }
 
 /// Told to the brain while a quiz or test is on screen.
-const QUIZ_PROMPT: &str = "QUIZ OR TEST IN PROGRESS: work the question out and answer it. Say the answer plainly, point at the key words that make it right, and pick the choice on the page (or type the answer into its box) the way any other answer would be given. Never press Submit, Turn in or Finish: that stays the person's. Going to the next question when they ask is fine.\n";
+const QUIZ_PROMPT: &str = "GRADED OR UNCLEAR QUIZ OR TEST: work the question out, say the answer plainly and explain why. The person selects or enters it: never click a choice, type an answer or use keys to enter one. Never press Submit, Turn in, Finish or End test, even when asked. Going to the next question when they ask is fine. If they ask for coaching without the answer, explain without naming it.\n";
 
 /// The owner asked for direct answers when explicitly requested. Coaching
 /// remains a separate mode; answering never authorizes a click or submission.
@@ -555,7 +564,7 @@ pub(crate) fn direct_answer_requested(prompt: &str) -> bool {
 /// then said in a line. It used to
 /// get DIRECT_ANSWER_PROMPT's "explanation-only" on every page, so Izuki named
 /// the answer and never clicked it, even where acting was allowed.
-const ANSWER_ON_PAGE_PROMPT: &str = "The user asked you to answer what's on the page, so do it on the page: click the right choice or type the answer into its box (by its control number), then say in one short line which you picked and why. If several questions are visible, answer the one they mean (the first unanswered one if that's unclear). Never press Submit, Finish or Send unless they said so in this request.\n";
+const ANSWER_ON_PAGE_PROMPT: &str = "This page is practice: click the right choice or type the answer into its box (by its control number), then say in one short line which you picked and why. If several questions are visible, answer the one they mean (the first unanswered one if that's unclear). Never press Submit, Turn in, Finish or End test, even when asked: handing it in stays the person's. If they ask for coaching without the answer, explain without naming or entering it.\n";
 
 const DIRECT_ANSWER_PROMPT: &str = "The user explicitly asked for the answer. Answer the visible factual question directly: answer first, with the option label only when clearly visible, then a short explanation. Do not refuse to name a factual answer or turn this into a walkthrough. Do not guess unreadable choices. If you are not certain of the fact, say which part you are unsure about instead of stating it confidently — being wrong costs them marks, and saying it is probably B but they should check whether X applies is far more use than a confident wrong letter. This is an explanation-only request: do not select, click, type or submit answers. Do not offer to save Notes.\n";
 
@@ -582,10 +591,30 @@ fn keep_answers_out(plan: &mut VisionPlan, steps: &mut Vec<ActionStep>, look: &L
     }
 }
 
-/// A quiz or a test is answered like any other page: the answer goes in, and
-/// only handing it in stays the person's (guard_steps_with holds Submit,
-/// Turn in and Finish). This used to strip the pick and tell them to choose.
-fn apply_answer_mode(_plan: &mut VisionPlan, _steps: &mut Vec<ActionStep>, _look: &Look, _prompt: &str) {
+/// Explain graded answers, while keeping explicit coaching answer-free.
+fn apply_answer_mode(plan: &mut VisionPlan, steps: &mut Vec<ActionStep>, look: &Look, prompt: &str) {
+    let asked = prompt.replace('\u{2019}', "'").to_lowercase();
+    if ["don't answer", "do not answer", "without the answer", "coach me", "tutor mode", "teacher mode"].iter().any(|w| asked.contains(w)) {
+        let mut coaching = look.clone();
+        coaching.test_page |= coaching.practice_page;
+        keep_answers_out(plan, steps, &coaching);
+        if coaching.test_page {
+            steps.retain(|s| !enters_quiz_answer(s, &coaching));
+        }
+    }
+}
+
+/// A choice, written answer, or keyboard activation; named navigation and
+/// ordinary course controls stay available. Unidentified clicks are unsafe.
+fn enters_quiz_answer(step: &ActionStep, look: &Look) -> bool {
+    match step.action {
+        Intent::Type => true,
+        Intent::Key => !step.key.as_deref().is_some_and(|key| matches!(key.to_ascii_lowercase().as_str(), "pageup" | "pagedown" | "page up" | "page down")),
+        Intent::Click | Intent::DoubleClick | Intent::Auto | Intent::Drag | Intent::Stroke => {
+            step.snapped_to.as_deref().is_none_or(|s| s.trim().is_empty()) || marks_a_choice(step, look)
+        }
+        _ => false,
+    }
 }
 
 /// A pen mark or pointer on one of the answer choices: by its control, by
@@ -669,7 +698,11 @@ fn final_button(step: &ActionStep) -> Option<String> {
 /// A held-back step, said to the person in plain words (the reasons from
 /// `guard_steps` are written for the AI).
 fn plainly(why: &str) -> String {
-    if why.contains("Typing a command into a terminal") {
+    if why.contains("Handing in school work") {
+        "I left handing it in to you. I never press Submit, Turn in or Finish on school work, even when asked.".into()
+    } else if why.contains("This is a graded or unclear quiz") {
+        "I can explain the answer and why it fits. You select or enter it on this quiz.".into()
+    } else if why.contains("Typing a command into a terminal") {
         "I didn't type that command into your terminal — I only run commands you spell out exactly. Tell me the exact command, or say what you want done (like “clear the safe stuff” to free up space) and I'll do it my own way.".into()
     } else if let Some(rest) = why.strip_prefix("Pressing “") {
         let name = rest.split('”').next().unwrap_or("that");
@@ -686,7 +719,7 @@ fn guard_steps(steps: &mut Vec<ActionStep>, prompt: &str, lesson: bool, front: &
     guard_steps_with(steps, prompt, lesson, front, &look)
 }
 
-fn guard_steps_with(steps: &mut Vec<ActionStep>, prompt: &str, lesson: bool, front: &str, _look: &Look) -> Option<String> {
+fn guard_steps_with(steps: &mut Vec<ActionStep>, prompt: &str, lesson: bool, front: &str, look: &Look) -> Option<String> {
     let asked = prompt.to_lowercase();
     let mut why = Vec::new();
     // 0. A final button (Submit, End test, Send, Pay…) only when the user said
@@ -694,6 +727,18 @@ fn guard_steps_with(steps: &mut Vec<ActionStep>, prompt: &str, lesson: bool, fro
     //    model once submitted a whole test anyway — this makes it certain.
     // Every final step is checked; the plan stops at the first one not said.
     let said = words_of(&asked);
+    let school = look.school_page || look.test_page || look.practice_page;
+    let school_finish = |s: &ActionStep| {
+        school && matches!(s.action, Intent::Click | Intent::DoubleClick | Intent::Auto | Intent::Key)
+            && s.snapped_to.as_deref().is_some_and(|name| {
+                let words = words_of(name);
+                [" submit ", " turn in ", " hand in ", " finish ", " end test ", " end quiz ", " end exam ", " grade "].iter().any(|w| words.contains(w))
+            })
+    };
+    if let Some(i) = steps.iter().position(school_finish) {
+        steps.truncate(i);
+        why.push("Handing in school work wasn't done: never press Submit, Turn in, Finish, End test or Grade, even with consent. The person must press it themselves; do not ask for permission to do it.".to_string());
+    }
     let held = steps.iter().enumerate().find_map(|(i, s)| {
         let name = final_button(s)?;
         let phrase = final_phrase(&name)?;
@@ -707,8 +752,14 @@ fn guard_steps_with(steps: &mut Vec<ActionStep>, prompt: &str, lesson: bool, fro
         steps.truncate(i);
         why.push(format!("Pressing “{name}” wasn't done: it's final. Stop right before it and set \"ask\" to check with the user first (\"Want me to {phrase} it?\")."));
     }
-    // 0b. A quiz is answered like anything else. Submit/Turn in/Finish above
-    //     is the only thing held back, and it is held back everywhere.
+    // 0b. Explain graded/unclear answers; only practice may be filled in.
+    if look.test_page {
+        let before = steps.len();
+        steps.retain(|s| !enters_quiz_answer(s, look));
+        if steps.len() < before {
+            why.push("This is a graded or unclear quiz: explain the answer and why, but the person selects or enters it. Do not click, type or use keys to enter an answer.".to_string());
+        }
+    }
     // 1. Commands.
     let terminal = TERMINALS.contains(&front);
     let cut = steps.iter().position(|s| {
@@ -1053,7 +1104,7 @@ fn ask_model(
                 (true, false) => QUIZ_PROMPT,
                 // Practice: answered on the page. Anywhere else, "answer this"
                 // is still a factual answer: say it, don't act on the page.
-                (false, true) if on_practice => ANSWER_ON_PAGE_PROMPT,
+                (false, _) if on_practice => ANSWER_ON_PAGE_PROMPT,
                 (false, true) => DIRECT_ANSWER_PROMPT,
                 _ => "",
             }
@@ -1066,6 +1117,9 @@ fn ask_model(
     let prep_ms = started.elapsed().as_millis();
 
     let mut chain = brain_chain();
+    if let Some(issue) = selected_model_issue(false) {
+        return Err(anyhow!(issue));
+    }
     if chain.is_empty() {
         return Err(anyhow!("{}", if online() { NO_BRAIN } else { OFFLINE }));
     }
@@ -1164,7 +1218,7 @@ pub const OFFLINE: &str = "You're offline right now — check your Wi-Fi, then a
 /// acts through the numbered controls list).
 pub fn brain_chain() -> Vec<crate::settings::ProviderConfig> {
     let mut chain = offline_only(brain_chain_inner());
-    swap_local_text_model(&mut chain, tiny_describer, false);
+    swap_local_text_model(&mut chain, tiny_describer, false, brain_mode());
     with_starter(&mut chain);
     chain
 }
@@ -1186,9 +1240,17 @@ pub fn starter_brain() -> crate::settings::ProviderConfig {
 }
 
 fn with_starter(chain: &mut Vec<crate::settings::ProviderConfig>) {
-    if chain.is_empty() && online() && !RESTING.lock().iter().any(|(p, until)| *p == crate::settings::ProviderId::Openai && *until > std::time::Instant::now()) {
+    if starter_allowed(chain, brain_mode()) && online() && !RESTING.lock().iter().any(|(p, until)| *p == crate::settings::ProviderId::Openai && *until > std::time::Instant::now()) {
         chain.push(starter_brain());
     }
+}
+
+fn provider_ready(cfg: &crate::settings::ProviderConfig) -> bool {
+    cfg.enabled && (!cfg.api_key.trim().is_empty() || cfg.on_this_pc())
+}
+
+fn starter_allowed(chain: &[crate::settings::ProviderConfig], mode: crate::settings::BrainMode) -> bool {
+    mode != crate::settings::BrainMode::One && !chain.iter().any(provider_ready)
 }
 
 /// Chat needs a text model. Ollama happily returns `moondream`, a
@@ -1198,7 +1260,7 @@ fn with_starter(chain: &mut Vec<crate::settings::ProviderConfig>) {
 /// model, or drop it so a cloud brain can answer.
 pub fn chat_chain() -> Vec<crate::settings::ProviderConfig> {
     let mut chain = offline_only(brain_chain_inner());
-    swap_local_text_model(&mut chain, picture_only_model, true);
+    swap_local_text_model(&mut chain, picture_only_model, true, brain_mode());
     // Another model on the same key is another brain: only when switching
     // freely.
     if switches_freely() {
@@ -1260,7 +1322,10 @@ pub fn rest_gone_model(cfg: &crate::settings::ProviderConfig) {
 /// Swap the configured Ollama model for an installed chat model when `unfit`
 /// says it's wrong for this lane, and (with `drop_unfit`) leave it out when
 /// nothing else is installed.
-fn swap_local_text_model(chain: &mut Vec<crate::settings::ProviderConfig>, unfit: fn(&str) -> bool, drop_unfit: bool) {
+fn swap_local_text_model(chain: &mut Vec<crate::settings::ProviderConfig>, unfit: fn(&str) -> bool, drop_unfit: bool, mode: crate::settings::BrainMode) {
+    if mode != crate::settings::BrainMode::Auto {
+        return;
+    }
     let Some(base_url) = chain
         .iter()
         .find(|c| c.id == crate::settings::ProviderId::Ollama && unfit(&c.model))
@@ -1293,6 +1358,24 @@ fn picture_only_model(model: &str) -> bool {
     ["moondream", "llava", "bakllava", "minicpm-v", "qwen2.5vl", "qwen2-vl", "llama3.2-vision"]
         .iter()
         .any(|name| m.contains(name))
+}
+
+/// "Only my brain" means exactly that model, including when it is unsuitable.
+/// Explain the limitation instead of silently replacing it with another model.
+pub(crate) fn selected_model_issue(chat_lane: bool) -> Option<String> {
+    let store = crate::state::try_store()?;
+    let settings = store.settings();
+    if settings.brain_mode != crate::settings::BrainMode::One {
+        return None;
+    }
+    local_model_issue(settings.provider(settings.active_provider)?, chat_lane)
+}
+
+fn local_model_issue(cfg: &crate::settings::ProviderConfig, chat_lane: bool) -> Option<String> {
+    let unsupported = if chat_lane { picture_only_model(&cfg.model) } else { tiny_describer(&cfg.model) };
+    (cfg.id == crate::settings::ProviderId::Ollama && unsupported).then(|| {
+        format!("Your chosen model, {}, cannot handle {}. Choose a chat model in Settings, or allow Izuki to switch brains.", cfg.model, if chat_lane { "chat" } else { "screen tasks" })
+    })
 }
 
 /// Pick a sensible installed chat model rather than the first line of
@@ -1405,15 +1488,12 @@ fn configured_chain() -> Vec<crate::settings::ProviderConfig> {
 /// other brain with a key.
 fn chain_for(settings: &crate::settings::Settings) -> Vec<crate::settings::ProviderConfig> {
     use crate::settings::BrainMode;
-    let Some(primary) = settings.provider(settings.active_provider).cloned() else {
-        return Vec::new();
-    };
-    let mut chain = vec![primary];
+    let mut chain: Vec<_> = settings.provider(settings.active_provider).filter(|p| provider_ready(p)).cloned().into_iter().collect();
     if settings.brain_mode == BrainMode::One {
         return chain;
     }
     if let Some(f) = settings.fallback_provider.and_then(|id| settings.provider(id).cloned()) {
-        if f.id != chain[0].id && (!f.api_key.trim().is_empty() || f.on_this_pc()) {
+        if !chain.iter().any(|c| c.id == f.id) && provider_ready(&f) {
             chain.push(f);
         }
     }
@@ -1421,7 +1501,7 @@ fn chain_for(settings: &crate::settings::Settings) -> Vec<crate::settings::Provi
         return chain;
     }
     for p in &settings.providers {
-        if !p.api_key.trim().is_empty() && !p.on_this_pc() && !chain.iter().any(|c| c.id == p.id) {
+        if provider_ready(p) && !p.on_this_pc() && !chain.iter().any(|c| c.id == p.id) {
             chain.push(p.clone());
         }
     }
@@ -6493,8 +6573,8 @@ mod speed_tests {
         let mut steps = vec![serde_json::from_value(serde_json::json!({"action":"click","x":10,"y":10})).unwrap()];
         super::apply_answer_mode(&mut plan, &mut steps, &look, "give me the answer");
         assert!(plan.summary.starts_with("B. Botnet."));
-        assert!(!plan.summary.contains("didn't click it"), "a quiz is answered like any other page now");
-        assert_eq!(steps.len(), 1, "the click the model planned stays: the answer is picked");
+        assert!(super::guard_steps_with(&mut steps, "give me the answer", false, "chrome", &look).is_some());
+        assert!(steps.is_empty(), "the answer is explained; the person picks it");
     }
 
     #[test]
@@ -6738,11 +6818,11 @@ mod speed_tests {
         // Not final.
         let mut steps = vec![click("Sending options"), click("Postcode")];
         assert!(guard_steps_with(&mut steps, "open settings", false, "chrome", &none).is_none(), "words that merely start the same aren't final");
-        // On a test page the answer is clicked now, and Next still stands.
+        // On a test page the answer is explained, and Next still stands.
         let quiz = Look { options: vec!["a. phishing".into(), "b. personally identifiable information".into()], test_page: true, ..Default::default() };
         let mut steps = vec![click("B. Personally identifiable information"), click("Next")];
-        assert!(guard_steps_with(&mut steps, "help me with this question", true, "chrome", &quiz).is_none());
-        assert_eq!(steps.len(), 2, "the answer and Next both stay");
+        assert!(guard_steps_with(&mut steps, "help me with this question", true, "chrome", &quiz).is_some());
+        assert_eq!(steps.len(), 1, "only Next stays");
         let controls = vec![
             radio(1, "A. Phishing"),
             radio(2, "B. PII"),
@@ -6750,7 +6830,7 @@ mod speed_tests {
         assert!(Look::of(&controls, "Question 3 of 20", "uCertify").test_page);
         assert!(Look::of(&controls, "", "Test 3 - Network Security").test_page, "\"Test\" at the very start");
         // Said and drawn on a quiz page: the question explained, the answer kept out.
-        let look = Look { options: vec!["a. phishing".into(), "b. personally identifiable information".into()], test_page: true, practice_page: false, choice_rects: vec![Rect { x: 100, y: 300, w: 400, h: 30 }] };
+        let look = Look { options: vec!["a. phishing".into(), "b. personally identifiable information".into()], test_page: true, choice_rects: vec![Rect { x: 100, y: 300, w: 400, h: 30 }], ..Default::default() };
         let mut plan = VisionPlan { summary: "This one is about data that can identify someone. The answer is B, personally identifiable information.".into(), ..Default::default() };
         let mark = |words: &str| step(serde_json::json!({ "action": "draw", "shape": "underline", "x": 10, "y": 10, "text_to_type": words }));
         let mut steps = vec![mark("personally identifiable information"), mark("identify a person")];
@@ -6799,12 +6879,13 @@ mod speed_tests {
         assert_eq!(steps.len(), 3, "every step stays on practice");
         // Practice worth points, or with attempts: graded after all.
         assert!(Look::of(&controls, "Practice Test (10 points) Question 1", "Practice Test").test_page);
-        // Graded: answered too, and nothing on the page is held back.
+        // Graded or unclear: only the answer is held, navigation stays.
         let quiz = Look::of(&controls, "Question 3 of 20", "Quiz: Module 11");
         assert!(quiz.test_page);
         let mut steps = vec![click("B. PII"), click("Next"), click("Download slides"), click("Open the rubric")];
-        assert!(guard_steps_with(&mut steps, "go to the next one", false, "chrome", &quiz).is_none());
-        assert_eq!(steps.len(), 4, "every step stays on a graded quiz: {steps:?}");
+        assert!(guard_steps_with(&mut steps, "go to the next one", false, "chrome", &quiz).is_some());
+        assert_eq!(steps.len(), 3, "only navigation stays on a graded quiz: {steps:?}");
+        assert_eq!(steps[0].snapped_to.as_deref(), Some("Next"));
         // An ordinary course page with "Risk Assessment" in its name and real
         // buttons (download, upload, open): not a quiz, nothing held back.
         let page = vec![button(1, "Download template"), button(2, "Upload file"), button(3, "Open rubric")];
@@ -6813,12 +6894,65 @@ mod speed_tests {
         let mut steps = vec![click("Download template"), click("Upload file"), click("Open rubric")];
         assert!(guard_steps_with(&mut steps, "download the template and open the rubric", false, "chrome", &course).is_none());
         assert_eq!(steps.len(), 3);
-        // There is no quiz refusal left to word: a quiz reason falls through to
-        // the ordinary "tell me exactly" line, never a withholding one.
-        let said = plainly("This is a quiz or test, so the answer wasn't picked: the student chooses.").to_lowercase();
-        assert!(!said.contains("quiz or test") && !said.contains("wasn't picked"), "{said}");
+        let said = plainly("This is a graded or unclear quiz: the person selects or enters it.").to_lowercase();
+        assert!(said.contains("explain the answer") && said.contains("you select or enter"), "{said}");
         // The last button is still worded as the person's to press.
         assert!(plainly("Pressing “Submit quiz”").contains("final button"));
+    }
+
+    #[test]
+    fn school_finishing_stays_the_persons_even_with_consent() {
+        let controls = vec![radio(1, "A. One"), radio(2, "B. Two")];
+        for look in [
+            Look::of(&controls, "Question 1 of 2", "Practice Quiz"),
+            Look::of(&controls, "Question 1 of 2, 10 points", "Quiz"),
+            Look::of(&[], "Upload your file", "Course assignment"),
+        ] {
+            for name in ["Submit", "Turn in", "Finish", "Finish attempt", "End test", "Grade"] {
+                let mut final_step = step(serde_json::json!({"action":"click"}));
+                final_step.snapped_to = Some(name.into());
+                let next = step(serde_json::json!({"action":"scroll"}));
+                let mut steps = vec![final_step, next];
+                let reason = guard_steps_with(&mut steps, &format!("yes, {name}"), false, "chrome", &look).unwrap();
+                assert!(steps.is_empty(), "{name} must stop the school plan");
+                assert!(plainly(&reason).contains("even when asked"), "{reason}");
+                assert!(!reason.contains("Want me to"), "consent cannot authorize school submission");
+            }
+        }
+        let mut approved = step(serde_json::json!({"action":"click"}));
+        approved.snapped_to = Some("Submit".into());
+        let mut steps = vec![approved];
+        assert!(guard_steps_with(&mut steps, "submit this support request", false, "chrome", &Look::default()).is_none());
+        assert_eq!(steps.len(), 1);
+    }
+
+    #[test]
+    fn written_and_unclear_quizzes_explain_without_entering_answers() {
+        let edit = uia::Control { kind: "Edit".into(), ..radio(1, "Your answer") };
+        for look in [
+            Look::of(&[edit.clone()], "Question 1: define a network", "Quiz"),
+            Look::of(&[edit], "10 points", "Homework 2"),
+        ] {
+            assert!(look.test_page, "written answers need the same boundary");
+            let mut steps = vec![
+                step(serde_json::json!({"action":"type", "text_to_type":"A network connects devices"})),
+                step(serde_json::json!({"action":"key", "key":"space"})),
+                step(serde_json::json!({"action":"click", "x":200, "y":300})),
+                step(serde_json::json!({"action":"key", "key":"pagedown"})),
+                step(serde_json::json!({"action":"scroll"})),
+            ];
+            assert!(guard_steps_with(&mut steps, "yes, type that exact answer", false, "chrome", &look).is_some());
+            assert_eq!(steps.len(), 2, "scrolling stays available, entering answers does not");
+        }
+        let practice = Look::of(&[], "Not graded. Question 1: define a network", "Practice Quiz");
+        let mut steps = vec![step(serde_json::json!({"action":"type", "text_to_type":"A network connects devices"}))];
+        assert!(guard_steps_with(&mut steps, "answer it", false, "chrome", &practice).is_none());
+        assert_eq!(steps.len(), 1);
+        let mut plan = VisionPlan { summary: "The answer is B, two.".into(), ..Default::default() };
+        let coach = Look { options: vec!["a. one".into(), "b. two".into()], practice_page: true, ..Default::default() };
+        apply_answer_mode(&mut plan, &mut steps, &coach, "coach me, don't answer");
+        assert!(steps.is_empty(), "coaching does not enter even a practice answer");
+        assert!(!plan.summary.to_lowercase().contains("the answer is b"));
     }
 
     use super::*;
@@ -7221,7 +7355,7 @@ mod failure_tests {
 
 #[cfg(test)]
 mod honesty_tests {
-    use super::{action_progress, after_input_wait, can_resume_after_input, new_among, only_repeats, plainly, progress_line, promises_action, strip_filler, ActionStep, Duration, Intent, Yielded};
+    use super::{action_progress, after_input_wait, can_resume_after_input, chain_for, local_model_issue, new_among, only_repeats, picture_only_model, plainly, progress_line, promises_action, starter_allowed, strip_filler, swap_local_text_model, ActionStep, Duration, Intent, Yielded};
 
     #[test]
     fn human_input_timeout_never_resumes_a_step() {
@@ -7363,6 +7497,7 @@ mod honesty_tests {
         for p in s.providers.iter_mut() {
             if matches!(p.id, ProviderId::Gemini | ProviderId::Groq | ProviderId::Openrouter) {
                 p.api_key = "test-key".into();
+                p.enabled = true;
             }
         }
         let ids = |s: &Settings| super::chain_for(s).iter().map(|c| c.id).collect::<Vec<_>>();
@@ -7378,6 +7513,58 @@ mod honesty_tests {
         let mut v = serde_json::to_value(Settings::default()).unwrap();
         v.as_object_mut().unwrap().remove("brain_mode");
         assert_eq!(serde_json::from_value::<Settings>(v).unwrap().brain_mode, BrainMode::Auto);
+    }
+
+    #[test]
+    fn starter_eligibility_respects_keys_enabled_state_and_selected_mode() {
+        use crate::settings::{BrainMode, ProviderId, Settings};
+        let mut settings = Settings::default();
+        settings.active_provider = ProviderId::Gemini;
+        for provider in &mut settings.providers {
+            provider.enabled = false;
+            provider.api_key.clear();
+        }
+        settings.brain_mode = BrainMode::Auto;
+        assert!(chain_for(&settings).is_empty(), "disabled/keyless placeholders cannot answer");
+        assert!(starter_allowed(&settings.providers, BrainMode::Auto));
+        assert!(starter_allowed(&[], BrainMode::Backup));
+        assert!(!starter_allowed(&[], BrainMode::One), "never send the selected brain's request elsewhere");
+        let primary = settings.providers.iter_mut().find(|p| p.id == ProviderId::Gemini).unwrap();
+        primary.enabled = true;
+        assert!(chain_for(&settings).is_empty(), "enabled cloud provider still needs a key");
+        settings.providers.iter_mut().find(|p| p.id == ProviderId::Gemini).unwrap().api_key = "test-key".into();
+        let chain = chain_for(&settings);
+        assert_eq!(chain.len(), 1);
+        assert!(!starter_allowed(&chain, BrainMode::Auto), "working or resting configured providers keep precedence");
+        settings.providers.iter_mut().find(|p| p.id == ProviderId::Gemini).unwrap().enabled = false;
+        assert!(chain_for(&settings).is_empty(), "a saved key does not enable a disabled provider");
+        settings.fallback_provider = Some(ProviderId::Groq);
+        let backup = settings.providers.iter_mut().find(|p| p.id == ProviderId::Groq).unwrap();
+        backup.api_key = "test-key".into();
+        backup.enabled = true;
+        settings.brain_mode = BrainMode::Backup;
+        assert_eq!(chain_for(&settings)[0].id, ProviderId::Groq, "an eligible fallback survives an unusable primary");
+    }
+
+    #[test]
+    fn only_my_brain_preserves_an_unsupported_local_model() {
+        use crate::settings::{BrainMode, ProviderConfig, ProviderId};
+        let chosen = ProviderConfig { id: ProviderId::Ollama, label: "My local model".into(), model: "moondream:latest".into(), base_url: "http://127.0.0.1:1".into(), api_key: String::new(), enabled: true };
+        for mode in [BrainMode::One, BrainMode::Backup] {
+            let mut chain = vec![chosen.clone()];
+            swap_local_text_model(&mut chain, picture_only_model, true, mode);
+            assert_eq!(chain.len(), 1);
+            assert_eq!(chain[0].id, chosen.id);
+            assert_eq!(chain[0].model, chosen.model, "no substitute model or remote starter");
+            assert!(!starter_allowed(&chain, mode));
+        }
+        assert!(local_model_issue(&chosen, true).unwrap().contains("moondream:latest"));
+        assert!(local_model_issue(&chosen, false).unwrap().contains("screen tasks"));
+        let vision = ProviderConfig { model: "qwen2.5vl:7b".into(), ..chosen.clone() };
+        assert!(local_model_issue(&vision, true).is_some());
+        assert!(local_model_issue(&vision, false).is_none(), "real vision models still handle screen tasks");
+        let chat = ProviderConfig { model: "qwen3:8b".into(), ..chosen };
+        assert!(local_model_issue(&chat, true).is_none());
     }
 
     #[test]

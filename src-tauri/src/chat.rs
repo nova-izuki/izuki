@@ -620,6 +620,9 @@ pub fn stream(app: AppHandle, id: u64, history: Vec<Turn>, style: Style) {
             return emit(question.to_string(), true, None);
         }
         let files = style == Style::Text;
+        if let Some(issue) = crate::brain::selected_model_issue(true) {
+            return emit(String::new(), true, Some(issue));
+        }
         let mut chain: Vec<ProviderConfig> = crate::brain::chat_chain().into_iter().filter(streamable).collect();
         // A real question (why, how, explain, compare…) goes to the strongest
         // brain that's working; quick chat stays with the fastest.
@@ -1403,6 +1406,9 @@ pub fn complete_with_web(messages: &[Value], id: u64, deep: bool, on_text: &dyn 
 /// `complete`, handing each piece of the answer to `on_text` as it arrives
 /// (the Island types it out). `cancel(id)` stops it.
 pub fn complete_streaming(messages: &[Value], id: u64, on_text: &dyn Fn(&str)) -> anyhow::Result<String> {
+    if let Some(issue) = crate::brain::selected_model_issue(true) {
+        anyhow::bail!(issue);
+    }
     let chain: Vec<ProviderConfig> = crate::brain::chat_chain().into_iter().filter(streamable).collect();
     if chain.is_empty() {
         if !crate::brain::online() {
@@ -1421,6 +1427,9 @@ pub fn complete_streaming(messages: &[Value], id: u64, on_text: &dyn Fn(&str)) -
 /// For work that needs a capable model (coding): the strongest working brain
 /// first, small models only after all the others, room to think.
 pub fn complete_strong(messages: &[Value], id: u64, on_text: &dyn Fn(&str)) -> anyhow::Result<String> {
+    if let Some(issue) = crate::brain::selected_model_issue(true) {
+        anyhow::bail!(issue);
+    }
     let mut chain: Vec<ProviderConfig> = crate::brain::chat_chain().into_iter().filter(streamable).collect();
     if chain.is_empty() {
         return complete_streaming(messages, id, on_text);

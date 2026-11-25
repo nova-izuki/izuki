@@ -1,6 +1,6 @@
 # Hand-off: where Izuki's work stands
 
-> **Newest first:** [HANDOFF-2026-11-25-claude-next.md](HANDOFF-2026-11-25-claude-next.md): release 1.0.225 is due, the owner's decisions, and what to build next (Move to my new PC, Think with my PC). Before that: [HANDOFF-2026-11-23-claude-vr.md](HANDOFF-2026-11-23-claude-vr.md) covers Izuki VR, the Meta store submission and release 1.0.222. Each assistant adds a dated hand-off like it after every batch of work (owner's request, 2026-11-23).
+> **Newest first:** [HANDOFF-2026-11-25-claude-next.md](HANDOFF-2026-11-25-claude-next.md), including Codex's continuation updates: Graphify setup completed, [simple new-PC steps](PC-MOVE-GUIDE.md), 1.0.225 still due, Think with my PC next, and Move to my new PC optional. Update this handoff after each change or discussion (owner, 2026-11-25). Before that: [HANDOFF-2026-11-23-claude-vr.md](HANDOFF-2026-11-23-claude-vr.md) covers Izuki VR, the Meta store submission and release 1.0.222.
 
 Written for the next Claude Code session (e.g. in VS Code on the owner's
 Windows PC) so it can carry on without losing track. Read this whole file,
