@@ -6,13 +6,14 @@ and Claude agreed, in order. Read `docs/HANDOFF-2026-11-23-claude-vr.md` too
 
 ## Continuation updates — Codex, 2026-11-25 (newest)
 
+- **1.0.225 is released (Freebuff, 2026-11-25).** Merged as `c6a7f12` (#204) after every PR check passed, tagged `v1.0.225`, and the Windows release job succeeded: 9 assets (NSIS setup, MSI, portable exe, both `.sig` files, `latest.json`, the Android preview APK and the iPhone sideload IPA). Checked live: `releases/latest/download/latest.json` serves **1.0.225** with a signature on each of its three platform entries, the setup/MSI/signature URLs answer 200, the site's Download button points at `releases/latest/download/Izuki-Setup.exe`, and `izukinova.ai/app/sw.js` now serves cache `izuki-phone-v136`. The mobile build job also succeeded. Hardware checks stay open and are listed in `DESKTOP-TEST-CHECKLIST.md`.
 - The owner resumed Codex and explicitly asked that this handoff be updated after changes and discussions. Keep decisions, actual test results, remaining work and release state here after every batch; do not rely on a private agent memory file.
 - Read the entire pasted continuation, not only Claude's first handoff: the later discussion makes **Move to my new PC optional**, with Windows Backup, a WinGet app list and USB copying sufficient for now. **Think with my PC + smart OmniRoute picking is the next feature**, then the clip-to-video workflow. The numbered sections below are corrected accordingly.
 - **Graphify setup completed locally:** existing `graphifyy` 0.9.120 was already installed. Its Python Scripts directory was missing from the user's PATH. Added that directory to user PATH without replacing existing entries; installed the official bundled Claude Code and Codex skills with references; verified both skill files and `graphify --version` in a new PowerShell child process. Existing terminal sessions may need reopening. No repository graph extraction, semantic LLM analysis or code upload was run. Ponytail remains owner-reported installed, not newly verified.
 - The last pasted question also asked for simpler steps to move large files and Claude's notes. See [PC-MOVE-GUIDE.md](PC-MOVE-GUIDE.md). No actual file transfer was started: no destination drive or new-PC path has been selected.
 - Pre-release review completed with 22 findings. Confirmed phone quiz, provider/assessment, animation and VR reliability bugs are being repaired with regression coverage before publication. The real-browser suite now opens the folded phone Orb Studio through its heading and passes; the blank hidden preview was a test setup problem. Full default native tests passed (769 passed, 49 ignored by existing test annotations); devvision and final-source reruns remain pending.
 - **Freebuff took over this lane (2026-11-25).** Codex stopped with the review repairs and the 1.0.225 release files uncommitted on `codex/continue-next`. The only thing actually broken was test plumbing: the new `honesty_tests` called `chain_for`, `starter_allowed`, `swap_local_text_model`, `picture_only_model` and `local_model_issue` without importing them, so `cargo test --lib` stopped on 17 compile errors before a single test ran. The import list is fixed; no shipped behaviour changed. Checked on the final source: `npm run build` (tsc + vite), `test:live-field` 16/16, `test:phone` (all files, including `vr.test.cjs`'s 74 checks), `test:conversation` 93, `test:html` (encoding 684 files + HTML), `test:site` (9 pages, 28 sitemap images, quest 18), `tools/browser-check.cjs` (phone home/settings/orb, four toolbar widths, native iPhone settings, website cards), `node tools/build-vr.cjs` (rebuilt bundle is byte-identical, so `vr-scene.js` matches its source), `cargo test --lib` 773 passed / 0 failed / 49 ignored, `cargo test --lib --features devvision` 785 passed / 0 failed / 49 ignored. Still device-only: the Quest 3S voice/hologram/browser checks, a live task through the PC's own extension window, and the starter brain's real wait on a clean install.
-- Main was checked at `06a5a08` (#202). Latest published release was verified as **1.0.224**. **1.0.225 remains due** until its build, publication, updater and download checks really finish. Earlier completed branch checks do not establish a new release. Work is isolated on `codex/continue-next`; shared dirty work remains untouched.
+- Main was checked at `06a5a08` (#202). Latest published release was then **1.0.224**; 1.0.225 was still due. (Superseded: 1.0.225 is now published and verified — see the newest bullet above.) Work was isolated on `codex/continue-next`; shared dirty work remained untouched.
 
 ## Released
 
@@ -20,7 +21,7 @@ and Claude agreed, in order. Read `docs/HANDOFF-2026-11-23-claude-vr.md` too
   per look, the grid for apps with nothing to number (#188); phone answer depth,
   key links (#185, #187, #192).
 
-## Merged but NOT released yet (release 1.0.225 is due)
+## Merged and released in 1.0.225
 
 | PR | What |
 |---|---|
@@ -29,13 +30,9 @@ and Claude agreed, in order. Read `docs/HANDOFF-2026-11-23-claude-vr.md` too
 | #199 | Quizzes, the owner's choice (see below) |
 | #201 | PC: the local router brain is labelled **"9Router or OmniRoute"** (same `localhost:20128/v1`) |
 
-To release: bump every version file to 1.0.225 (`node tools/check-versions.mjs`
-must agree), write `docs/RELEASE-1.0.225.md`, add a What's New item, add the
-checklist block, move `docs/NEXT-RELEASE.md` lines into the note, PR, merge;
-`auto-release.yml` tags it after Verify passes. Coordinate a single release
-under the owner's standing authorization recorded in AGENTS.md; do not ask
-again for routine release approval already granted. All required checks and
-actionable review findings must be handled before publication.
+Released 2026-11-25 as shown above. The remaining item from that list is the device work,
+not the release: the Quest 3S checks, a live task through the PC's own extension window,
+and the starter brain's real wait on a clean install are in `DESKTOP-TEST-CHECKLIST.md`.
 
 ## Decisions the owner made (don't reopen without the owner)
 
