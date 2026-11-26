@@ -2090,6 +2090,41 @@ pub fn document_text(max_chars: usize) -> String {
 pub fn document_text(_max_chars: usize) -> String {
     String::new()
 }
+/// The text inside one window, by its handle: a terminal's buffer, a document,
+/// a page. Empty when the window has none (a canvas, a game, an app that keeps
+/// its text to itself), in which case a watch falls back to the picture alone.
+#[cfg(windows)]
+pub fn window_text(hwnd: isize, max_chars: usize) -> String {
+    use uiautomation::patterns::UITextPattern;
+    use uiautomation::types::ControlType;
+    use uiautomation::UIAutomation;
+    let Ok(automation) = UIAutomation::new().or_else(|_| UIAutomation::new_direct()) else { return String::new() };
+    let Ok(root) = automation.element_from_handle(hwnd.into()) else { return String::new() };
+    let text = automation
+        .create_matcher()
+        .from(root.clone())
+        .control_type(ControlType::Document)
+        .depth(14)
+        .timeout(450)
+        .find_first()
+        .ok()
+        .and_then(|doc| doc.get_pattern::<UITextPattern>().ok())
+        .and_then(|p| p.get_document_range().ok())
+        .and_then(|r| r.get_text(max_chars as i32).ok())
+        .or_else(|| root.get_name().ok())
+        .unwrap_or_default();
+    let mut out = String::new();
+    for line in text.lines().map(str::trim).filter(|l| !l.is_empty()) {
+        out.push_str(&line.split_whitespace().collect::<Vec<_>>().join(" "));
+        out.push('\n');
+    }
+    out.chars().take(max_chars).collect()
+}
+
+#[cfg(not(windows))]
+pub fn window_text(_hwnd: isize, _max_chars: usize) -> String {
+    String::new()
+}
 
 /// Whether what's in front is still loading, and how that shows: the
 /// mouse's busy cursor, or the browser's Reload button having turned into

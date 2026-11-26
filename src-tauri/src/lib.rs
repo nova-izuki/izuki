@@ -164,6 +164,7 @@ pub mod wheel;
 pub mod vision;
 pub mod voices;
 pub mod watcher;
+pub mod watchdone;
 pub mod web;
 pub mod youtube;
 #[cfg(test)]
@@ -371,6 +372,13 @@ pub fn run() {
             commands::list_wakewords,
             commands::open_wakewords_folder,
             commands::open_path,
+            commands::watch_active_window,
+            commands::watch_arm_window,
+            commands::watch_arm_process,
+            commands::watch_arm_region,
+            commands::watch_list,
+            commands::watch_stop,
+            commands::watch_screen_preview,
             commands::import_wakewords,
             commands::chat_stream,
             commands::read_chat_attachment,
@@ -714,6 +722,7 @@ pub fn run() {
             boost::spawn(handle.clone());
             autonomous::spawn(handle.clone());
             pccare::spawn();
+            watchdone::spawn();
             mate::spawn(handle.clone());
             freebrains::refresh_later();
             screentime::spawn();

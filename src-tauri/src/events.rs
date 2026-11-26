@@ -34,3 +34,9 @@ pub const HELP_DONE: &str = "izuki://help-done";
 pub const ISLAND_MAIL: &str = "izuki://island-mail";
 /// Air/Eye control's safety state changed (airsafe.rs): stopped, paused, ready.
 pub const AIR_SAFETY: &str = "izuki://air-safety";
+/// The list of watches changed (armed, stopped, fired): the list itself.
+pub const WATCH_CHANGED: &str = "izuki://watch-changed";
+/// A watch finished: `{ id, name, detail, mode, ... }`.
+pub const WATCH_DONE: &str = "izuki://watch-done";
+/// Say this line aloud (the frontend owns the voice).
+pub const WATCH_SAY: &str = "izuki://watch-say";

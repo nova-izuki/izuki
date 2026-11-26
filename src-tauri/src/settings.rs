@@ -640,6 +640,22 @@ pub struct Settings {
     /// …and/or the paired phone (Telegram / Discord).
     #[serde(default = "default_true")]
     pub heads_up_phone: bool,
+    /// Watch & notify when done: quiet for this long before "finished"
+    /// (the slider is 2-15 s; 4 s is the default).
+    #[serde(default = "default_watch_idle")]
+    pub watch_idle_ms: u32,
+    /// Tell the owner with a Windows toast when a watch finishes.
+    #[serde(default = "default_true")]
+    pub watch_toast: bool,
+    /// ...and out loud ("WindowsTerminal.exe is done").
+    #[serde(default)]
+    pub watch_voice: bool,
+    /// ...and on the phone (Izuki's normal push, if the phone turned it on).
+    #[serde(default)]
+    pub watch_push: bool,
+    /// ...and to anything that takes a JSON POST: n8n, Zapier, a script.
+    #[serde(default)]
+    pub watch_webhook: String,
     /// Study log (studylog.rs): every question asked and its answer go into
     /// today's "Study log" note, explained to learn from later.
     #[serde(default)]
@@ -825,6 +841,10 @@ fn default_mate_pet() -> String {
 
 fn default_mate_chatty() -> String {
     "normal".into()
+}
+
+fn default_watch_idle() -> u32 {
+    4000
 }
 
 fn default_true() -> bool {
@@ -1376,6 +1396,11 @@ impl Default for Settings {
             heads_up_calendar: true,
             morning_brief: false,
             morning_brief_at: default_brief_at(),
+            watch_idle_ms: 4000,
+            watch_toast: true,
+            watch_voice: false,
+            watch_push: false,
+            watch_webhook: String::new(),
             heads_up_pc: true,
             heads_up_phone: true,
             heads_up_missions: true,

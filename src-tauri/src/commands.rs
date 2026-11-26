@@ -3047,3 +3047,50 @@ pub async fn android_type(text: String) -> Result<(), String> {
     })
     .await?
 }
+
+
+// ---- Watch & notify when done (watchdone.rs) ----
+
+/// The window in front, for the HUD's quick toggle.
+#[tauri::command]
+pub fn watch_active_window() -> Option<crate::watchdone::WindowInfo> {
+    uia::foreground_hwnd().and_then(crate::watchdone::window_info)
+}
+
+/// Watch a window (the one in front, unless one is handed in) until its picture
+/// and text stop moving.
+#[tauri::command]
+pub fn watch_arm_window(hwnd: Option<isize>) -> R<crate::watchdone::Watch> {
+    crate::watchdone::arm_window(hwnd)
+}
+
+/// Watch the front app's process by its CPU and disk use, for work that shows
+/// nothing on screen.
+#[tauri::command]
+pub fn watch_arm_process() -> R<crate::watchdone::Watch> {
+    crate::watchdone::arm_process()
+}
+
+/// Watch one box on the screen (a progress bar, a download, a Stop button).
+#[tauri::command]
+pub fn watch_arm_region(x: i32, y: i32, w: i32, h: i32) -> R<crate::watchdone::Watch> {
+    crate::watchdone::arm_region(x, y, w, h)
+}
+
+/// Every watch, with what it is and where it has got to.
+#[tauri::command]
+pub fn watch_list() -> Vec<crate::watchdone::Watch> {
+    crate::watchdone::list()
+}
+
+/// Stop watching, without an alert.
+#[tauri::command]
+pub fn watch_stop(id: String) -> bool {
+    crate::watchdone::stop(&id)
+}
+
+/// A JPEG of the whole screen, for dragging the box to watch. Only when asked.
+#[tauri::command]
+pub async fn watch_screen_preview() -> R<String> {
+    blocking(crate::watchdone::screen_preview).await?
+}
