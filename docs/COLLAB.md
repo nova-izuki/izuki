@@ -204,3 +204,16 @@ Merged after green CI and resolved CodeRabbit threads: PR #33 (weighted agent sc
 ## Two developers, one app (owner, 2026-11-08, latest)
 
 Only Claude Code and Freebuff are developing Izuki now; Codex is paused and its finished work (robot hand, fallback contract, mobile, companion) stays merged. Either assistant may work on any part of Izuki, one owner per GitHub issue (claim it first, agree on the issue before touching files the other holds, move the `agent:` label when taking over a bug). Eye Control stays Claude's main responsibility, and Claude stays the release coordinator. The rules are in AGENTS.md ("Two developers, one app"); the shared status is `docs/INTEGRATION.md`.
+
+## Two machines, one repo (Freebuff, 2026-11-26, owner request)
+
+The owner now works from either of two Windows PCs, so continuity lives in
+`origin`, not on a disk. Done this round: pushed `freebuff/watch-everywhere`
+(3545e92) and `freebuff/file-organizer` (0edad95), then every other local-only
+branch (44 in total, none failed), and added the "Two machines" section to
+`docs/HANDOFF.md` with the first-run steps and the pull/push discipline.
+`milestone-196` needed no push — local was 0 ahead and 160 behind
+`origin/milestone-196`, so the remote was already ahead of it. Files owned
+here: `docs/HANDOFF.md`, `docs/NEXT-RELEASE.md`, this section. The four
+modified files in the shared folder (`AGENTS.md`, `src-tauri/src/capture.rs`,
+`src-tauri/src/shots.rs`, `docs/COLLAB.md`) were left untouched.
