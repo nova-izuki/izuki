@@ -217,3 +217,14 @@ branch (44 in total, none failed), and added the "Two machines" section to
 here: `docs/HANDOFF.md`, `docs/NEXT-RELEASE.md`, this section. The four
 modified files in the shared folder (`AGENTS.md`, `src-tauri/src/capture.rs`,
 `src-tauri/src/shots.rs`, `docs/COLLAB.md`) were left untouched.
+
+## Two-machine auto-sync (Freebuff, 2026-11-26, owner request)
+
+The owner asked for the two PCs to keep up with each other without anyone
+typing `git pull`. Added `tools/two-machine/sync.ps1` and its README: fetch,
+push when ahead, fast-forward when behind and clean, refuse when dirty or
+diverged (never merges, stashes or force-pushes). `-Install` registers the
+per-user task "Izuki two-machine sync" at sign-in and every 10 minutes;
+`-Uninstall` removes it. Verified against a throwaway bare remote for all five
+states. Files owned here: `tools/two-machine/*`, one line in
+`docs/NEXT-RELEASE.md`, this section.
