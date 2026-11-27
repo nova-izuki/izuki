@@ -566,3 +566,39 @@ or Gmail, so whether those editors accept text inserted without a trusted user
 gesture is unproven; `execCommand` is also deprecated, and an editor that ignores
 it would show the text in the box while its own send button still thinks it is
 empty.
+
+## A task runs to the end, and a composer's Enter is a send by default (Freebuff, 2026-11-27)
+
+Two things the owner asked for after using the page actions.
+
+**Enter in a composer.** Marking only the boxes whose name said "message" left a hole:
+a chat box called "Write something", or a page that names none of them, still sent on
+Enter. An editable box (contenteditable or `role="textbox"`) now sends by default, and
+only a box that names itself long-form keeps its Enter — body, compose, editor,
+document, draft, note, description, article — because in Gmail's body Enter is a new
+line and Send is a separate button. The check happens before the Send button search, so
+Gmail's own Send button cannot re-mark its body. Textareas are unchanged.
+
+**The loop.** `ask()` used to do one answer's tags, take one look at the page and stop.
+It now carries the task through: `actTask()` spends what is left of a budget
+(`MAX_STEPS = 12`, `MAX_ROUNDS = 5`, both in `page-actions.js` with `moreRounds()`),
+each round re-reads the page and the numbered controls, and after every round `ask()` is
+called again with what was just done instead of the question. It stops when an answer
+carries no tags, when the budget is gone (and says so: "That's 12 steps in one go — say
+"keep going""), when another question is waiting, or when the person presses Stop — the
+epoch counter that guards every request covers the loop too. The prompt tells the model
+it may take up to twelve steps and should answer in words when nothing is left.
+
+Three things the loop would have made worse, fixed with it: the question is no longer
+written into the history again on every round (only the first round adds it, later rounds
+add what was done); a tag is never read aloud by read-aloud; and tags are stripped before
+an answer is saved to recent chats. A round whose answer is only tags shows no answer
+bubble — the step lines already say what happened.
+
+Checked here: 15 cases in `tools/panel-actions-check.mjs`, the new ones being a chat box
+named "Write something" (numbered, `sends: true`, Enter dropped) beside Gmail's
+"Message Body" with a Send button next to it (`sends: false`, Enter fires), and the budget
+rule at its edges (`moreRounds(8, 2)` true, `moreRounds(12, 3)` false). `npm run
+test:panel`, `node --check` on the panel and `git diff --check` pass. Not checked: the loop
+itself has never run — it lives in `sidepanel.js`, which no test drives, so the
+continuation, the stop mid-task and the budget message have only been read, not seen.

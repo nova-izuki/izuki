@@ -27,6 +27,18 @@ export const MAX_ITEMS = 120;
  */
 const RISKY = /\b(log ?out|sign ?out|delete|remove|unsubscribe|submit|send|post|publish|buy|pay|purchase|order|checkout|confirm|approve|reset|transfer|withdraw)\b/i;
 
+/** How far one task may go before it stops and hands back to the person. */
+export const MAX_STEPS = 12;
+export const MAX_ROUNDS = 5;
+
+/**
+ * May it take another look-then-act round? A page that keeps proposing steps
+ * would otherwise loop: the budget is what ends it, not the model saying so.
+ */
+export function moreRounds(steps, rounds) {
+  return steps < MAX_STEPS && rounds < MAX_ROUNDS;
+}
+
 /** Is pressing this control a commitment rather than a click? */
 export function riskyControl(label) {
   return RISKY.test(String(label || ""));
@@ -85,7 +97,7 @@ export function actionPrompt(items) {
     .map((i) => `${i.n}. ${i.kind} \u201c${String(i.label || "").replace(/\s+/g, " ").slice(0, 80)}\u201d`)
     .join("\n");
   return `
-[This page is open in the person's browser and you can use it. To act, reply with ONLY the tag, then you will get the page again:
+[This page is open in the person's browser and you can use it. To act, reply with ONLY the tags, then you will get the page again and can carry on: a task may take up to 12 steps, and you should keep going until it is done. When there is nothing left to press, answer in words for the person.
 [PAGE_CLICK: n] \u2014 press item n.
 [PAGE_TYPE: n | words] \u2014 type into item n (end the words with \u23ce to press Enter).
 Never type a password or a card number. Never send, post, buy or delete unless the person asked for exactly that, in this conversation \u2014 and Enter in a box that sends is a send, so it is refused.
@@ -136,6 +148,13 @@ export function pageControls() {
   // it would throw in the page and leave the panel with no controls at all.
   const sendsFromHere = (el) => {
     const own = String(el.getAttribute("aria-label") || el.getAttribute("placeholder") || el.getAttribute("data-placeholder") || el.name || el.getAttribute("title") || "").replace(/\s+/g, " ");
+    // A composer sends on Enter whatever it is called — "Message #general", "Type
+    // a message", or nothing at all. The exceptions are the long-form boxes, whose
+    // Enter is a new line and whose send is a separate button: Gmail's
+    // "Message Body", an editor, a notes pane.
+    const editable = el.getAttribute("contenteditable") !== null ||
+      String(el.getAttribute("role") || "").toLowerCase() === "textbox";
+    if (editable) return !/\b(body|compose|composer|editor|document|draft|notes?|description|bio|about|article|letter)\b/i.test(own);
     if (/\b(message|reply|comment|post|chat|email|e-mail|mail|feedback|review|tweet|dm)\b/i.test(own)) return true;
     const form = el.form || (typeof el.closest === "function" ? el.closest("form") : null);
     if (form) {

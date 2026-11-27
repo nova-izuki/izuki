@@ -6,7 +6,7 @@
 import "./bridge-proof.js";
 import { setUpConnection } from "./connect.js";
 import { RequestGuard, cleanHistory, extractPage } from "./sidepanel-state.js";
-import { actionPrompt, actionTags, stripActions, committal, riskyControl, pageControls, clickControl, typeControl } from "./page-actions.js";
+import { actionPrompt, actionTags, stripActions, committal, riskyControl, MAX_STEPS, moreRounds, pageControls, clickControl, typeControl } from "./page-actions.js";
 import { setUpWorkspace } from "./workspace-ui.js";
 
 const BRIDGE = "http://127.0.0.1:47615/izuki";
@@ -121,9 +121,10 @@ async function readControls(tabId) {
  * is reported, not clicked at random.
  */
 async function actOnPage(answerText, source, items = [], limit = 4) {
-  const acts = actionTags(answerText).slice(0, limit);
-  if (!acts.length) return "";
+  const acts = actionTags(answerText).slice(0, Math.max(0, limit));
+  if (!acts.length) return { text: "", count: 0 };
   const done = [];
+  let ran = 0;
   for (const act of acts) {
     // Sending, buying, deleting: that press belongs to the person, not to a
     // model — even when a page told the model to make it.
@@ -149,6 +150,7 @@ async function actOnPage(answerText, source, items = [], limit = 4) {
     } catch {
       result = null;
     }
+    if (result?.ok) ran += 1;
     done.push(result?.ok && willSend
       ? `Typed into “${result.label || "item " + act.n}” without pressing Enter — that would send it`
       : result?.ok
@@ -158,7 +160,26 @@ async function actOnPage(answerText, source, items = [], limit = 4) {
     await new Promise((next) => setTimeout(next, 250));
   }
   divider(done.join(" · "));
-  return done.join("; ");
+  return { text: done.join("; "), count: ran };
+}
+
+/**
+ * The tags one answer carried, done within what is left of the task's budget.
+ * Returns what it did, or "" when there was nothing (or no budget) left.
+ */
+async function actTask(answerText, source, items, task) {
+  if (!items) return "";
+  const left = Math.max(0, Math.min(4, MAX_STEPS - task.steps));
+  if (!left) {
+    if (actionTags(answerText).length) {
+      divider(`That's ${task.steps} steps in one go — say "keep going" and I'll carry on from here.`);
+    }
+    return "";
+  }
+  const did = await actOnPage(answerText, source, items, left);
+  task.steps += did.count;
+  task.rounds += 1;
+  return did.text;
 }
 
 // ---- the page in front --------------------------------------------------------------
@@ -443,7 +464,7 @@ async function readLinked(link) {
   }
 }
 
-async function ask(question, sourceOverride = null, userInitiated = false, after = "") {
+async function ask(question, sourceOverride = null, userInitiated = false, after = "", walk = null) {
   question = String(question || "").trim();
   if (!question || busy || starting || desktopTask || !current) return false;
   const source = { ...(sourceOverride || current) };
@@ -453,8 +474,9 @@ async function ask(question, sourceOverride = null, userInitiated = false, after
   starting = true;
   const mine = epoch;
   let handled = false, failed = null;
-  // What it just did on this page, for one look-again round.
+  // What it just did on this page, and how much of the task's budget that spent.
   let acted = "";
+  const task = walk || { steps: 0, rounds: 0 };
   try { handled = !!(userInitiated && workspace && await workspace.command(question,source)); }
   catch (error) { failed = error; }
   finally { starting = false; }
@@ -554,11 +576,19 @@ ${page.text.slice(0, 9000)}` : ""}`;
       try { answer = await workspace.relay(link,carried,request.id); }
       finally { clearInterval(ticking); }
       if (!requests.active(request)) return false;
-      const card=bubble("assistant",stripActions(answer.text) || "Done on the page.");
-      if(answer.text)followUps(card,source);
-      if (controls) acted = await actOnPage(answer.text, source, controls.items);
-      history=cleanHistory([...prior,{role:"user",content:question},{role:"assistant",content:answer.text}]);save();
-      if(ticket)await workspace.commit(ticket,question,answer.text,request.id,link.provider.name).catch(error=>divider(error.message||"This answer wasn't saved to recent chats."));
+      // A round that carried only tags says nothing to read: the step line does.
+      const words = stripActions(answer.text);
+      const card = words ? bubble("assistant", words) : null;
+      if (card) followUps(card, source);
+      acted = await actTask(answer.text, source, controls?.items, task);
+      // A later round of the same task is not a new question: it is what was just
+      // done on the page, so the question is not written into the history again.
+      history = cleanHistory([
+        ...prior,
+        ...(after ? [] : [{ role: "user", content: question }]),
+        ...(words ? [{ role: "assistant", content: words }] : []),
+      ]); save();
+      if(ticket)await workspace.commit(ticket,question,words||answer.text,request.id,link.provider.name).catch(error=>divider(error.message||"This answer wasn't saved to recent chats."));
       return true;
     }
     if (page && readLinks) {
@@ -601,15 +631,21 @@ ${page.text.slice(0, 9000)}` : ""}`;
     if (!answer.ok) throw Error(answer.text || "Izuki couldn't answer just now.");
     if (share && !page) divider("This page couldn't be read. The answer was made without its contents.");
     if (linked.length) divider(`Also read: ${linked.map((l) => l.title).join(", ")}`);
-    const card = bubble("assistant", stripActions(answer.text) || "Done on the page.");
-    if (controls) acted = await actOnPage(answer.text, source, controls.items);
-    if (answer.text) followUps(card, source);
-    if ($("read-aloud")?.checked && answer.text) chrome.runtime.sendMessage({ izukiSpeak: answer.text });
-    history = cleanHistory([...prior, { role: "user", content: question }, { role: "assistant", content: answer.text }]);
+    const words = stripActions(answer.text);
+    const card = words ? bubble("assistant", words) : null;
+    acted = await actTask(answer.text, source, controls?.items, task);
+    if (card) followUps(card, source);
+    // Never read a tag aloud, and never save one as if it were the answer.
+    if ($("read-aloud")?.checked && words) chrome.runtime.sendMessage({ izukiSpeak: words });
+    history = cleanHistory([
+      ...prior,
+      ...(after ? [] : [{ role: "user", content: question }]),
+      ...(words ? [{ role: "assistant", content: words }] : []),
+    ]);
     save();
     // The answer is already shown: failing to save it is a note, not a failed
     // answer whose "Try again" would ask the same question twice.
-    if(ticket)await workspace.commit(ticket,question,answer.text,request.id,"Izuki").catch(error=>divider(error.message||"This answer wasn't saved to recent chats."));
+    if(ticket)await workspace.commit(ticket,question,words||answer.text,request.id,"Izuki").catch(error=>divider(error.message||"This answer wasn't saved to recent chats."));
     return true;
   } catch (error) {
     if (requests.active(request) && error.name !== "AbortError") {
@@ -656,11 +692,13 @@ ${page.text.slice(0, 9000)}` : ""}`;
     if (requests.active(request)) {
       requests.finish(request);
       busy = null;
-      // It acted on the page: look at the page as it is now, once, so a task
-      // that takes two steps finishes without another question being typed.
-      if (acted && !after && !queued.length && mine === epoch) {
+      // It acted on the page: look at the page as it is now and carry on until the
+      // answer asks for nothing, the budget runs out, or the person stops it.
+      if (acted && !queued.length && mine === epoch && moreRounds(task.steps, task.rounds)) {
         const next = acted;
-        setTimeout(() => void ask(question, source, false, next), 20);
+        setTimeout(() => void ask(question, source, false, next, task), 20);
+      } else if (acted && !queued.length && mine === epoch) {
+        divider(`That's ${task.steps} step${task.steps === 1 ? "" : "s"} in one go — say "keep going" and I'll carry on from here.`);
       }
       $("send").disabled = false;
       if (stopButton?.dataset.owner === "chat") { stopButton.hidden = true; stopButton.onclick = null; }

@@ -7,7 +7,7 @@
 // element the snapshot numbered. It does not prove a real site's own scripts
 // behave — that needs the browser.
 import assert from 'node:assert/strict';
-import { actionTags, stripActions, actionPrompt, riskyControl, committal, pageControls, clickControl, typeControl } from '../extension/page-actions.js';
+import { actionTags, stripActions, actionPrompt, riskyControl, committal, MAX_STEPS, moreRounds, pageControls, clickControl, typeControl } from '../extension/page-actions.js';
 
 const test = (name, fn) => { fn(); console.log('  ✓ ' + name); };
 
@@ -226,6 +226,43 @@ test('a composer is a field, and its data-placeholder is its name', () => {
   }
 });
 
+test('a chat box sends on Enter even when its name says nothing; a body does not', () => {
+  const saved = globalThis.document.querySelectorAll;
+  // No "message" in the name, and no Send button nearby: it still sends.
+  const chat = new FakeEl('DIV', { attrs: { contenteditable: 'true', 'aria-label': 'Write something' } });
+  // Gmail's body: Enter is a new line there, and its own Send button is separate.
+  const body = new FakeEl('DIV', { attrs: { contenteditable: 'true', role: 'textbox', 'aria-label': 'Message Body' } });
+  const send = new FakeEl('BUTTON', { text: 'Send' });
+  body.parentElement = { parentElement: null, querySelectorAll: () => [send] };
+  globalThis.document.querySelectorAll = () => [chat, body];
+  try {
+    const snap = pageControls();
+    assert.deepEqual(snap.items.map((i) => [i.label, i.sends]), [
+      ['Write something', true],
+      ['Message Body', false],
+    ]);
+    for (const item of snap.items) byNumber.set(String(item.n), [chat, body][item.n - 1]);
+
+    assert.equal(typeControl(1, 'hey', true).sent, false);
+    assert.equal(chat.events.includes('keydown'), false);
+    // The long-form box keeps its Enter: in Gmail that is a line break.
+    assert.equal(typeControl(2, 'Dear Ana,', true).ok, true);
+    assert.equal(body.events.includes('keydown'), true);
+  } finally {
+    globalThis.document.querySelectorAll = saved;
+  }
+});
+
+test('a task has a budget, so a page cannot keep it going forever', () => {
+  assert.equal(moreRounds(0, 0), true);
+  assert.equal(moreRounds(4, 1), true);
+  assert.equal(moreRounds(MAX_STEPS, 1), false);
+  assert.equal(moreRounds(4, 5), false);
+  // Four steps a round, twelve a task: the third round is the last that fits.
+  assert.equal(moreRounds(8, 2), true);
+  assert.equal(moreRounds(12, 3), false);
+});
+
 // ---- and each injected function runs on its own ----------------------------
 // chrome.scripting.executeScript({ func }) sends func.toString() and runs it in
 // the page with no module scope at all, so a helper left outside the function
@@ -270,4 +307,4 @@ test('every injected function runs from its own text, with no module scope', () 
   }
 });
 
-console.log('\npanel-actions: 13 checks passed');
+console.log('\npanel-actions: 15 checks passed');
