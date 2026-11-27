@@ -28,6 +28,8 @@ jobs:
         run: node tools/check-versions.mjs
       - name: The build numbers move with the version
         run: npm run test:versions
+      - name: The bump writes every file the checklist names
+        run: npm run test:bump
       # Pictures, sounds, models and packages: opened and checked the way
       # their formats define them (code review can't read their bytes).
       - name: Every binary asset is whole

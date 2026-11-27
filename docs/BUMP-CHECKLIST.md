@@ -8,6 +8,22 @@ tags a release no installed phone can accept.
 AGENTS.md leaves the version files and the release notes to Claude. Nothing here
 is done by Freebuff or Codex.
 
+## One command does it
+
+```
+node tools/bump-version.mjs 1.0.227 --dry-run   # show every file it would write
+node tools/bump-version.mjs 1.0.227             # write them all
+```
+
+It writes every row of the table below, moves the phone build numbers with the
+version, turns the pending `NEXT-RELEASE` lines into `docs/RELEASE-1.0.NNN.md`
+and clears the list. It refuses, and writes nothing, when a line it expects has
+moved, when the version is not newer than the one in the tree, or when the
+pending list is empty, and it finishes by running the same agreement check as
+CI. `tools/bump-version-check.mjs` pins that, including that a row added to the
+table below without the script writing it fails the test. Rewrite the generated
+notes into prose if the release body should read like the earlier ones.
+
 ## The bump commit touches
 
 | File | What changes |
