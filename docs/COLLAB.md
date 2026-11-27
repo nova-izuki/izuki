@@ -205,6 +205,27 @@ Merged after green CI and resolved CodeRabbit threads: PR #33 (weighted agent sc
 
 Only Claude Code and Freebuff are developing Izuki now; Codex is paused and its finished work (robot hand, fallback contract, mobile, companion) stays merged. Either assistant may work on any part of Izuki, one owner per GitHub issue (claim it first, agree on the issue before touching files the other holds, move the `agent:` label when taking over a bug). Eye Control stays Claude's main responsibility, and Claude stays the release coordinator. The rules are in AGENTS.md ("Two developers, one app"); the shared status is `docs/INTEGRATION.md`.
 
+## Codex custom domain setup (owner request, 2026-11-13)
+Scope: GitHub Pages custom-domain setting for izukinova.com and DNS guidance only. Existing application, Eye, Freebuff and uncommitted files remain untouched. Porkbun account access is unavailable; DNS changes require the owner. No release or version changes.
+
+GitHub Pages API accepted cname=izukinova.com; readback confirmed building with main:/docs preserved. HTTPS enforcement is pending certificate issuance after owner DNS changes. DNS observed before setup: apex 207.207.210.36/.23/.50; www CNAME uixie.porkbun.com. Required apex A records 185.199.108.153, 185.199.109.153, 185.199.110.153, 185.199.111.153; www CNAME nova-izuki.github.io. No owner DNS edits performed; connection not yet verified.
+
+HTTPS follow-up: public Cloudflare/Google DNS show expected apex A/www CNAME and no CAA or AAAA obstruction. GitHub health marks apex eligible, certificate still absent; www health cached old DNS. Applied documented single remove/re-add custom-domain provisioning restart and restored izukinova.com. Do not repeatedly reset; await certificate then enforce HTTPS. No certificate warning was bypassed.
+
+Certificate restart succeeded: GitHub reports approved certificate covering izukinova.com and www.izukinova.com, expires 2027-02-11; site built. Enabled https_enforced=true via Pages API. Native curl validated www HTTPS redirect to apex; apex edge propagation check follows. No paid SSL or hosting needed.
+
+Final HTTPS verification succeeded: normal curl https://izukinova.com returned HTTP 200 with certificate validation enabled; direct GitHub edge .109 also HTTP 200; www HTTPS returned 301 to canonical apex; HTTP returned 301 to HTTPS. GitHub reports approved certificate and https_enforced=true. No local app/source files changed.
+
+Owner changed domain preference: izukinova.ai PRIMARY, izukinova.com SECONDARY redirect. .ai registered and uses launch1/launch2.spaceship.net; apex still parked at 54.149.79.189/34.216.117.25, www absent. .com remains working HTTPS primary temporarily; no Pages switch yet. Next: owner supplies Spaceship DNS editing access/records, coordinate Pages cname switch to .ai with its GitHub DNS, issue/verify certificate, then configure Porkbun 301 HTTPS redirects for .com and www to https://izukinova.ai. Do not redirect .ai to .com (superseded preference). Keep existing MX/TXT and nameservers.
+
+Owner supplied saved .ai DNS: apex four GitHub A records and www CNAME nova-izuki.github.io, TTL1800. Public Google DNS verifies apex; checking authoritative www to distinguish negative cache. Codex claims Pages setting switch from .com to .ai under explicit owner primary-domain instruction. Porkbun .com redirect remains owner action; GitHub Pages supports only one primary custom domain.
+
+Primary domain switched successfully: izukinova.ai. Authoritative launch1.spaceship.net confirms www CNAME nova-izuki.github.io; public apex matches all four GitHub A records. Pages built; certificate approved for apex+www (expires2027-02-11); https_enforced=true. Porkbun .com still has direct GitHub DNS and must be changed to registrar URL forwarding (root plus www,301 to https://izukinova.ai, preserve path). No .com forwarding performed; owner account access absent. Website canonical/sitemap URL source updates remain a separate coordinated website-lane follow-up; do not claim Google indexing complete.
+
+Domain handoff complete: authoritative Porkbun www now resolves via uixie.porkbun.com; normal HTTPS .com returns301 https://izukinova.ai; direct Porkbun www validates TLS and301 to.ai; local cached www GitHub301->.com still converges to.ai. .ai HTTPS200 verified. Registrar forwarding configured by owner, not Codex. Preserve MX/TXT records. Primary.ai/secondary.com preference implemented; search indexing/source SEO follow-up not yet performed.
+
+Codex resumed by explicit owner website request (2026-11-13): narrow static-site SEO migration only, on codex/site-ai-search worktree. Files planned: docs/index.html, docs/help/index.html, docs/links/index.html, docs/screenshots/index.html, docs/robots.txt, docs/sitemap.xml, docs/llms.txt, docs/SEARCH-SETUP.md. Preserve existing logo assets; no docs/app, desktop, Eye, release/version changes. Canonical URLs, structured data and crawler links currently point to old github.io. Search Console remains owner-authenticated step. No ranking or Google-display guarantees.
+
 ## Two machines, one repo (Freebuff, 2026-11-26, owner request)
 
 The owner now works from either of two Windows PCs, so continuity lives in
