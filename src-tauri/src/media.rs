@@ -7,7 +7,7 @@
 //! toggle that could start something the user had paused. Izuki's own voice
 //! is left alone.
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// How long Windows gets to answer; a stuck media service must never hold
 /// up the song that was asked for.
@@ -78,6 +78,114 @@ pub fn set_playing(play: bool) -> Option<bool> {
 #[cfg(not(windows))]
 pub fn set_playing(_play: bool) -> Option<bool> {
     None
+}
+
+/// Is anything (other than Izuki itself) playing right now? `Some(false)`
+/// when Windows can name the players and none of them is playing, `None` when
+/// it can't tell at all — which is never read as "finished".
+#[cfg(windows)]
+pub fn playing() -> Option<bool> {
+    match try_any_playing() {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("[media] couldn't ask the players: {e}");
+            None
+        }
+    }
+}
+
+#[cfg(not(windows))]
+pub fn playing() -> Option<bool> {
+    None
+}
+
+#[cfg(windows)]
+fn try_any_playing() -> windows_core::Result<Option<bool>> {
+    use windows::Media::Control::{
+        GlobalSystemMediaTransportControlsSessionManager as Manager,
+        GlobalSystemMediaTransportControlsSessionPlaybackStatus as Status,
+    };
+    let Some(manager) = wait(Manager::RequestAsync()?)? else { return Ok(None) };
+    let sessions = manager.GetSessions()?;
+    for i in 0..sessions.Size()? {
+        let session = sessions.GetAt(i)?;
+        if is_izuki(&session.SourceAppUserModelId().map(|s| s.to_string()).unwrap_or_default()) {
+            continue;
+        }
+        if session.GetPlaybackInfo().and_then(|p| p.PlaybackStatus()).is_ok_and(|s| s == Status::Playing) {
+            return Ok(Some(true));
+        }
+    }
+    Ok(Some(false))
+}
+
+// ---- when the song it started finishes --------------------------------------
+
+/// How many quiet looks in a row mean finished: one is the gap while YouTube
+/// swaps videos or an ad loads.
+const QUIET_LOOKS: u8 = 2;
+/// How often it looks once a song is going.
+const LOOK_EVERY: Duration = Duration::from_secs(5);
+/// After this it stops looking — a live stream or a long playlist ends by
+/// itself and doesn't need announcing.
+const WATCH_FOR: Duration = Duration::from_secs(6 * 3600);
+
+/// Has what Izuki started finished? Fed one look at a time so the rule is
+/// testable without a player: it must have played at least once, then come
+/// back quiet twice in a row. "Windows can't tell" is never a finish.
+#[derive(Debug, Default)]
+struct FinishedClock {
+    played: bool,
+    quiet: u8,
+}
+
+impl FinishedClock {
+    fn look(&mut self, playing: Option<bool>) -> bool {
+        match playing {
+            Some(true) => {
+                self.played = true;
+                self.quiet = 0;
+                false
+            }
+            Some(false) if self.played => {
+                self.quiet += 1;
+                self.quiet >= QUIET_LOOKS
+            }
+            _ => false,
+        }
+    }
+}
+
+/// Say one line when the music Izuki started has finished — instead of
+/// leaving it thinking the song is still going. One watch at a time: the next
+/// song replaces the last one's watch.
+pub fn watch_finished(what: &str) {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEWEST: AtomicU64 = AtomicU64::new(0);
+    let mine = NEWEST.fetch_add(1, Ordering::SeqCst) + 1;
+    let what = what.trim().to_string();
+    if what.is_empty() {
+        return;
+    }
+    let Some(app) = crate::state::app().cloned() else { return };
+    std::thread::Builder::new()
+        .name("izuki-playback-watch".into())
+        .spawn(move || {
+            let began = Instant::now();
+            let mut clock = FinishedClock::default();
+            // The session takes a moment to appear once the page loads.
+            std::thread::sleep(Duration::from_secs(3));
+            while NEWEST.load(Ordering::SeqCst) == mine && began.elapsed() < WATCH_FOR {
+                if clock.look(playing()) {
+                    let key = format!("playback-finished-{}", what.to_lowercase());
+                    let said = format!("\u{201c}{what}\u{201d} has finished.");
+                    crate::buddy::say(&app, &key, &said, crate::buddy::Level::Chat);
+                    return;
+                }
+                std::thread::sleep(LOOK_EVERY);
+            }
+        })
+        .ok();
 }
 
 /// Resume what was playing last (Windows' "current" player, else the first
@@ -278,6 +386,31 @@ mod tests {
         std::thread::sleep(Duration::from_secs(2));
         println!("play: {:?}", set_playing(true));
         println!("play again (must keep playing): {:?}", set_playing(true));
+    }
+
+    #[test]
+    fn answers_whether_anything_is_playing() {
+        // A real question to Windows: it must answer (or say it can't) without
+        // panicking. The value depends on what this PC is doing right now.
+        let _ = playing();
+    }
+
+    #[test]
+    fn finished_needs_it_playing_first_and_two_quiet_looks() {
+        let mut clock = super::FinishedClock::default();
+        assert!(!clock.look(Some(false)), "never played: there is nothing to finish");
+        assert!(!clock.look(Some(true)));
+        assert!(!clock.look(Some(false)), "one quiet look is the gap between videos");
+        assert!(clock.look(Some(false)));
+    }
+
+    #[test]
+    fn windows_unable_to_tell_is_never_a_finish() {
+        let mut clock = super::FinishedClock::default();
+        assert!(!clock.look(Some(true)));
+        assert!(!clock.look(None));
+        assert!(!clock.look(None));
+        assert!(!clock.look(None));
     }
 
     /// Run by hand with music playing: it should stop, and report 1.

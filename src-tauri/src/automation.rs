@@ -1093,7 +1093,12 @@ fn execute_step(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) 
         Intent::PlayYoutube => {
             let what = step.text_to_type.as_deref().unwrap_or_default();
             return match crate::youtube::play(what)? {
-                Some(title) => Ok(format!("started playing \"{title}\" on YouTube (ads are skipped by themselves)")),
+                Some(title) => {
+                    // So it can say "… has finished" when the song ends, instead
+                    // of leaving it believing the music is still going.
+                    crate::media::watch_finished(&title);
+                    Ok(format!("started playing \"{title}\" on YouTube (ads are skipped by themselves)"))
+                }
                 None if aborted() => Err(anyhow!("stopped")),
                 None => Err(anyhow!("play_not_started: YouTube opened results for \"{what}\" but didn't start a video; look at the results and choose one")),
             };
