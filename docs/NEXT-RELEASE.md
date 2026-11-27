@@ -14,3 +14,4 @@ into the next `docs/RELEASE-x.y.z.md` when it releases, then clears this list.
 - Clearing old Recycle Bin items is now only the Switch that says so (“Clear old Recycle Bin items”, off by default) — not part of “Keep my PC fast by itself” — and it tells you how many went. [Freebuff]
 - The chat composer gives the Deep/Code pills room at narrow widths, and Allow cards have an “Always allow” button so Izuki stops asking. [Freebuff]
 - A background helper left behind by an app that crashed (no window for ten minutes) can now be closed by itself — “Close helpers left behind” in Settings → PC Boost, off until you turn it on, never touching a window or a system process. [Freebuff]
+- “Close helpers left behind” now costs one process snapshot instead of a walk per helper (35 ms → 12 ms a look) and leaves a crash handler alone while its app is still running. [Freebuff]
