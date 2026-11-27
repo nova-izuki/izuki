@@ -414,3 +414,18 @@ here has been heard on a real phone yet. Files owned here: `docs/app/index.html`
 `VoiceText.java`, `IzukiVoice.java`, `VoiceTextTest.java`,
 `tools/phone-check/callquiet.test.cjs`, `package.json`, one line in
 `docs/NEXT-RELEASE.md`, this section.
+
+## The Izuki browser works where you can see it (Freebuff, 2026-11-27, owner request)
+
+The owner asked for a Polar-style browser: an agent that does a lot on screen.
+The agent already existed (a hidden WebView2 window driven by `[BROWSE]`,
+`[CLICK]` and `[TYPE]`, with a page snapshot), but nothing appeared on screen and
+it could only read pages it had opened itself. `browser::reveal()` now brings
+that window up, without taking the keyboard, whenever a browse, click or type
+step runs, so a task can be watched and taken over at any step; and
+`[BROWSE: here]` reads the page already open instead of navigating away ("what
+does this say?"). Prompt line in `chat.rs`, copy in `AppsTab.tsx`.
+`cargo check` and `npx tsc --noEmit` pass; the window behaviour itself has not
+been run on this PC yet. Files owned here: `src-tauri/src/browser.rs`,
+`src-tauri/src/chat.rs` (one prompt line), `src/components/tabs/AppsTab.tsx`, one
+line in `docs/NEXT-RELEASE.md`, this section.

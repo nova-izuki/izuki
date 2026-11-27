@@ -63,6 +63,18 @@ pub fn show(url: Option<&str>) -> Result<()> {
     Ok(())
 }
 
+/// Show it without taking the keyboard, so a task can be watched while it runs
+/// (and taken over: sign in, fix a step). A hidden window is brought back as it
+/// was; a visible one is left exactly where the person put it.
+pub fn reveal() {
+    if let Some(w) = APP.get().and_then(|a| a.get_webview_window(LABEL)) {
+        if !w.is_visible().unwrap_or(false) {
+            let _ = w.show();
+            let _ = w.unminimize();
+        }
+    }
+}
+
 /// Closing it only hides it — the sign-ins and the page stay.
 pub fn hide() {
     if let Some(w) = APP.get().and_then(|a| a.get_webview_window(LABEL)) {
@@ -99,8 +111,19 @@ fn normalise(u: &str) -> String {
 pub fn browse(url: &str) -> Result<String> {
     let _one = BUSY.lock();
     let w = window()?;
-    w.navigate(normalise(url).parse()?)?;
-    std::thread::sleep(Duration::from_millis(400));
+    // On screen, not just behind the chat: the page appearing is the answer to
+    // "what is it doing?", and the person can take over at any step.
+    reveal();
+    // "here" is the page already open — the one the person is looking at
+    // ("what does this say?", "the one in the list"). Nothing navigates away.
+    let here = matches!(
+        url.trim().to_lowercase().as_str(),
+        "" | "here" | "this" | "current" | "this page" | "current page"
+    );
+    if !here {
+        w.navigate(normalise(url).parse()?)?;
+        std::thread::sleep(Duration::from_millis(400));
+    }
     settle(&w);
     snapshot(&w)
 }
@@ -109,6 +132,7 @@ pub fn browse(url: &str) -> Result<String> {
 pub fn click(n: u32) -> Result<String> {
     let _one = BUSY.lock();
     let w = window()?;
+    reveal();
     let result = run(&w, &format!("window.__izukiPage.click({n})"))?;
     if result != "ok" { return Err(anyhow!("{result}")); }
     settle(&w);
@@ -119,6 +143,7 @@ pub fn click(n: u32) -> Result<String> {
 pub fn type_into(n: u32, text: &str, submit: bool) -> Result<String> {
     let _one = BUSY.lock();
     let w = window()?;
+    reveal();
     let value = serde_json::to_string(text)?;
     let result = run(&w, &format!("window.__izukiPage.type({n}, {value}, {submit})"))?;
     if result != "ok" { return Err(anyhow!("{result}")); }

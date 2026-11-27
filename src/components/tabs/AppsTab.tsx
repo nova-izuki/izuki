@@ -402,7 +402,7 @@ export function AppsTab() {
       <Section
         id="apps-browser"
         title="School, notes & any website — the Izuki browser"
-        hint="Tap one and sign in once in the Izuki browser (it's built into Windows — nothing to install). Close it, and from then on just ask in the chat or from your phone: Izuki opens it in the background, reads it and clicks through."
+        hint="Tap one and sign in once in the Izuki browser (it's built into Windows — nothing to install). Close it, and from then on just ask in the chat or from your phone: Izuki brings it up on screen while it works, reads it and clicks through, and you can take over at any step."
       >
         <div className="grid grid-cols-2 gap-1.5">
           {SCREEN_APPS.map((a) => (

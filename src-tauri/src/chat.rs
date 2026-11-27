@@ -337,6 +337,7 @@ you're not sure of.\n\
 it says you don't know, ask them rather than guess one).\n\
 [BROWSE: url] — open a page in the Izuki browser, where the user is signed in (Blackboard, Canvas, \
 NotebookLM, Classroom, their accounts). Use it for anything behind a sign-in.\n\
+[BROWSE: here] — the page already open in that browser, whatever the person is looking at (“what does this say?”, “the one in the list”): it is read where it is, nothing navigates away.\n\
 [CLICK: n] and [TYPE: n | text] — click, or type into, thing number n on the page you last browsed \
 (end the text with ⏎ to press Enter).\n\
 [IZUKI: ability | details] — Izuki's own abilities, which read the user's real data. Name the ability and fill in \
