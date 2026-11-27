@@ -7,7 +7,7 @@
 // element the snapshot numbered. It does not prove a real site's own scripts
 // behave — that needs the browser.
 import assert from 'node:assert/strict';
-import { actionTags, stripActions, actionPrompt, riskyControl, pageControls, clickControl, typeControl } from '../extension/page-actions.js';
+import { actionTags, stripActions, actionPrompt, riskyControl, committal, pageControls, clickControl, typeControl } from '../extension/page-actions.js';
 
 const test = (name, fn) => { fn(); console.log('  ✓ ' + name); };
 
@@ -157,4 +157,41 @@ test('a password box is never typed into', () => {
   assert.equal(typeControl(99, 'hunter2').ok, false);
 });
 
-console.log('\npanel-actions: 10 checks passed');
+test('Enter in a message box is a send, though the box is only called Message', () => {
+  const saved = globalThis.document.querySelectorAll;
+  const message = new FakeEl('TEXTAREA', { attrs: { placeholder: 'Write a message' } });
+  const search = new FakeEl('INPUT', { type: 'search', attrs: { placeholder: 'Search courses' } });
+  const note = new FakeEl('TEXTAREA', { attrs: { placeholder: 'Notes' } });
+  const send = new FakeEl('BUTTON', { text: 'Send' });
+  // A composer bar: the box, and the Send button beside it.
+  note.parentElement = { parentElement: null, querySelectorAll: () => [send] };
+  globalThis.document.querySelectorAll = () => [message, search, note];
+  try {
+    const snap = pageControls();
+    assert.deepEqual(Object.fromEntries(snap.items.map((i) => [i.label, i.sends])), {
+      'Write a message': true, // the box says what it is
+      'Search courses': false, // a search is not a send
+      Notes: true,             // a Send button in the same bar
+    });
+    for (const item of snap.items) byNumber.set(String(item.n), [message, search, note][item.n - 1]);
+
+    // The rule the panel applies to a [PAGE_TYPE: n | words \u23ce] tag.
+    assert.equal(committal('Write a message', true), true);
+    assert.equal(committal('Search courses', false), false);
+
+    // And the press itself: the words go in, Enter never does.
+    const typed = typeControl(1, 'see you at five', true);
+    assert.equal(typed.ok, true);
+    assert.equal(typed.sent, false);
+    assert.equal(message.value, 'see you at five');
+    assert.equal(message.events.includes('keydown'), false);
+
+    // A search box is not a commitment: Enter there still searches.
+    assert.equal(typeControl(2, 'biology', true).ok, true);
+    assert.equal(search.events.includes('keydown'), true);
+  } finally {
+    globalThis.document.querySelectorAll = saved;
+  }
+});
+
+console.log('\npanel-actions: 11 checks passed');

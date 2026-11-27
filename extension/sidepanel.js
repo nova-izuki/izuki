@@ -6,7 +6,7 @@
 import "./bridge-proof.js";
 import { setUpConnection } from "./connect.js";
 import { RequestGuard, cleanHistory, extractPage } from "./sidepanel-state.js";
-import { actionPrompt, actionTags, stripActions, riskyControl, pageControls, clickControl, typeControl } from "./page-actions.js";
+import { actionPrompt, actionTags, stripActions, committal, riskyControl, pageControls, clickControl, typeControl } from "./page-actions.js";
 import { setUpWorkspace } from "./workspace-ui.js";
 
 const BRIDGE = "http://127.0.0.1:47615/izuki";
@@ -127,23 +127,31 @@ async function actOnPage(answerText, source, items = [], limit = 4) {
   for (const act of acts) {
     // Sending, buying, deleting: that press belongs to the person, not to a
     // model — even when a page told the model to make it.
-    const label = String((items.find((item) => item.n === act.n) || {}).label || "");
+    const item = items.find((i) => i.n === act.n) || {};
+    const label = String(item.label || "");
+    // A control that is itself named Send, Submit, Delete or Buy is never pressed
+    // by a model, whatever the page told it to do.
     if (riskyControl(label)) {
       done.push(`Left \u201c${label}\u201d alone \u2014 that sends, buys or deletes, so that press is yours to make.`);
       continue;
     }
+    // Enter in a message box sends the message even though the box is only called
+    // Message, so the words go in and the Enter does not.
+    const willSend = committal(label, act.op === "type" && act.submit && !!item.sends);
     let result = null;
     try {
       const [out] = await chrome.scripting.executeScript({
         target: { tabId: source.id },
         func: act.op === "click" ? clickControl : typeControl,
-        args: act.op === "click" ? [act.n] : [act.n, act.text, act.submit],
+        args: act.op === "click" ? [act.n] : [act.n, act.text, act.submit && !willSend],
       });
       result = out ? out.result : null;
     } catch {
       result = null;
     }
-    done.push(result?.ok
+    done.push(result?.ok && willSend
+      ? `Typed into “${result.label || "item " + act.n}” without pressing Enter — that would send it`
+      : result?.ok
       ? `${act.op === "click" ? "Pressed" : "Typed into"} “${result.label || "item " + act.n}”`
       : `Couldn't ${act.op === "click" ? "press" : "type into"} item ${act.n}${result?.why ? ` — ${result.why}` : " (this page wouldn't let me)"}`);
     // Let the page settle before the next step reads the screen.

@@ -29,6 +29,50 @@ export function riskyControl(label) {
 }
 
 /**
+ * Would doing this make a commitment? A control can commit by its own name
+ * ("Send"), and so can a key: Enter in a message box sends the message even
+ * though the box itself is only called "Message". Both are the person's.
+ */
+export function committal(label, enterSends) {
+  return riskyControl(label) || !!enterSends;
+}
+
+/**
+ * Does Enter in this field send, post or commit what is typed? The field's own
+ * name (a message box, a reply, a comment), the form it submits, or the Send /
+ * Post button standing next to it. A search box is not one of these: Enter there
+ * only searches.
+ *
+ * Copied into the injected functions below, which cannot see module scope.
+ */
+function sendsFromHere(el) {
+  const own = String(el.getAttribute("aria-label") || el.getAttribute("placeholder") || el.name || el.getAttribute("title") || "").replace(/\s+/g, " ");
+  if (/\b(message|reply|comment|post|chat|email|e-mail|mail|feedback|review|tweet|dm)\b/i.test(own)) return true;
+  const form = el.form || (typeof el.closest === "function" ? el.closest("form") : null);
+  if (form) {
+    const action = typeof form.getAttribute === "function" ? String(form.getAttribute("action") || "") : "";
+    if (/\b(send|post|message|comment|reply|compose|checkout|order|purchase|delete|submit)\b/i.test(action)) return true;
+    const go = typeof form.querySelector === "function"
+      ? form.querySelector('button[type="submit"], input[type="submit"], button:not([type="button"])')
+      : null;
+    const goLabel = go ? String(go.innerText || go.value || go.getAttribute("aria-label") || "") : "";
+    if (/\b(send|post|publish|submit|buy|pay|delete|comment|reply|confirm|order)\b/i.test(goLabel)) return true;
+  }
+  // A composer with no form of its own (most messaging apps): the Send button
+  // sits in the same bar as the box.
+  let node = el;
+  for (let up = 0; up < 4 && node && node.parentElement; up += 1) {
+    node = node.parentElement;
+    if (typeof node.querySelectorAll !== "function") continue;
+    for (const button of node.querySelectorAll('button, [role="button"], input[type="submit"]')) {
+      const label = String(button.innerText || button.value || button.getAttribute("aria-label") || "");
+      if (/\b(send|post|publish|submit|buy|pay|delete|comment|reply|confirm|order)\b/i.test(label)) return true;
+    }
+  }
+  return false;
+}
+
+/**
  * The actions an answer asks for, in the order it asked for them.
  *
  * [PAGE_CLICK: 3] presses item 3 and [PAGE_TYPE: 3 | hello ⏎] types into it (⏎
@@ -74,7 +118,7 @@ export function actionPrompt(items) {
 [This page is open in the person's browser and you can use it. To act, reply with ONLY the tag, then you will get the page again:
 [PAGE_CLICK: n] \u2014 press item n.
 [PAGE_TYPE: n | words] \u2014 type into item n (end the words with \u23ce to press Enter).
-Never type a password or a card number. Never send, post, buy or delete unless the person asked for exactly that, in this conversation.
+Never type a password or a card number. Never send, post, buy or delete unless the person asked for exactly that, in this conversation \u2014 and Enter in a box that sends is a send, so it is refused.
 ${list}
 ]`;
 }
@@ -106,7 +150,10 @@ export function pageControls() {
     return "button";
   };
   // Last look's numbers are stale now: nothing may point at an old item.
-  for (const old of document.querySelectorAll("[data-izuki-n]")) old.removeAttribute("data-izuki-n");
+  for (const old of document.querySelectorAll("[data-izuki-n]")) {
+    old.removeAttribute("data-izuki-n");
+    old.removeAttribute("data-izuki-sends");
+  }
   const items = [];
   const all = document.querySelectorAll(
     'a[href], button, [role="button"], [role="link"], [role="tab"], [role="menuitem"], [role="checkbox"], [role="radio"], input, textarea, select, summary'
@@ -121,8 +168,12 @@ export function pageControls() {
     const label = name(el);
     if (!label) continue;
     const n = items.length + 1;
+    const what = kind(el, tag);
     el.setAttribute("data-izuki-n", String(n));
-    items.push({ n, label, kind: kind(el, tag) });
+    // A field whose Enter sends is marked here, once, so the press itself can
+    // refuse that Enter without recomputing anything.
+    if (what === "field" && sendsFromHere(el)) el.setAttribute("data-izuki-sends", "1");
+    items.push({ n, label, kind: what, sends: what === "field" && el.getAttribute("data-izuki-sends") === "1" });
   }
   return { title: document.title || "", url: location.href, items };
 }
@@ -173,6 +224,11 @@ export function typeControl(n, text, submit) {
   }
   el.dispatchEvent(new Event("input", { bubbles: true }));
   el.dispatchEvent(new Event("change", { bubbles: true }));
+  // Typing the words is harmless; pressing Enter in a box that sends is the
+  // commitment, and that belongs to the person — whatever the page asked for.
+  if (submit && el.getAttribute("data-izuki-sends") === "1") {
+    return { ok: true, sent: false, label };
+  }
   if (submit) {
     const form = el.form;
     if (form && form.requestSubmit) form.requestSubmit();

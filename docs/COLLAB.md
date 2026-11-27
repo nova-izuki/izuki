@@ -473,3 +473,33 @@ here: `extension/page-actions.js`, `extension/sidepanel.js`,
 `extension/sidepanel.html` (one switch), `tools/panel-actions-check.mjs`,
 `package.json` (`test:panel` runs the new check), one line in
 `docs/NEXT-RELEASE.md`, this section.
+
+## Enter in a message box was an unguarded send (Freebuff, 2026-11-27, follow-up)
+
+The guard added with the page actions looked only at a control's own name, so
+`[PAGE_TYPE: 5 | see you at five ⏎]` aimed at a box labelled “Message” typed and
+pressed Enter: the box's name was harmless while the Enter sent the message. That
+was the hole.
+
+`pageControls()` now marks every field whose Enter commits, at numbering time:
+it stamps `data-izuki-sends="1"` when the field's own name is a message, reply,
+comment, chat, mail or review box; when the form it submits posts, sends,
+comments or orders; or when a Send/Post/Publish button sits within four levels of
+it (how composers without a form are built). `typeControl()` reads that stamp and,
+when Enter was asked for, types the words and returns `{ok: true, sent: false}` —
+the person presses Enter, nothing else does. `committal(label, enterSends)` is the
+rule the panel applies before it presses anything: a control named Send, Submit or
+Delete is refused outright, and an Enter that would send is dropped from the tag,
+so the words land in the box and the person presses Enter — the panel says which
+it did (“without pressing Enter — that would send it”). A search box is deliberately not
+one of these: Enter there only searches. The page is re-numbered after every answer
+so the stamp is as fresh as the numbers it belongs to.
+
+Checked here: a new case in `tools/panel-actions-check.mjs` builds a message box,
+a search box and a composer bar with a Send button, asserts the three `sends`
+flags, the panel rule, that `typeControl` fills the box but fires no `keydown`,
+and that a search box still takes its Enter; all 11 cases pass, with
+`npm run test:panel`, `npm run test:html` and `node --check` on both scripts. Not
+checked: still nothing has run in Chrome against a real messaging site, so which
+of its boxes match is unproven — the rule is a wording and structure guess, and a
+box it misses is a box whose Enter is allowed.
