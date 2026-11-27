@@ -1331,7 +1331,29 @@ ${PROVIDER_REFUSAL_NOTE}` : shown });
   const sendRef = useRef(send);
   sendRef.current = send;
 
-  const dictation = useDictation((heard) => void send(heard));
+  /** The box grows with what's in it — a paragraph, not a slit. */
+  const grow = () => {
+    const box = input.current;
+    if (!box) return;
+    box.style.height = "auto";
+    box.style.height = `${Math.min(200, Math.max(38, box.scrollHeight))}px`;
+  };
+
+  // Spoken words land in the box, editable, and wait for Enter like anything
+  // typed — a misheard name is then a two-second fix instead of a lost
+  // question you have to say all over again.
+  const dictation = useDictation((heard) => {
+    const said = heard.trim();
+    if (!said) return;
+    setDraft((d) => (d.trim() ? `${d.trim()} ${said}` : said));
+    requestAnimationFrame(() => {
+      const box = input.current;
+      if (!box) return;
+      box.focus();
+      box.selectionStart = box.selectionEnd = box.value.length;
+      grow();
+    });
+  });
 
   const doOnPc = (i: number) => {
     const ask = [...msgs.slice(0, i)].reverse().find((m) => m.role === "user")?.content;
@@ -1812,7 +1834,7 @@ ${PROVIDER_REFUSAL_NOTE}` : shown });
               e.target.value = "";
             }}
           />
-          <div className="flex flex-wrap items-end gap-1.5">
+          <div className="izk-composer flex flex-wrap items-end gap-1.5">
             <button
               type="button"
               onClick={() => picker.current?.click()}
@@ -1918,7 +1940,10 @@ ${PROVIDER_REFUSAL_NOTE}` : shown });
               ref={input}
               value={draft}
               rows={1}
-              onChange={(e) => setDraft(e.target.value)}
+              onChange={(e) => {
+                setDraft(e.target.value);
+                grow();
+              }}
               onPaste={(e) => {
                 const files = Array.from(e.clipboardData.files);
                 if (!files.length) return;
@@ -1943,7 +1968,7 @@ ${PROVIDER_REFUSAL_NOTE}` : shown });
                 }
               }}
               placeholder={dictation.listening ? "Listening…" : deep ? "What should I research?" : "Message Izuki"}
-              className="izk-field izk-no-drag max-h-[120px] min-h-[36px] min-w-[150px] flex-1 basis-[220px] resize-none rounded-[18px] py-[8px] text-[13px]"
+              className="izk-field izk-no-drag max-h-[200px] min-h-[38px] min-w-[150px] flex-1 basis-[220px] resize-none rounded-[18px] px-3.5 py-[9px] text-[13.5px] leading-snug"
             />
             {busy ? (
               <button
