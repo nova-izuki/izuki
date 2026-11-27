@@ -479,6 +479,8 @@ export interface Settings {
   send_bug_reports: boolean;
   /** Turn other apps' sound down while Izuki listens. */
   duck_while_listening: boolean;
+  /** Spoken requests send as soon as they are transcribed (hands-free). */
+  dictation_autosend: boolean;
   /** Double-check your words with a cloud speech model (Groq or Gemini key). */
   cloud_ears: boolean;
   /** PC Boost: notice a struggling PC and offer to speed it up. */

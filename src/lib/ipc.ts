@@ -298,6 +298,7 @@ export const MOCK_SETTINGS: Settings = {
   barge_in: true,
   send_bug_reports: true,
   duck_while_listening: true,
+  dictation_autosend: false,
   cloud_ears: true,
   pc_boost: true,
   match_voice_face: true,

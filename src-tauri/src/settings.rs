@@ -417,6 +417,11 @@ pub struct Settings {
     /// you, then back up — like a phone assistant lowering your music.
     #[serde(default = "default_true")]
     pub duck_while_listening: bool,
+    /// Hands-free users: a spoken request sends the moment it is transcribed,
+    /// as it always did. Off (the default): it lands in the chat box so a
+    /// misheard word can be fixed before it goes.
+    #[serde(default)]
+    pub dictation_autosend: bool,
     /// PC Boost: notice when the PC is struggling and offer to speed it up
     /// (boost.rs). Only looks — a few cheap system calls every 5 s.
     #[serde(default = "default_true")]
@@ -1237,6 +1242,7 @@ impl Default for Settings {
             barge_in: true,
             send_bug_reports: true,
             duck_while_listening: true,
+            dictation_autosend: false,
             pc_boost: true,
             match_voice_face: true,
             pc_boost_auto: false,

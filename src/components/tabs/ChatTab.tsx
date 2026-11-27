@@ -1345,6 +1345,11 @@ ${PROVIDER_REFUSAL_NOTE}` : shown });
   const dictation = useDictation((heard) => {
     const said = heard.trim();
     if (!said) return;
+    // Hands-free users keep the old flow: it sends the moment it is heard.
+    if (settings.dictation_autosend) {
+      void send(said);
+      return;
+    }
     setDraft((d) => (d.trim() ? `${d.trim()} ${said}` : said));
     requestAnimationFrame(() => {
       const box = input.current;

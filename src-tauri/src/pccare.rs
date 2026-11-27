@@ -277,6 +277,22 @@ fn should_tidy(drives: &[(String, f64, f64)], last: Option<Instant>) -> bool {
     })
 }
 
+/// A month in the Recycle Bin is long enough that anything you still wanted
+/// has been dragged back out.
+const BIN_DAYS: u32 = 30;
+/// Never sweep the bin more than this often. The check itself is a quick
+/// query; the sweep shells out, so once a day is as eager as it gets.
+const BIN_EVERY: Duration = Duration::from_secs(24 * 3600);
+
+/// Is the Recycle Bin worth sweeping by itself? Only when it holds something
+/// and hasn't been swept today. Pure, so the rule is pinned by tests.
+fn should_sweep_bin(items: u64, last: Option<Instant>) -> bool {
+    if last.is_some_and(|t| t.elapsed() < BIN_EVERY) {
+        return false;
+    }
+    items > 0
+}
+
 /// In the background: disk space every 10 minutes (instant), the full check
 /// a few minutes after start and then every 3 hours. Nothing at all while
 /// alerts are switched off.
@@ -285,6 +301,7 @@ pub fn spawn() {
         std::thread::sleep(Duration::from_secs(4 * 60));
         let mut full_at: Option<Instant> = None;
         let mut tidied: Option<Instant> = None;
+        let mut swept: Option<Instant> = None;
         loop {
             let on = crate::state::try_store().is_some_and(|s| s.settings().pc_care_alerts);
             if on && !crate::uia::screen_locked() {
@@ -326,6 +343,34 @@ pub fn spawn() {
                     }
                 }
             }
+            // The Recycle Bin, once a day: things thrown away more than a
+            // month ago go for good, so the bin never quietly eats a drive.
+            // Only with "keep my PC fast by itself" on, never while you're
+            // mid-request, and it always says what it took out.
+            let bin_items = crate::recyclebin::size().map_or(0, |(items, _)| items);
+            if !crate::uia::screen_locked()
+                && !crate::hotkey::is_busy()
+                && crate::state::try_store().is_some_and(|s| s.settings().pc_boost_auto)
+                && should_sweep_bin(bin_items, swept)
+            {
+                let gone = crate::recyclebin::clear_older_than(BIN_DAYS);
+                swept = Some(Instant::now());
+                eprintln!("[pc-care] bin: cleared {gone} items older than {BIN_DAYS} days");
+                if gone > 0 {
+                    if let Some(app) = crate::state::app() {
+                        crate::buddy::say(
+                            app,
+                            "bin-autosweep",
+                            &format!(
+                                "I took {} thing{} out of the Recycle Bin — they had been in there over a month. They're gone for good, so a restore won't bring them back.",
+                                gone,
+                                if gone == 1 { "" } else { "s" }
+                            ),
+                            crate::buddy::Level::Chat,
+                        );
+                    }
+                }
+            }
             std::thread::sleep(Duration::from_secs(10 * 60));
         }
     });
@@ -349,6 +394,21 @@ mod tests {
         assert!(
             should_tidy(&[("C:".to_string(), 2.0, 0.0)], None),
             "under 5 GB is tight even when Windows won't say how big the drive is"
+        );
+    }
+
+    #[test]
+    fn the_recycle_bin_is_swept_once_a_day_and_only_when_it_has_something() {
+        assert!(should_sweep_bin(3, None), "three things in the bin, never swept");
+        assert!(!should_sweep_bin(0, None), "an empty bin needs nothing");
+        assert!(!should_sweep_bin(9, Some(Instant::now())), "not twice in one day");
+        assert!(
+            should_sweep_bin(1, Some(Instant::now() - Duration::from_secs(25 * 3600))),
+            "a day and an hour later, it's due again"
+        );
+        assert!(
+            !should_sweep_bin(40, Some(Instant::now() - Duration::from_secs(23 * 3600))),
+            "an hour short of a day is still too soon"
         );
     }
 

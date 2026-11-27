@@ -439,6 +439,17 @@ export function TalkToIzuki() {
         <div className="izk-divider" />
 
         <Row
+          label="Send what I say straight away"
+          hint="On: a spoken request goes the moment it is heard — hands-free, nothing to press. Off: your words land in the chat box first, so a name it misheard is a quick fix before anything is sent."
+          icon={<Send size={14} strokeWidth={2.3} />}
+        >
+          <Toggle
+            checked={settings.dictation_autosend}
+            onChange={(v) => patch({ dictation_autosend: v })}
+          />
+        </Row>
+
+        <Row
           label="Lower media while we talk"
           hint="Music and videos get quieter while you or Izuki speaks, then return to their previous volume."
           icon={<Volume1 size={14} strokeWidth={2.3} />}
