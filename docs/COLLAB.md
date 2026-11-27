@@ -368,6 +368,12 @@ otherwise leaves the version files and the release notes to Claude. Followed
 pairs moved to 1.0.226; the fourteen pending `docs/NEXT-RELEASE.md` lines became
 `docs/RELEASE-1.0.226.md` and the list was cleared. `node
 tools/check-versions.mjs --release --after 1.0.225` and `npm run
-test:versions` pass. PR #206 is merged once Verify is green, and
-`auto-release.yml` tags `v1.0.226` and starts the Windows and phone builds.
-Version files are Claude's again after this release.
+test:versions` pass. PR #206 merged as `89bd066` once Verify was green; `auto-release.yml`
+tagged `v1.0.226` and the release published at 18:26 UTC — the iPhone job
+was re-run once, because its Capacitor Swift package clone had failed on the
+runner (not in the code). Checked after publishing: `/releases/latest` and
+the live `latest.json` both say 1.0.226 with all three Windows keys,
+`tools/verify-updater.mjs` accepts both installers signed by key
+079F8F3DAA47A42C, and `Izuki-Setup.exe` is byte-identical to
+`Izuki_1.0.226_x64-setup.exe`. Version files are Claude's again after this
+release.
