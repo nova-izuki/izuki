@@ -357,3 +357,17 @@ Version files untouched — Claude still bumps and releases. Files owned here:
 `tools/check-versions.mjs`, `tools/check-versions-check.mjs`, `package.json`,
 `.github/workflows/verify.yml`, `docs/BUMP-CHECKLIST.md`, `docs/NEXT-RELEASE.md`,
 this section.
+
+## Release 1.0.226 (Freebuff, 2026-11-27, owner authorization)
+
+The owner authorized Freebuff to do this one bump and release itself; AGENTS.md
+otherwise leaves the version files and the release notes to Claude. Followed
+`docs/BUMP-CHECKLIST.md`: `package.json`, `src-tauri/tauri.conf.json`,
+`src-tauri/Cargo.toml`, `src-tauri/Cargo.lock`, `android/app/build.gradle`
+(`versionCode 226`) and both iOS `MARKETING_VERSION`/`CURRENT_PROJECT_VERSION`
+pairs moved to 1.0.226; the fourteen pending `docs/NEXT-RELEASE.md` lines became
+`docs/RELEASE-1.0.226.md` and the list was cleared. `node
+tools/check-versions.mjs --release --after 1.0.225` and `npm run
+test:versions` pass. PR #206 is merged once Verify is green, and
+`auto-release.yml` tags `v1.0.226` and starts the Windows and phone builds.
+Version files are Claude's again after this release.
