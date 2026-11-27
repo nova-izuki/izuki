@@ -4800,6 +4800,43 @@
   }
   // ---- end after a listening session ends ----
 
+  // ---- how long before a quiet ear tries again (tested by tools/phone-check/callquiet.test.cjs) ----
+  /**
+   * The wait before the call's ear opens another session. A quiet room used to
+   * get a new session every 250 ms, and every session starts (and stops) with
+   * Android's microphone sound: in a car that is a chime loop, not a listener.
+   * Each quiet session in a row waits twice as long, up to four seconds.
+   */
+  const againIn = (error, quiet) => {
+    const base = error === "busy" ? 500 : error === "echo" ? 800 : 400;
+    return Math.min(4000, base * Math.pow(2, Math.min(3, Math.max(0, Number(quiet) || 0))));
+  };
+  // ---- end how long before a quiet ear tries again ----
+
+  // ---- is this Izuki hearing itself? (tested by tools/phone-check/callquiet.test.cjs) ----
+  /**
+   * True when the ear heard Izuki's own last line coming back through the
+   * speaker (speakerphone, Drive mode at volume): three words or more, most
+   * of them in that line, in order. Asking itself a question of its own
+   * answer is what kept a call listening, chiming and talking to itself
+   * forever. A short reply of the person's ("yes", "Walmart") is never the
+   * echo, so a real answer is never thrown away.
+   */
+  function saidBack(heard, spoken) {
+    const words = (s) => String(s || "").toLowerCase().replace(/[^\p{L}\p{N}\s']/gu, " ").split(/\s+/).filter(Boolean);
+    const h = words(heard), line = words(spoken);
+    if (h.length < 3 || !line.length) return false;
+    let at = 0, hits = 0;
+    for (const w of h) {
+      const i = line.indexOf(w, at);
+      if (i < 0) continue;
+      hits++;
+      at = i + 1;
+    }
+    return hits / h.length >= 0.7;
+  }
+  // ---- end is this Izuki hearing itself? ----
+
   let useNativeEars = true, earSeq = 0, waitingForTap = false;
   /** One listening session with Android's recognizer; the call goes on after the answer. */
   async function listenNative() {
@@ -4819,7 +4856,17 @@
     if (my !== earSeq || !talking || busy || manualPlayback) return;
     const what = earsAfter(r.text ? "" : r.error, missed, canHear());
     if (what === "") return;
-    if (what === "words") { missed = 0; useNativeEars = true; liveHeard(r.text); return ask(r.text); }
+    if (what === "words") {
+      // Izuki's own voice through the speaker is not a question: back off
+      // (twice as long each time) instead of asking itself and chiming on.
+      if (saidBack(r.text, lastSpoken)) {
+        missed++;
+        note("call: its own words came back");
+        liveHeard("");
+        return void setTimeout(listen, againIn("echo", missed));
+      }
+      missed = 0; useNativeEars = true; liveHeard(r.text); return ask(r.text);
+    }
     if (what === "permission") return stopTalking("Allow the microphone for Izuki, then tap Call again.");
     if (what === "park") {
       missed = 0;
@@ -4830,7 +4877,9 @@
     }
     if (what === "again") {
       missed++;
-      return void setTimeout(listen, r.error === "busy" ? 400 : 250);
+      // A quiet room waits longer each time: the microphone sound every quarter
+      // of a second, in a car with nothing said, was the whole complaint.
+      return void setTimeout(listen, againIn(r.error, missed));
     }
     // This phone's recognizer isn't doing it right now: record this turn and
     // let the AI hear it. `useNativeEars` is put back when a call starts, so a

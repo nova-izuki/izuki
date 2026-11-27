@@ -396,3 +396,21 @@ claims no stop). `tools/phone-check/sendstop.test.cjs` (4 cases, wired into
 `cap sync`, so a new mobile build is needed to feel it. Files owned here:
 `docs/app/index.html`, `tools/phone-check/sendstop.test.cjs`, `package.json`, one
 line in `docs/NEXT-RELEASE.md`, this section.
+
+## Drive mode's microphone chime loop (Freebuff, 2026-11-27, owner bug report)
+
+The owner reported Drive mode playing the microphone's connect/disconnect sound
+over and over. Two loops fed it. `IzukiVoice.again()` restarted the recognizer
+200 ms after a quiet session ended, up to eight times per session, and Android
+plays its tone on every start; and a session that heard Izuki's own line through
+the speaker was asked back as a question, which reset the quiet count so a call
+never parked. `VoiceText.listenAgain` now caps at three tries, `again()` waits
+900/1500 ms, the page's `againIn()` doubles the wait after each quiet try (up to
+four seconds), and `saidBack()` drops a transcript that is mostly Izuki's own
+last line (three words or more, so "yes" and "play music" still count).
+`tools/phone-check/callquiet.test.cjs` (3 cases, in `test:phone`) pins both page
+rules; the Java side compiles and its JUnit case runs in `mobile.yml`. Nothing
+here has been heard on a real phone yet. Files owned here: `docs/app/index.html`,
+`VoiceText.java`, `IzukiVoice.java`, `VoiceTextTest.java`,
+`tools/phone-check/callquiet.test.cjs`, `package.json`, one line in
+`docs/NEXT-RELEASE.md`, this section.

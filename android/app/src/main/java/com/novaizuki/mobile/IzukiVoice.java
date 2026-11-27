@@ -577,8 +577,9 @@ final class IzukiVoice {
       try { r.cancel(); } catch (Exception ignored) { }
       try { r.destroy(); } catch (Exception ignored) { }
     }
-    // A busy service needs a moment to let go of the microphone.
-    ui.postDelayed(earsAgain, "busy".equals(word) ? 600 : 200);
+    // A busy service needs a moment to let go of the microphone, and a quiet
+    // room must not get a new microphone sound every fifth of a second.
+    ui.postDelayed(earsAgain, "busy".equals(word) ? 1500 : 900);
     return true;
   }
 
