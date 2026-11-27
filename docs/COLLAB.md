@@ -503,3 +503,30 @@ and that a search box still takes its Enter; all 11 cases pass, with
 checked: still nothing has run in Chrome against a real messaging site, so which
 of its boxes match is unproven — the rule is a wording and structure guess, and a
 box it misses is a box whose Enter is allowed.
+
+## Injected code cannot see module scope (Freebuff, 2026-11-27, owner report)
+
+The owner found the page actions dead in the real browser: with the switch on,
+the panel read a page and got no controls at all. `chrome.scripting.executeScript({
+func })` does not send a function and its neighbours — it sends `func.toString()`
+and runs that in the page, where nothing from the module exists. The Enter guard
+had left `sendsFromHere` at module scope and `pageControls` called it by name, so
+the page ran a call to a name it did not have, threw `ReferenceError`, and the
+panel received `null`. Every check passed, because they import the module, where
+the name resolves: the suite was testing the same code the way the panel calls it,
+not the way Chrome runs it.
+
+`sendsFromHere` is now a `const` arrow inside `pageControls`, so it is part of the
+serialised text; the comment above it says why, and `pageControls` keeps its literal
+120/60 limits for the same reason (`MAX_ITEMS` and `actionTags` are module scope).
+
+New case, “every injected function runs from its own text, with no module scope”:
+on the stub DOM it runs `new Function('return (' + fn.toString() + ')')()` for
+`pageControls`, `clickControl` and `typeControl` and never the imported function, so
+any module reference throws the same `ReferenceError` Chrome throws; it also checks
+the Enter mark, a click and a refused Enter from that bare copy. Proven both ways:
+rebuilding the shipped shape on a copy makes that one case fail with
+`ReferenceError: sendsFromHere is not defined` while the other 11 pass; the fixed
+file passes 12 of 12 in `npm run test:panel`, with `node --check` and
+`git diff --check` clean. Not proven: that the injected code behaves the same in a
+real page — only that it carries everything it calls.

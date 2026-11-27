@@ -194,4 +194,37 @@ test('Enter in a message box is a send, though the box is only called Message', 
   }
 });
 
-console.log('\npanel-actions: 11 checks passed');
+// ---- and each injected function runs on its own ----------------------------
+// chrome.scripting.executeScript({ func }) sends func.toString() and runs it in
+// the page with no module scope at all, so a helper left outside the function
+// (a call to sendsFromHere, say) throws there and the panel gets no controls,
+// while every check that imports the module still passes. Running the source
+// text here — never the imported function — makes that failure visible.
+const fromSource = (fn) => new Function('return (' + fn.toString() + ')')();
+
+test('every injected function runs from its own text, with no module scope', () => {
+  const saved = globalThis.document.querySelectorAll;
+  const message = new FakeEl('TEXTAREA', { attrs: { placeholder: 'Write a message' } });
+  const link = new FakeEl('A', { text: 'Grades' });
+  globalThis.document.querySelectorAll = () => [link, message];
+  try {
+    const snap = fromSource(pageControls)();
+    assert.equal(snap.items.length, 2);
+    assert.equal(snap.items[1].label, 'Write a message');
+    assert.equal(snap.items[1].sends, true, 'the Enter mark must be set from the injected text alone');
+    for (const item of snap.items) byNumber.set(String(item.n), [link, message][item.n - 1]);
+
+    assert.equal(fromSource(clickControl)(1).ok, true);
+    assert.equal(link.clicked, 1);
+
+    const typed = fromSource(typeControl)(2, 'on my way', true);
+    assert.equal(typed.ok, true);
+    assert.equal(typed.sent, false);
+    assert.equal(message.value, 'on my way');
+    assert.equal(message.events.includes('keydown'), false);
+  } finally {
+    globalThis.document.querySelectorAll = saved;
+  }
+});
+
+console.log('\npanel-actions: 12 checks passed');

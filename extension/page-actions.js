@@ -37,40 +37,6 @@ export function committal(label, enterSends) {
   return riskyControl(label) || !!enterSends;
 }
 
-/**
- * Does Enter in this field send, post or commit what is typed? The field's own
- * name (a message box, a reply, a comment), the form it submits, or the Send /
- * Post button standing next to it. A search box is not one of these: Enter there
- * only searches.
- *
- * Copied into the injected functions below, which cannot see module scope.
- */
-function sendsFromHere(el) {
-  const own = String(el.getAttribute("aria-label") || el.getAttribute("placeholder") || el.name || el.getAttribute("title") || "").replace(/\s+/g, " ");
-  if (/\b(message|reply|comment|post|chat|email|e-mail|mail|feedback|review|tweet|dm)\b/i.test(own)) return true;
-  const form = el.form || (typeof el.closest === "function" ? el.closest("form") : null);
-  if (form) {
-    const action = typeof form.getAttribute === "function" ? String(form.getAttribute("action") || "") : "";
-    if (/\b(send|post|message|comment|reply|compose|checkout|order|purchase|delete|submit)\b/i.test(action)) return true;
-    const go = typeof form.querySelector === "function"
-      ? form.querySelector('button[type="submit"], input[type="submit"], button:not([type="button"])')
-      : null;
-    const goLabel = go ? String(go.innerText || go.value || go.getAttribute("aria-label") || "") : "";
-    if (/\b(send|post|publish|submit|buy|pay|delete|comment|reply|confirm|order)\b/i.test(goLabel)) return true;
-  }
-  // A composer with no form of its own (most messaging apps): the Send button
-  // sits in the same bar as the box.
-  let node = el;
-  for (let up = 0; up < 4 && node && node.parentElement; up += 1) {
-    node = node.parentElement;
-    if (typeof node.querySelectorAll !== "function") continue;
-    for (const button of node.querySelectorAll('button, [role="button"], input[type="submit"]')) {
-      const label = String(button.innerText || button.value || button.getAttribute("aria-label") || "");
-      if (/\b(send|post|publish|submit|buy|pay|delete|comment|reply|confirm|order)\b/i.test(label)) return true;
-    }
-  }
-  return false;
-}
 
 /**
  * The actions an answer asks for, in the order it asked for them.
@@ -158,6 +124,36 @@ export function pageControls() {
   const all = document.querySelectorAll(
     'a[href], button, [role="button"], [role="link"], [role="tab"], [role="menuitem"], [role="checkbox"], [role="radio"], input, textarea, select, summary'
   );
+  // Does Enter here send what is typed? Copied inline, not called from module
+  // scope: executeScript serialises this function's own text, and a name outside
+  // it would throw in the page and leave the panel with no controls at all.
+  const sendsFromHere = (el) => {
+    const own = String(el.getAttribute("aria-label") || el.getAttribute("placeholder") || el.name || el.getAttribute("title") || "").replace(/\s+/g, " ");
+    if (/\b(message|reply|comment|post|chat|email|e-mail|mail|feedback|review|tweet|dm)\b/i.test(own)) return true;
+    const form = el.form || (typeof el.closest === "function" ? el.closest("form") : null);
+    if (form) {
+      const action = typeof form.getAttribute === "function" ? String(form.getAttribute("action") || "") : "";
+      if (/\b(send|post|message|comment|reply|compose|checkout|order|purchase|delete|submit)\b/i.test(action)) return true;
+      const go = typeof form.querySelector === "function"
+        ? form.querySelector('button[type="submit"], input[type="submit"], button:not([type="button"])')
+        : null;
+      const goLabel = go ? String(go.innerText || go.value || go.getAttribute("aria-label") || "") : "";
+      if (/\b(send|post|publish|submit|buy|pay|delete|comment|reply|confirm|order)\b/i.test(goLabel)) return true;
+    }
+    // A composer with no form of its own (most messaging apps): the Send button
+    // sits in the same bar as the box.
+    let node = el;
+    for (let up = 0; up < 4 && node && node.parentElement; up += 1) {
+      node = node.parentElement;
+      if (typeof node.querySelectorAll !== "function") continue;
+      for (const button of node.querySelectorAll('button, [role="button"], input[type="submit"]')) {
+        const label = String(button.innerText || button.value || button.getAttribute("aria-label") || "");
+        if (/\b(send|post|publish|submit|buy|pay|delete|comment|reply|confirm|order)\b/i.test(label)) return true;
+      }
+    }
+    return false;
+  };
+
   for (const el of all) {
     if (items.length >= 120) break;
     const tag = String(el.tagName || "").toUpperCase();
