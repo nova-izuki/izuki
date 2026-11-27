@@ -339,3 +339,21 @@ per-user task "Izuki two-machine sync" at sign-in and every 10 minutes;
 `-Uninstall` removes it. Verified against a throwaway bare remote for all five
 states. Files owned here: `tools/two-machine/*`, one line in
 `docs/NEXT-RELEASE.md`, this section.
+
+## Release gate: build numbers must move (Freebuff, 2026-11-27, owner request)
+
+Rehearsed the release path locally against `milestone-196` (`1dea743`, 1.0.225)
+and found one silent gap: bumping the version while leaving `versionCode` and
+`CURRENT_PROJECT_VERSION` at 225 passed `tools/check-versions.mjs` and would tag
+a release, but a phone refuses a package whose build number it already has.
+`tools/check-versions.mjs` is now a pure exported rule that also requires the
+build numbers to be `minor*1000 + patch` for the version, with
+`tools/check-versions-check.mjs` (13 cases, `npm run test:versions`) pinning it
+and `verify.yml` running it next to the agreement check. `docs/BUMP-CHECKLIST.md`
+names every file a bump touches plus `docs/RELEASE-<version>.md`. The rest of
+the rehearsal passed: the real v1.0.225 artifacts verify with the embedded key,
+and `latest.json` carries all three Windows keys `verify-updater.mjs` requires.
+Version files untouched — Claude still bumps and releases. Files owned here:
+`tools/check-versions.mjs`, `tools/check-versions-check.mjs`, `package.json`,
+`.github/workflows/verify.yml`, `docs/BUMP-CHECKLIST.md`, `docs/NEXT-RELEASE.md`,
+this section.
