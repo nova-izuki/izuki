@@ -294,7 +294,18 @@ final class IzukiVoice {
     IzukiWakeService.hold(IzukiWakeService.HOLD_SPEECH, false);
     IzukiControlPlugin.speechEvent(id, how);
     if (forTurn.isEmpty() || !forTurn.equals(turn)) return;
-    if (id.startsWith("greet:")) { if ("greet".equals(phase)) listen(); return; }
+    if (id.startsWith("greet:")) {
+      greetEndAt = System.currentTimeMillis();
+      // The ear has been open since the greeting started: do not cut it, just
+      // stop calling this the greeting. A turn that greeted without an ear
+      // alongside (an old tap-to-talk path) still opens one now.
+      if ("greet".equals(phase)) {
+        phase = "listen";
+        if (earsOn) IzukiAccessibilityService.orbFor("voice", "listen", followUp ? "Go on…" : "Listening…", 15_000);
+        else listen();
+      }
+      return;
+    }
     if (pendingDone != 0) {
       boolean follow = pendingDone == 2;
       pendingDone = 0;
@@ -498,7 +509,13 @@ final class IzukiVoice {
     ears = r;
     r.setRecognitionListener(new RecognitionListener() {
       @Override public void onReadyForSpeech(Bundle b) { }
-      @Override public void onBeginningOfSpeech() { if (ears == r) earsSpoke = true; }
+      @Override public void onBeginningOfSpeech() {
+        if (ears != r) return;
+        // While the greeting is in the room this may be its own voice: it is not
+        // the person talking, and the session must stay patient.
+        if (greetWindow()) { if (greetVoiceAt == 0) greetVoiceAt = System.currentTimeMillis(); return; }
+        earsSpoke = true;
+      }
       // The person's voice level (about -2…10 dB from Android) moves the orb and the edges.
       @Override public void onRmsChanged(float db) { IzukiAccessibilityService.voiceLevel(Math.max(0f, Math.min(1f, (db + 2f) / 12f))); }
       @Override public void onBufferReceived(byte[] buffer) { }
@@ -508,8 +525,11 @@ final class IzukiVoice {
         if (ears != r) return;
         String t = best(b);
         if (t.isEmpty()) return;
+        if (greetingEcho(t)) return;
+        if (greetHeardAt == 0) greetHeardAt = System.currentTimeMillis();
+        cutGreeting();
         earsLast = t;
-        earsSpoke = true;
+        if (!greetWindow()) earsSpoke = true;
         Consumer<String> p = earsPartial;
         if (p != null) p.accept(t);
       }
@@ -517,6 +537,13 @@ final class IzukiVoice {
         if (ears != r) return;
         String t = best(b);
         if (t.isEmpty()) t = earsLast;
+        // Only the greeting came back through the microphone: not the person,
+        // and while it is still in the room the session goes on.
+        if (!t.isEmpty() && greetingEcho(t)) {
+          if (greetWindow() && again(7)) return;
+          finishEars("", "silence");
+          return;
+        }
         if (t.isEmpty() && again(7)) return;
         finishEars(t, t.isEmpty() ? (earsSpoke ? "unclear" : "silence") : "");
       }
@@ -621,28 +648,21 @@ final class IzukiVoice {
   private static boolean followUp = false;
   /** turnDone arrived while the reply was still being spoken: 1 = finish, 2 = listen again. */
   private static int pendingDone = 0;
+  /**
+   * The greeting handed to the voice, and its timeline: when it was said, when
+   * it stopped, whether the person cut it short, when the microphone first
+   * heard a voice and the first real words, and how often its own echo came
+   * back. The ear runs alongside it, so these are the phone's part of a turn.
+   */
+  private static String greetSay = "";
+  private static long greetAt = 0, greetEndAt = 0, greetCutAt = 0, greetVoiceAt = 0, greetHeardAt = 0;
+  private static int greetEchoes = 0;
   private static PowerManager.WakeLock screenHold;
 
   private static final Runnable pageTimeout = () -> {
     if (!turn.isEmpty() && "think".equals(phase)) finish("Izuki didn't answer in time. Open Izuki and try again.");
   };
   private static final Runnable afterTalk = () -> { if (!turn.isEmpty() && "talk".equals(phase)) finish(""); };
-  /**
-   * "Yes?" is said by the voice engine, which can take a few seconds to start
-   * on a cold phone. This used to start listening at 2.5 s regardless, which
-   * set the phase to "listen" and made speakNow() drop the greeting as stale:
-   * "Hey Nova" then answered with silence and a "Listening…" orb.
-   */
-  private static final Runnable greetGuard = () -> greetStillWaiting(0);
-  private static void greetStillWaiting(int tries) {
-    if (!"greet".equals(phase)) return;
-    // It is being said (or handed to the engine): it listens by itself when it ends.
-    if (speakingId.startsWith("greet:")) return;
-    // The engine hasn't started yet: give it up to six more seconds, then stop
-    // waiting, so a dead engine can't leave the turn deaf.
-    if (tries >= 4) { listen(); return; }
-    ui.postDelayed(() -> greetStillWaiting(tries + 1), 1500);
-  }
   /** After a tap stopped the page's work: the orb rests (kept) or goes, unless the page is busy again. */
   private static final Runnable pageRestLater = () -> {
     if (active() || IzukiAccessibilityService.pageWorking()) return;
@@ -722,33 +742,50 @@ final class IzukiVoice {
     if ("tile".equals(src)) IzukiAccessibilityService.perform("close_shade");
     if (!command.isEmpty()) { deliver(command); return; }
     if ("wake".equals(src)) {
-      // "Hey Nova" on its own: answer like a person turning round, then listen.
-      phase = "greet";
+      // "Hey Nova" on its own: answer like a person turning round, and listen
+      // while saying it. Someone who answers at once used to be talked over
+      // and then asked to repeat; now their first words are heard.
       String hi = VoiceText.greeting(System.currentTimeMillis());
+      greetSay = hi;
+      greetAt = System.currentTimeMillis();
+      greetEndAt = 0; greetCutAt = 0; greetVoiceAt = 0; greetHeardAt = 0; greetEchoes = 0;
+      phase = "greet";
       IzukiAccessibilityService.orbFor("voice", "listen", hi, 15_000);
-      ui.postDelayed(greetGuard, 2500);
       say(app, hi, "greet:" + turn, turn, 1.05f);
+      listenAlong();
       return;
     }
     listen();
   }
 
-  private static void listen() {
+  private static void listen() { ear(false); }
+
+  /**
+   * The greeting plays while the ear is already open, so someone who answers
+   * "Hey Nova" straight away is heard instead of being talked over. The
+   * greeting's own words coming back through the microphone are ignored (see
+   * greetWindow and greetingEcho), and it stops the moment real words arrive.
+   */
+  private static void listenAlong() { ear(true); }
+
+  /** One listening session; `along` keeps a greeting playing underneath it. */
+  private static void ear(boolean along) {
     if (turn.isEmpty()) return;
-    ui.removeCallbacks(greetGuard);
-    phase = "listen";
-    IzukiAccessibilityService.edgeGlow(edgeGlow, "listen");
-    // Never listen while "Yes?" is still playing: the recognizer would hear it.
-    if (speakingId.startsWith("greet:") && tts != null) {
-      try { tts.stop(); } catch (Exception ignored) { }
-      ended(speakingId + "#0", "stopped");
-    }
     String mine = turn;
-    IzukiAccessibilityService.orbFor("voice", "listen", followUp ? "Go on…" : "Listening…", 15_000);
+    if (!along) {
+      phase = "listen";
+      IzukiAccessibilityService.edgeGlow(edgeGlow, "listen");
+      // Never listen while "Yes?" is still playing: the recognizer would hear it.
+      if (speakingId.startsWith("greet:") && tts != null) {
+        try { tts.stop(); } catch (Exception ignored) { }
+        ended(speakingId + "#0", "stopped");
+      }
+      IzukiAccessibilityService.orbFor("voice", "listen", followUp ? "Go on…" : "Listening…", 15_000);
+    }
     hear(10_000,
-        (partial) -> { if (mine.equals(turn) && "listen".equals(phase)) IzukiAccessibilityService.orbFor("voice", "listen", VoiceText.caption(partial, 120), 15_000); },
+        (partial) -> { if (mine.equals(turn) && earListening(along)) IzukiAccessibilityService.orbFor("voice", "listen", VoiceText.caption(partial, 120), 15_000); },
         (text, error) -> {
-          if (!mine.equals(turn) || !"listen".equals(phase)) return;
+          if (!mine.equals(turn) || !earListening(along)) return;
           if (!text.isEmpty()) { deliver(text); return; }
           if ("cancelled".equals(error)) return;
           // After an answer, silence just means "that's all".
@@ -756,11 +793,58 @@ final class IzukiVoice {
         });
   }
 
+  /** Is this turn's ear the one being listened to? A greeting may still play underneath it. */
+  private static boolean earListening(boolean along) {
+    return "listen".equals(phase) || (along && "greet".equals(phase));
+  }
+
+  /** Is the greeting, or the echo of it, still in the room? */
+  private static boolean greetWindow() {
+    if (greetSay.isEmpty()) return false;
+    if (speakingId.startsWith("greet:")) return true;
+    return greetEndAt > 0 && System.currentTimeMillis() - greetEndAt < 700;
+  }
+
+  /** Real words arrived while the greeting still played: it gets out of their way. */
+  private static void cutGreeting() {
+    // Not yet ended: still playing, or still queued behind a cold voice engine.
+    if (greetCutAt != 0 || greetSay.isEmpty() || greetEndAt != 0) return;
+    greetCutAt = System.currentTimeMillis();
+    hush();
+    // A greeting the engine has not started yet is dropped as stale, not said over them.
+    if ("greet".equals(phase)) phase = "listen";
+  }
+
+  /** Is this the greeting's own words coming back through the microphone? */
+  private static boolean greetingEcho(String heard) {
+    if (!VoiceText.greetingEcho(heard, greetSay)) return false;
+    greetEchoes++;
+    return true;
+  }
+
+  /**
+   * The phone's part of a wake turn's timeline, in ms from the turn's start:
+   * its age, the greeting, the first voice in the microphone, the first real
+   * words, when the greeting was cut, and how many echoes were ignored.
+   */
+  private static long[] prelude() {
+    if (greetAt == 0 || turn.isEmpty()) return null;
+    long base = turnStartedAt;
+    return new long[] { Math.max(0, System.currentTimeMillis() - base), Math.max(0, greetAt - base),
+        at(greetVoiceAt, base), at(greetHeardAt, base), at(greetCutAt, base), greetEchoes };
+  }
+
+  private static long at(long when, long base) { return when <= 0 ? 0 : Math.max(0, when - base); }
+
   private static void deliver(String text) {
     phase = "think";
     IzukiAccessibilityService.edgeGlow(edgeGlow, "think");
     IzukiAccessibilityService.orbFor("voice", "think", "“" + VoiceText.caption(text, 90) + "”", 30_000);
-    if (!IzukiControlPlugin.sendTurn(turn, text, locked, source, followUp)) {
+    // Only the waking turn carries the greeting: a follow-up in the same turn
+    // must not be dated back to when "Hey Nova" was said.
+    long[] pre = "wake".equals(source) && !followUp ? prelude() : null;
+    if (pre != null) greetAt = 0;
+    if (!IzukiControlPlugin.sendTurn(turn, text, locked, source, followUp, pre)) {
       String src = source;
       end();
       hideNow();
@@ -835,6 +919,7 @@ final class IzukiVoice {
     // can start listening again during the teardown.
     String old = turn;
     turn = ""; phase = ""; source = ""; followUp = false; pendingDone = 0;
+    greetSay = ""; greetAt = 0; greetEndAt = 0; greetCutAt = 0; greetVoiceAt = 0; greetHeardAt = 0; greetEchoes = 0;
     speechGen++;
     finishEars("", "cancelled");
     if (!speakingTurn.isEmpty() && speakingTurn.equals(old)) {
@@ -844,7 +929,6 @@ final class IzukiVoice {
     }
     ui.removeCallbacks(pageTimeout);
     ui.removeCallbacks(afterTalk);
-    ui.removeCallbacks(greetGuard);
     IzukiWakeService.hold(IzukiWakeService.HOLD_TURN, false);
     holdScreen(false);
     IzukiAccessibilityService.edgeGlow(false, "");

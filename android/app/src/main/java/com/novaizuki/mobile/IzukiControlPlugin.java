@@ -127,6 +127,14 @@ public class IzukiControlPlugin extends Plugin {
    * listening for turns (the caller opens Izuki with the words instead).
    */
   static boolean sendTurn(String id, String text, boolean locked, String source, boolean followUp) {
+    return sendTurn(id, text, locked, source, followUp, null);
+  }
+
+  /**
+   * `prelude` is the phone's own part of a wake turn, in ms from its start:
+   * {age, greeting, first voice, first words, greeting cut, echoes ignored}.
+   */
+  static boolean sendTurn(String id, String text, boolean locked, String source, boolean followUp, long[] prelude) {
     IzukiControlPlugin p = instance;
     if (p == null || !p.hasListeners("turn")) return false;
     JSObject data = new JSObject();
@@ -136,6 +144,16 @@ public class IzukiControlPlugin extends Plugin {
     data.put("source", source);
     data.put("wake", "wake".equals(source) && !followUp);
     data.put("followUp", followUp);
+    if (prelude != null && prelude.length >= 6) {
+      JSObject phone = new JSObject();
+      phone.put("age", prelude[0]);
+      phone.put("greet", prelude[1]);
+      phone.put("voice", prelude[2]);
+      phone.put("heard", prelude[3]);
+      phone.put("cut", prelude[4]);
+      phone.put("echo", prelude[5]);
+      data.put("prelude", phone);
+    }
     p.notifyListeners("turn", data, false);
     return true;
   }

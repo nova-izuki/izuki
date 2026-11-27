@@ -945,6 +945,7 @@
     if (!turn || !turn.began) return name + ": none yet";
     const secs = (ms) => (Math.max(0, ms - turn.began) / 1000).toFixed(1) + " s";
     const parts = [
+      ["first voice", turn.voiced],
       ["first words", turn.heard],
       ["transcript", turn.words],
       ["first token", turn.thinking],
@@ -953,8 +954,13 @@
     ];
     const seen = parts.filter(([, ms]) => ms > 0).map(([part, ms]) => part + " " + secs(ms));
     const heard = turn.done > 0 && turn.sound > 0 ? " · " + ((turn.done - turn.sound) / 1000).toFixed(1) + " s of sound" : "";
+    // The greeting's own story: it was said, and it got out of the way of a
+    // person who answered at once — or its echo was heard back and ignored.
+    const notes = [];
+    if (turn.cut > 0) notes.push(" · greeting cut at " + secs(turn.cut));
+    if (turn.echo > 0) notes.push(turn.echo === 1 ? " · 1 greeting echo ignored" : " · " + turn.echo + " greeting echoes ignored");
     return name + " (" + (turn.source || "?") + "): " + (seen.length ? seen.join(" · ") : "no stages yet")
-      + heard + " · " + (turn.voice || "no voice");
+      + heard + notes.join("") + " · " + (turn.voice || "no voice");
   }
   /** The turn being timed now, the last one that finished, and what began the next. */
   let turnNow = null, turnLast = null, turnSource = "tap";
@@ -962,9 +968,29 @@
   /** A tap, a wake word, the call or typing: a new timeline starts here. */
   function turnStart(source) {
     if (turnOpen()) turnClose();
-    turnNow = { source: source || turnSource || "tap", began: Date.now(), heard: 0, words: 0, thinking: 0, sound: 0, done: 0, voice: "", closed: false };
+    turnNow = { source: source || turnSource || "tap", began: Date.now(), greet: 0, voiced: 0, heard: 0, words: 0, thinking: 0, sound: 0, done: 0, cut: 0, echo: 0, voice: "", closed: false };
     return turnNow;
   }
+  /**
+   * The phone's own part of a wake turn: it began with "Hey Nova", not when the
+   * page was told about it, so the clock is backdated and the stages the phone
+   * measured (its greeting, the first voice in the microphone, the first real
+   * words, when the greeting was cut, how many echoes were ignored) are stamped
+   * from its offsets, in milliseconds from the turn's start.
+   */
+  function turnAdopt(turn, prelude, now) {
+    if (!turn || !prelude) return turn;
+    const base = (now || Date.now()) - Math.max(0, Number(prelude.age) || 0);
+    const at = (ms) => (Number(ms) > 0 ? base + Number(ms) : 0);
+    if (Number(prelude.age) > 0) turn.began = base;
+    turn.greet = at(prelude.greet);
+    turn.voiced = at(prelude.voice);
+    if (at(prelude.heard)) turn.heard = at(prelude.heard);
+    turn.cut = at(prelude.cut);
+    turn.echo = Math.max(0, Number(prelude.echo) || 0);
+    return turn;
+  }
+
   /** The first time each stage happens is the one that counts. */
   function turnMark(stage) {
     if (turnOpen() && !turnNow[stage]) turnNow[stage] = Date.now();
@@ -7118,6 +7144,8 @@
       }
       if (stopped()) return;
       turnSource = "wake";
+      // The phone heard the greeting's turn before this page saw it: keep its clock.
+      turnAdopt(turnStart(turnSource), d.prelude);
       await ask(said);
     } catch (e) {
       note("voice turn failed: " + (e?.message || e));

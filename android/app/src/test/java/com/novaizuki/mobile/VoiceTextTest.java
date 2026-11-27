@@ -113,4 +113,26 @@ public class VoiceTextTest {
     assertFalse(VoiceText.listenAgain("permission", false, 8_000, 0));
     assertFalse(VoiceText.listenAgain("network", false, 8_000, 0));
   }
+
+  @Test public void theGreetingComingBackIsNotThePerson() {
+    assertTrue(VoiceText.greetingEcho("Yes?", "Yes?"));
+    assertTrue(VoiceText.greetingEcho("yes", "Yes?"));
+    assertTrue(VoiceText.greetingEcho("Mm", "Mm-hm?"));
+    assertTrue(VoiceText.greetingEcho("I'm", "I'm here."), "a half-heard word still fits");
+    assertTrue(VoiceText.greetingEcho("here", "I'm here."), "a middle word fits");
+    assertTrue(VoiceText.greetingEcho("  YES!  ", "Yes?"), "punctuation and case do not matter");
+    assertFalse(VoiceText.greetingEcho("open maps", "Yes?"), "a real request is not the greeting");
+    assertFalse(VoiceText.greetingEcho("yes, open maps", "Yes?"), "a longer sentence is the person");
+    assertFalse(VoiceText.greetingEcho("what's the battery", "I'm here."));
+    assertFalse(VoiceText.greetingEcho("", "Yes?"));
+    assertFalse(VoiceText.greetingEcho(null, "Yes?"));
+    assertFalse(VoiceText.greetingEcho("Yes?", ""), "no greeting was said, nothing to filter");
+    assertFalse(VoiceText.greetingEcho("hi", "No."));
+  }
+
+  @Test public void everyGreetingIsCaughtAsItsOwnEcho() {
+    for (String hi : new String[] { "Yes?", "Mm-hm?", "I'm here." }) {
+      assertTrue("its own words: " + hi, VoiceText.greetingEcho(hi, hi));
+    }
+  }
 }

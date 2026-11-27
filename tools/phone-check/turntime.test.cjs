@@ -13,15 +13,15 @@ assert.ok(from > 0 && to > from, "turnLine() is marked in index.html");
 const ctx = {};
 vm.runInNewContext(html.slice(from, to)
   + "\nthis.turnLine = turnLine;"
-  + "\nthis.api = { turnStart, turnMark, turnVoice, turnClose, open: () => turnOpen(), now: () => turnNow, last: () => turnLast };", ctx);
+  + "\nthis.api = { turnStart, turnMark, turnVoice, turnClose, turnAdopt, open: () => turnOpen(), now: () => turnNow, last: () => turnLast };", ctx);
 const { turnLine } = ctx;
-const { turnStart, turnMark, turnVoice, turnClose, open, now, last } = ctx.api;
+const { turnStart, turnMark, turnVoice, turnClose, turnAdopt, open, now, last } = ctx.api;
 
 let passed = 0;
 const test = (name, fn) => { fn(); passed++; console.log("  \u2713 " + name); };
 
 const turn = (extra) => Object.assign(
-  { source: "tap", began: 1000, heard: 0, words: 0, thinking: 0, sound: 0, done: 0, voice: "" }, extra);
+  { source: "tap", began: 1000, greet: 0, voiced: 0, heard: 0, words: 0, thinking: 0, sound: 0, done: 0, cut: 0, echo: 0, voice: "" }, extra);
 
 test("no turn yet says so, rather than showing zeros", () => {
   assert.equal(turnLine(null), "Last turn: none yet");
@@ -91,6 +91,35 @@ test("the next turn replaces the open one; the finished one is what Diagnostics 
   assert.equal(last(), finished, "the finished turn stays for the report");
   assert.equal(now().source, "typed");
   turnClose();
+});
+
+test("a wake turn shows the phone's own stages, the greeting it cut and the echo it ignored", () => {
+  assert.equal(
+    turnLine(turn({ source: "wake", greet: 1010, voiced: 1700, heard: 1900, words: 3400, thinking: 4100, sound: 5600, done: 10400, cut: 2400, echo: 2, voice: "Android's own voice" })),
+    "Last turn (wake): first voice 0.7 s · first words 0.9 s · transcript 2.4 s · first token 3.1 s · first sound 4.6 s · last sound 9.4 s · 4.8 s of sound · greeting cut at 1.4 s · 2 greeting echoes ignored · Android's own voice");
+  assert.equal(turnLine(turn({ cut: 2400, echo: 1 })).includes("greeting cut at 1.4 s · 1 greeting echo ignored"), true);
+  assert.equal(turnLine(turn({})).includes("greeting"), false, "a turn with no greeting says nothing about one");
+});
+
+test("the phone's clock backdates the turn, and the page cannot overwrite what it heard", () => {
+  turnStart("wake");
+  const t = turnAdopt(now(), { age: 4000, greet: 10, voice: 700, heard: 900, cut: 1400, echo: 1 }, Date.now());
+  assert.equal(t.began <= Date.now() - 3900, true, "began when the wake was heard, not when the page was told");
+  assert.equal(t.voiced - t.began, 700);
+  assert.equal(t.cut - t.began, 1400);
+  assert.equal(t.echo, 1);
+  const heard = t.heard;
+  turnMark("heard");
+  assert.equal(now().heard, heard, "the partial the page sees later is not the first words");
+  assert.match(turnLine(t, "Last turn"),
+    /^Last turn \(wake\): first voice 0\.7 s · first words 0\.9 s · greeting cut at 1\.4 s · 1 greeting echo ignored · no voice$/);
+  turnClose();
+});
+
+test("a turn with no phone prelude is left exactly as it was", () => {
+  const t = turn({ heard: 1400 });
+  assert.equal(turnAdopt(t, null, Date.now()), t);
+  assert.equal(t.began, 1000, "a tap turn keeps its own start");
 });
 
 console.log(`turntime: ${passed} tests passed`);

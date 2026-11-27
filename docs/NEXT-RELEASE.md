@@ -12,3 +12,4 @@ into the next `docs/RELEASE-x.y.z.md` when it releases, then clears this list.
 - "Hey Nova" no longer answers with silence and a "Listening…" orb when the phone's voice takes a few seconds to start: it waits for the "Yes?" it is about to say. [Freebuff]
 - Diagnostics has a Voice line and the last ten voice events, so a wrong voice or an ear that heard nothing can be read off the phone. [Freebuff]
 - Every turn now leaves a timeline in Diagnostics — the tap or wake word, the first words heard, the transcript, the first word of the answer, the first and last sound, and which voice spoke, each counted in seconds from the start — so “it’s slow” reads as numbers. [Freebuff]
+- A bare “Hey Nova” now opens the ear while it says “Yes?”, so answering at once is heard instead of talked over and then asked to repeat: its own greeting coming back through the microphone is recognised and ignored, and the greeting stops the moment real words arrive. [Freebuff]

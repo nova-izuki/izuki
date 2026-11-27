@@ -148,6 +148,34 @@ final class VoiceText {
     return "silence".equals(errorWord) || "busy".equals(errorWord) || "client".equals(errorWord) || "server".equals(errorWord);
   }
 
+  /**
+   * Is this what the ear heard actually the greeting coming back through the
+   * microphone? True when its words are a stretch of the greeting, the last one
+   * allowed to be half-heard ("go ahe" for "go ahead") — so "Yes?" answering
+   * the greeting "Yes?" is not taken for the person's command. A longer
+   * sentence that merely contains the greeting is the person ("yes, open maps").
+   */
+  static boolean greetingEcho(String heard, String greeting) {
+    String[] have = words(heard), said = words(greeting);
+    if (have.length == 0 || said.length == 0 || have.length > said.length) return false;
+    for (int start = 0; start + have.length <= said.length; start++) {
+      boolean fits = true;
+      for (int i = 0; i < have.length && fits; i++) {
+        boolean last = i == have.length - 1;
+        fits = last ? said[start + i].startsWith(have[i]) : said[start + i].equals(have[i]);
+      }
+      if (fits) return true;
+    }
+    return false;
+  }
+
+  /** Spoken words, lower case and letters only: "I'm here." → ["i", "m", "here"]. */
+  static String[] words(String text) {
+    if (text == null) return new String[0];
+    String clean = text.toLowerCase(java.util.Locale.ROOT).replaceAll("[^a-z0-9]+", " ").trim();
+    return clean.isEmpty() ? new String[0] : clean.split(" ");
+  }
+
   /** What the orb says when listening ended without words. */
   static String sayError(String word) {
     switch (word == null ? "" : word) {
