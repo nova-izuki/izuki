@@ -1,5 +1,6 @@
-//! Automatic checks, explicit downloads and installation. Every downloaded
-//! update is signature-checked; a timer never installs or closes Izuki.
+//! Automatic checks, downloads by themselves while the PC is idle, and
+//! explicit installation. Every downloaded update is signature-checked; a
+//! timer never installs or closes Izuki.
 use std::time::{Duration, Instant};
 use parking_lot::Mutex;
 use serde::Serialize;
@@ -33,6 +34,18 @@ fn install_allowed(expected: &str, actual: &str, ready: bool, busy: bool) -> Res
     if !ready || expected.is_empty() || expected!=actual { return Err("Download and verify this version before installing it.".into()); }
     Ok(())
 }
+/// An update is fetched by itself only after the keyboard and mouse have been
+/// quiet this long — five minutes, the same "nobody is here" reading the rest
+/// of Izuki uses for the PC.
+const AUTO_DOWNLOAD_AFTER: u64 = 5 * 60;
+
+/// Whether an offered update may be downloaded without a click: its own
+/// switch on, a check found one, Izuki isn't mid-task or on a call, and the
+/// PC has been left alone. Installing is never part of this rule.
+fn auto_download_allowed(enabled: bool, phase: &str, idle_secs: u64, busy: bool) -> bool {
+    enabled && phase == "available" && !busy && idle_secs >= AUTO_DOWNLOAD_AFTER
+}
+
 pub fn check_later(app: &AppHandle) {
     if cfg!(debug_assertions) || std::env::var("IZUKI_SELFTEST").is_ok() { return; }
     let app=app.clone();
@@ -51,6 +64,18 @@ pub fn check_later(app: &AppHandle) {
                 failures = if ok { 0 } else { failures + 1 };
                 next = crate::model::now_ms() + retry_minutes(failures) * 60_000;
             }
+            // While the PC is left alone, fetch the update the last check
+            // found. The switch is the permission; one try per check, since a
+            // failure leaves the phase at "error" until the next check.
+            {
+                let enabled = crate::state::store().settings().auto_update_download;
+                let phase = STATUS.lock().phase.clone();
+                let version = STATUS.lock().version.clone();
+                if auto_download_allowed(enabled, &phase, crate::buddy::idle_secs(), crate::hotkey::is_busy()) {
+                    eprintln!("[update] PC is idle — downloading {version}");
+                    if let Err(e) = fetch(&app).await { eprintln!("[update] idle download failed: {e}"); }
+                }
+            }
             tokio::time::sleep(Duration::from_secs(60)).await;
         }
     });
@@ -61,8 +86,8 @@ fn retry_minutes(failures: usize) -> i64 {
     if failures == 0 { 60 } else { [2, 5, 10, 30, 60][(failures - 1).min(4)] }
 }
 
-/// Automatic checks may notify; downloading/installing requires a user action.
-/// Whether the check itself worked.
+/// Automatic checks may notify and (on the idle switch) download; installing
+/// always requires a user action. Whether the check itself worked.
 async fn auto_update(app: &AppHandle) -> bool {
     match check(app).await {
         Ok(status) if status.phase == "available" || status.phase == "ready" => {
@@ -372,5 +397,16 @@ pub async fn install_update(app: AppHandle, window: WebviewWindow, version: Stri
         assert!(install_allowed("1.0.21","1.0.22",true,false).is_err());
         assert!(install_allowed("1.0.22","1.0.22",false,false).is_err());
         assert!(install_allowed("","",true,false).is_err());
+    }
+
+    #[test] fn auto_download_needs_its_switch_an_idle_pc_and_an_available_update() {
+        let idle = AUTO_DOWNLOAD_AFTER;
+        assert!(auto_download_allowed(true, "available", idle, false));
+        assert!(!auto_download_allowed(false, "available", idle, false), "off by default: the switch is the whole permission");
+        assert!(!auto_download_allowed(true, "available", idle - 1, false), "a PC in use is never downloaded for");
+        assert!(!auto_download_allowed(true, "available", idle, true), "not while Izuki is mid-task or on a call");
+        for phase in ["", "checking", "current", "downloading", "ready", "installing", "error"] {
+            assert!(!auto_download_allowed(true, phase, 9999, false), "{phase:?} is not an update waiting to be fetched");
+        }
     }
 }

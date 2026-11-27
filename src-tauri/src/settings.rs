@@ -204,6 +204,10 @@ pub struct Settings {
     pub tv_channel_auto: bool,
     #[serde(default = "default_true")]
     pub automatic_update_checks: bool,
+    /// Download an update by itself while the PC sits idle. Its own switch,
+    /// off by default; installing still waits for a click.
+    #[serde(default)]
+    pub auto_update_download: bool,
     #[serde(default = "default_true")]
     pub economy_mode: bool,
     pub ghost_hand: bool,
@@ -1183,6 +1187,7 @@ impl Default for Settings {
             roku_dev_password: String::new(),
             tv_channel_auto: true,
             automatic_update_checks: true,
+            auto_update_download: false,
             economy_mode: true,
             ghost_hand: true,
             ocr_enabled: true,

@@ -8,7 +8,7 @@ const initial:State={phase:'',version:'',downloaded:0,total:null,checked_at:0,er
 export function UpdateControls({compact=false}:{compact?:boolean}) {
   const [status,setStatus]=useState(initial),[error,setError]=useState(''),[dismissed,setDismissed]=useState('');
   const [pending,setPending]=useState(false);
-  const auto=useIzuki(s=>s.settings.automatic_update_checks ?? true),patch=useIzuki(s=>s.patchSettings);
+  const auto=useIzuki(s=>s.settings.automatic_update_checks ?? true),idleDownload=useIzuki(s=>s.settings.auto_update_download ?? false),patch=useIzuki(s=>s.patchSettings);
   useEffect(()=>{let alive=true, off:(()=>void)|undefined;
     void on<State>('izuki://update-status',v=>{if(alive)setStatus(v);}).then(async f=>{if(!alive){f();return;}off=f;const v=await call<State>('update_status',undefined,()=>initial);if(alive)setStatus(v);
       // Which version "Go back" would install (Settings only, not the banner):
@@ -31,7 +31,8 @@ export function UpdateControls({compact=false}:{compact?:boolean}) {
   const pct=status.total?Math.min(100,Math.round(status.downloaded/status.total*100))+'%':(status.downloaded/1048576).toFixed(1)+' MB';
   const labels:Record<string,string>={checking:'Checking for updates…',current:'You have the latest published version.',available:`Izuki ${status.version} is available.`,downloading:`Downloading ${pct}…`,'rollback-downloading':`Going back to Izuki ${status.version}: downloading ${pct}…`,ready:`Izuki ${status.version} is verified and ready to install.`,installing:'Starting the installer…',error:'Update needs attention.'};
   return <div className={compact?'mx-[18px] mt-2 rounded-2xl border border-izk-teal/25 bg-izk-teal/10 p-3 text-xs':'space-y-3 text-xs'}>
-    {!compact&&<Row label="Automatic update checks" hint="Checks after startup and every hour (sooner again if a check fails), and tells you with a Windows notification and on the Island when a new version is out. Downloads and installation need your click."><Toggle checked={auto} onChange={v=>patch({automatic_update_checks:v})}/></Row>}
+    {!compact&&<Row label="Automatic update checks" hint="Checks after startup and every hour (sooner again if a check fails), and tells you with a Windows notification and on the Island when a new version is out."><Toggle checked={auto} onChange={v=>patch({automatic_update_checks:v})}/></Row>}
+    {!compact&&<Row label="Download updates while idle" hint="After five minutes with no keyboard or mouse, downloads the update the last check found and verifies its signature in the background. Installing still waits for your click."><Toggle checked={idleDownload} onChange={v=>patch({auto_update_download:v})}/></Row>}
     <p role="status">{labels[status.phase]||'Check for signed desktop updates without visiting the website.'}</p>
     {(error||status.error)&&<p role="alert" className="mt-2 break-words text-izk-danger">{error||status.error}</p>}
     <div className="mt-2 flex flex-wrap gap-2">

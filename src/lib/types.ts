@@ -282,6 +282,8 @@ export interface Settings {
   /** Update the TV's Izuki channel by itself. */
   tv_channel_auto?: boolean;
   automatic_update_checks: boolean;
+  /** Download an update by itself while the PC is idle (installing still waits for a click). */
+  auto_update_download: boolean;
   economy_mode: boolean;
   /** Show the predicted next click after enough samples. */
   ghost_hand: boolean;

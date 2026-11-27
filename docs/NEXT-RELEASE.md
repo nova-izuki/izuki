@@ -15,3 +15,4 @@ into the next `docs/RELEASE-x.y.z.md` when it releases, then clears this list.
 - The chat composer gives the Deep/Code pills room at narrow widths, and Allow cards have an “Always allow” button so Izuki stops asking. [Freebuff]
 - A background helper left behind by an app that crashed (no window for ten minutes) can now be closed by itself — “Close helpers left behind” in Settings → PC Boost, off until you turn it on, never touching a window or a system process. [Freebuff]
 - “Close helpers left behind” now costs one process snapshot instead of a walk per helper (35 ms → 12 ms a look) and leaves a crash handler alone while its app is still running. [Freebuff]
+- Izuki can download an update by itself after five minutes with no keyboard or mouse — “Download updates while idle” in Settings → Updates, off until you turn it on; installing still waits for your click. [Freebuff]
