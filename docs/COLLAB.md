@@ -382,3 +382,17 @@ the live `latest.json` both say 1.0.226 with all three Windows keys,
 079F8F3DAA47A42C, and `Izuki-Setup.exe` is byte-identical to
 `Izuki_1.0.226_x64-setup.exe`. Version files are Claude's again after this
 release.
+
+## A message sent mid-answer stops nothing (Freebuff, 2026-11-27, owner bug report)
+
+The owner reported that chatting on the phone said "Stopped. I didn't finish that
+one." without anyone stopping it. `refreshSend()` made the send button Stop for
+the whole request, so a message typed while the answer streamed was read as Stop:
+the request was cancelled and the words were dropped. The button is Stop only
+with an empty box now; with something typed it sends, and a send over a running
+answer replaces it (that request ends as `replaced`, which prints nothing and
+claims no stop). `tools/phone-check/sendstop.test.cjs` (4 cases, wired into
+`test:phone`) pins the rule. Page-only change: the APK bundles `docs/app` through
+`cap sync`, so a new mobile build is needed to feel it. Files owned here:
+`docs/app/index.html`, `tools/phone-check/sendstop.test.cjs`, `package.json`, one
+line in `docs/NEXT-RELEASE.md`, this section.
