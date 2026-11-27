@@ -259,6 +259,68 @@ pub fn close_named(name: &str) -> Vec<String> {
     vec![pretty(name)]
 }
 
+/// How long a helper must sit with no window at all before it counts as left
+/// behind by its app: ten minutes, long enough that a slow start or an update
+/// that is briefly windowless is never mistaken for a crash.
+const ORPHAN_AFTER: Duration = Duration::from_secs(10 * 60);
+/// How often the sweep looks at all (it is a process walk, not a reading).
+const ORPHAN_EVERY: Duration = Duration::from_secs(60);
+
+/// A helper is "left behind" when its app is gone: it has no window, and it
+/// has had none for ten minutes. Pure, so the rule is pinned by a test rather
+/// than by whoever happens to be watching.
+fn is_orphan(name: &str, window: bool, quiet_for: Option<Duration>) -> bool {
+    !window && quiet_for.is_some_and(|d| d >= ORPHAN_AFTER) && safe_helper(name)
+}
+
+/// When each windowless helper was first seen without a window: (pid, since).
+static QUIET: Mutex<Vec<(u32, Instant)>> = Mutex::new(Vec::new());
+static ORPHAN_AT: Mutex<Option<Instant>> = Mutex::new(None);
+
+/// Close background helpers whose app is gone — no window at all for ten
+/// minutes — so a crash does not leave them running until the next restart.
+/// Never one with a window, and never a system, security or Izuki process.
+/// Their names.
+pub fn close_orphans() -> Vec<String> {
+    let windows = windowed_pids();
+    let mut names: Vec<String> = Vec::new();
+    for n in sys::health_all_names() {
+        if safe_helper(&n) && !names.iter().any(|seen| *seen == n) {
+            names.push(n);
+        }
+    }
+    let mut quiet = QUIET.lock();
+    let mut alive: Vec<u32> = Vec::new();
+    let mut closed: Vec<String> = Vec::new();
+    for name in names {
+        for pid in sys::pids_named(&name) {
+            if windows.contains(&pid) {
+                continue;
+            }
+            let now = Instant::now();
+            let since = match quiet.iter().find(|(p, _)| *p == pid) {
+                Some((_, t)) => *t,
+                None => {
+                    quiet.push((pid, now));
+                    now
+                }
+            };
+            alive.push(pid);
+            if is_orphan(&name, false, Some(now.saturating_duration_since(since))) && sys::close(pid) {
+                closed.push(pretty(&name));
+            }
+        }
+    }
+    quiet.retain(|(p, _)| alive.contains(p));
+    if !closed.is_empty() {
+        crate::actlog::record(
+            "system",
+            &format!("Closed background helpers that had no window left: {}", closed.join(", ")),
+        );
+    }
+    closed
+}
+
 /// Processes with a window on screen (never trimmed or closed).
 pub fn windowed_pids() -> std::collections::HashSet<u32> {
     sys::windowed()
@@ -418,7 +480,7 @@ pub fn spawn(app: tauri::AppHandle) {
             std::thread::sleep(Duration::from_secs(5));
             let s = crate::state::store().settings();
             // "Keep my PC fast 24/7" watches by itself; "Watch for lag" alone only offers.
-            let tidy = s.tidy_dupes_auto || s.tidy_recycle_auto;
+            let tidy = s.tidy_dupes_auto || s.tidy_recycle_auto || s.close_orphans_auto;
             if !s.pc_boost && !s.pc_boost_auto && !tidy {
                 SAMPLES.lock().clear();
                 continue;
@@ -460,6 +522,22 @@ pub fn spawn(app: tauri::AppHandle) {
                 eprintln!("[boost] daily tidy: {line}{dupes}");
                 if !dupes.is_empty() {
                     crate::activity::show_boost(dupes.trim(), false);
+                }
+            }
+            // Helpers left behind by an app that went away: no window at all
+            // for ten minutes. Its own switch, its own line, never silent.
+            if s.close_orphans_auto && ORPHAN_AT.lock().is_none_or(|t| t.elapsed() >= ORPHAN_EVERY) {
+                *ORPHAN_AT.lock() = Some(Instant::now());
+                let left = close_orphans();
+                if !left.is_empty() {
+                    crate::activity::show_boost(
+                        &format!(
+                            "Closed {} background {} that had no window left — it would only have sat there until a restart.",
+                            left.len(),
+                            if left.len() == 1 { "helper" } else { "helpers" }
+                        ),
+                        false,
+                    );
                 }
             }
             // A minute after Auto Care acted: did it help? (Said either way;
@@ -902,6 +980,28 @@ mod tests {
         for n in ["svchost", "explorer", "MsMpEng", "izuki", "chrome", "Spotify", "msedgewebview2", "TiWorker"] {
             assert!(!safe_helper(n), "{n}");
         }
+    }
+
+    #[test]
+    fn only_a_helper_with_no_window_for_ten_minutes_is_left_behind() {
+        assert!(!is_orphan("GoogleUpdate", false, None), "just seen: not yet");
+        assert!(
+            !is_orphan("GoogleUpdate", false, Some(Duration::from_secs(9 * 60))),
+            "nine minutes is still a start-up or an update"
+        );
+        assert!(is_orphan("GoogleUpdate", false, Some(Duration::from_secs(10 * 60))));
+        assert!(
+            !is_orphan("GoogleUpdate", true, Some(Duration::from_secs(60 * 60))),
+            "a window means somebody is using it"
+        );
+        assert!(
+            !is_orphan("chrome", false, Some(Duration::from_secs(60 * 60))),
+            "a real program is not ours to close, however quiet it is"
+        );
+        assert!(
+            !is_orphan("svchost", false, Some(Duration::from_secs(60 * 60))),
+            "a system process, whatever it looks like"
+        );
     }
 
     /// The real PC, read twice (the processor needs two looks):

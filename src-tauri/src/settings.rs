@@ -442,6 +442,10 @@ pub struct Settings {
     /// for good (off until turned on).
     #[serde(default)]
     pub tidy_recycle_auto: bool,
+    /// Close a background helper that has had no window for ten minutes (its
+    /// app crashed or was closed): its own opt-in switch, off by default.
+    #[serde(default)]
+    pub close_orphans_auto: bool,
     /// PC Care: say on the Island when antivirus, firewall, disk space or a
     /// drive needs attention (on unless turned off).
     #[serde(default = "default_true")]
@@ -1248,6 +1252,7 @@ impl Default for Settings {
             pc_boost_auto: false,
             tidy_dupes_auto: false,
             tidy_recycle_auto: false,
+            close_orphans_auto: false,
             pc_care_alerts: true,
             sharp_eye: true,
             sharp_eye_tars: false,

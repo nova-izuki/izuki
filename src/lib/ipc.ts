@@ -240,6 +240,7 @@ export const MOCK_SETTINGS: Settings = {
   island_size: "normal",
   tidy_dupes_auto: false,
   tidy_recycle_auto: false,
+  close_orphans_auto: false,
   pc_care_alerts: true,
   sharp_eye: true,
   sharp_eye_tars: false,

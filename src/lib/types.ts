@@ -405,6 +405,8 @@ export interface Settings {
   air_game_keys: "arrows" | "wasd";
   /** Once a day, what has sat in the Recycle Bin for 30+ days is cleared for good. */
   tidy_recycle_auto: boolean;
+  /** Close a background helper that has had no window for ten minutes. */
+  close_orphans_auto: boolean;
   /** PC Care: the Island says when antivirus, firewall, space or a drive needs attention. */
   pc_care_alerts: boolean;
   /** Once a day, extra copies of the same download go to the Recycle Bin. */
