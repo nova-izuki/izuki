@@ -442,7 +442,20 @@ pub fn spawn(app: tauri::AppHandle) {
                 let line = if s.pc_boost_auto { run(true) } else { String::new() };
                 let dupes = if s.tidy_dupes_auto { dupes_line(crate::dupes::tidy_downloads()) } else { String::new() };
                 if s.tidy_recycle_auto {
-                    crate::recyclebin::clear_older_than(30);
+                    // Its own switch, not part of "Keep my PC fast by itself":
+                    // this deletes for good, so the owner opts in to it alone —
+                    // and it says what went rather than clearing in silence.
+                    let gone = crate::recyclebin::clear_older_than(30);
+                    if gone > 0 {
+                        crate::activity::show_boost(
+                            &format!(
+                                "Recycle Bin: cleared {} thing{} older than 30 days — a restore won't bring them back.",
+                                gone,
+                                if gone == 1 { "" } else { "s" }
+                            ),
+                            false,
+                        );
+                    }
                 }
                 eprintln!("[boost] daily tidy: {line}{dupes}");
                 if !dupes.is_empty() {

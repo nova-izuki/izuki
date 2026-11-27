@@ -1716,7 +1716,20 @@ ${PROVIDER_REFUSAL_NOTE}` : shown });
                 {m.documents?.map((file, j) => <span key={j} className="mb-1 mr-1 inline-block rounded-lg bg-black/15 px-2 py-1 text-[11px]">📎 {file.name}</span>)}
                 {m.calls && m.calls.length > 0 && <ToolCards calls={m.calls} />}
                 {m.steps && m.steps.length > 0 && !m.calls?.length && <Steps steps={m.steps} />}
-                {m.action && <ActionCard action={m.action} busy={busy} onAnswer={(allow) => void answer(i, allow)} ran={m.ran} />}
+                {m.action && (
+                  <ActionCard
+                    action={m.action}
+                    busy={busy}
+                    onAnswer={(allow) => void answer(i, allow)}
+                    // Never asked again: the Allow card here, and the spoken
+                    // "allow" for the orb, both stop appearing from now on.
+                    onAlways={() => {
+                      patch({ chat_auto_run: true });
+                      void answer(i, true);
+                    }}
+                    ran={m.ran}
+                  />
+                )}
                 {m.research && <ResearchPanel r={m.research} />}
                 {m.coding && (
                   <CodingPanel
@@ -1839,7 +1852,7 @@ ${PROVIDER_REFUSAL_NOTE}` : shown });
               e.target.value = "";
             }}
           />
-          <div className="izk-composer flex flex-wrap items-end gap-1.5">
+          <div className="izk-composer flex flex-wrap items-end gap-2">
             <button
               type="button"
               onClick={() => picker.current?.click()}
@@ -1973,7 +1986,7 @@ ${PROVIDER_REFUSAL_NOTE}` : shown });
                 }
               }}
               placeholder={dictation.listening ? "Listening…" : deep ? "What should I research?" : "Message Izuki"}
-              className="izk-field izk-no-drag max-h-[200px] min-h-[38px] min-w-[150px] flex-1 basis-[220px] resize-none rounded-[18px] px-3.5 py-[9px] text-[13.5px] leading-snug"
+              className="izk-field izk-no-drag ml-1 max-h-[200px] min-h-[38px] min-w-[150px] flex-1 basis-[220px] resize-none rounded-[18px] px-3.5 py-[9px] text-[13.5px] leading-snug"
             />
             {busy ? (
               <button
@@ -2241,7 +2254,20 @@ function ToolViewer({ call, output, verdict, onClose }: { call: ToolCall; output
 }
 
 /** A change it wants to make — Allow / No — or, once answered, what happened. */
-function ActionCard({ action, busy, onAnswer, ran }: { action: NonNullable<Msg["action"]>; busy: boolean; onAnswer: (allow: boolean) => void; ran?: string }) {
+function ActionCard({
+  action,
+  busy,
+  onAnswer,
+  onAlways,
+  ran,
+}: {
+  action: NonNullable<Msg["action"]>;
+  busy: boolean;
+  onAnswer: (allow: boolean) => void;
+  /** Allow this and stop asking — the same switch as the ⚡ Auto pill, set for good. */
+  onAlways?: () => void;
+  ran?: string;
+}) {
   // Allowed and done: the same card as any other tool, with what it printed.
   if (action.state === "allowed" && ran !== undefined) {
     const proof = /\[Proof check: ([^\]]+)\]/.exec(ran)?.[1];
@@ -2301,6 +2327,17 @@ function ActionCard({ action, busy, onAnswer, ran }: { action: NonNullable<Msg["
           >
             No
           </button>
+          {onAlways && (
+            <button
+              type="button"
+              onClick={onAlways}
+              disabled={busy}
+              title="Do this one and everything after it without asking again. You still see every command, and you can turn Ask first back on in Settings → Privacy."
+              className="izk-pill izk-no-drag ml-auto h-[26px] px-2.5 text-[11px] text-izk-muted disabled:opacity-50"
+            >
+              Always allow
+            </button>
+          )}
         </div>
       )}
     </div>

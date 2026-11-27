@@ -11,3 +11,5 @@ into the next `docs/RELEASE-x.y.z.md` when it releases, then clears this list.
 - The chat composer grows with a paragraph and keeps what you said so you can fix a misheard word before sending, on a deeper lit surface; and PC Care now clears old temp files by itself when a drive drops under 8% free (with "Keep my PC fast by itself" on), once a day. [Freebuff]
 - Spoken words land in the chat box so a misheard name is a quick edit, and a new “Send what I say straight away” switch in Settings → Talk keeps the old send-on-hearing flow for hands-free use. [Freebuff]
 - Izuki clears Recycle Bin items older than 30 days by itself (with “Keep my PC fast by itself” on, once a day) and tells you how many went. [Freebuff]
+- Clearing old Recycle Bin items is now only the Switch that says so (“Clear old Recycle Bin items”, off by default) — not part of “Keep my PC fast by itself” — and it tells you how many went. [Freebuff]
+- The chat composer gives the Deep/Code pills room at narrow widths, and Allow cards have an “Always allow” button so Izuki stops asking. [Freebuff]
