@@ -8,6 +8,10 @@
 // and [TYPE: n | words] for its own browser window, and those must never be
 // performed here by mistake (or the other way round).
 //
+// Both kinds of box are numbered: an <input>/<textarea>, and a contenteditable
+// or role="textbox" one — Slack, WhatsApp Web, Gmail's compose and most chat
+// boxes are the second kind, and a list that skipped them could not type a reply.
+//
 // pageControls, clickControl and typeControl are injected with
 // chrome.scripting.executeScript({ func }), so each one must stand alone: no
 // imports, no module scope, nothing but the DOM. The tag parser and the prompt
@@ -94,7 +98,7 @@ ${list}
 /** Every visible thing on the page that can be pressed or typed into, numbered. */
 export function pageControls() {
   const name = (el) =>
-    String(el.innerText || el.value || el.getAttribute("aria-label") || el.getAttribute("title") || el.getAttribute("placeholder") || el.name || "")
+    String(el.innerText || el.value || el.getAttribute("aria-label") || el.getAttribute("title") || el.getAttribute("placeholder") || el.getAttribute("data-placeholder") || el.name || "")
       .replace(/\s+/g, " ")
       .trim()
       .slice(0, 80);
@@ -105,6 +109,9 @@ export function pageControls() {
     return box.width >= 8 && box.height >= 8;
   };
   const kind = (el, tag) => {
+    // A composer is a div with words you can type in, not a button.
+    if (tag !== "INPUT" && tag !== "TEXTAREA" &&
+        (el.getAttribute("contenteditable") !== null || String(el.getAttribute("role") || "").toLowerCase() === "textbox")) return "field";
     if (tag === "A") return "link";
     if (tag === "SELECT") return "choice";
     if (tag === "TEXTAREA") return "field";
@@ -122,13 +129,13 @@ export function pageControls() {
   }
   const items = [];
   const all = document.querySelectorAll(
-    'a[href], button, [role="button"], [role="link"], [role="tab"], [role="menuitem"], [role="checkbox"], [role="radio"], input, textarea, select, summary'
+    'a[href], button, [role="button"], [role="link"], [role="tab"], [role="menuitem"], [role="checkbox"], [role="radio"], input, textarea, select, summary, [contenteditable], [role="textbox"]'
   );
   // Does Enter here send what is typed? Copied inline, not called from module
   // scope: executeScript serialises this function's own text, and a name outside
   // it would throw in the page and leave the panel with no controls at all.
   const sendsFromHere = (el) => {
-    const own = String(el.getAttribute("aria-label") || el.getAttribute("placeholder") || el.name || el.getAttribute("title") || "").replace(/\s+/g, " ");
+    const own = String(el.getAttribute("aria-label") || el.getAttribute("placeholder") || el.getAttribute("data-placeholder") || el.name || el.getAttribute("title") || "").replace(/\s+/g, " ");
     if (/\b(message|reply|comment|post|chat|email|e-mail|mail|feedback|review|tweet|dm)\b/i.test(own)) return true;
     const form = el.form || (typeof el.closest === "function" ? el.closest("form") : null);
     if (form) {
@@ -158,6 +165,8 @@ export function pageControls() {
     if (items.length >= 120) break;
     const tag = String(el.tagName || "").toUpperCase();
     if (el.disabled) continue;
+    // contenteditable="false" is a div that merely sits inside an editable one.
+    if (String(el.getAttribute("contenteditable") || "").toLowerCase() === "false") continue;
     // A password is never read, never numbered, never typed into.
     if (tag === "INPUT" && /^(password|hidden|file|image)$/i.test(String(el.type || ""))) continue;
     if (!shown(el)) continue;
@@ -193,7 +202,7 @@ export function typeControl(n, text, submit) {
   if (!el) return { ok: false, why: "that item is no longer on the page" };
   const tag = String(el.tagName || "").toUpperCase();
   if (tag === "INPUT" && /password/i.test(String(el.type || ""))) return { ok: false, why: "never a password box" };
-  const label = String(el.innerText || el.getAttribute("aria-label") || el.getAttribute("placeholder") || el.value || "")
+  const label = String(el.innerText || el.getAttribute("aria-label") || el.getAttribute("placeholder") || el.getAttribute("data-placeholder") || el.value || "")
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, 80);
@@ -216,7 +225,27 @@ export function typeControl(n, text, submit) {
     if (setter) setter.call(el, String(text));
     else el.value = String(text);
   } else {
-    el.textContent = String(text);
+    // A composer (Slack, WhatsApp Web, Gmail) keeps its own model of the words,
+    // and only sees what the browser inserts: put the text in through the
+    // selection when that is possible, and fall back to the element's text.
+    const editable = el.getAttribute("contenteditable") !== null ||
+      String(el.getAttribute("role") || "").toLowerCase() === "textbox";
+    let inserted = false;
+    if (editable) {
+      try {
+        const selection = document.getSelection ? document.getSelection() : null;
+        if (selection && document.createRange && document.execCommand) {
+          const range = document.createRange();
+          range.selectNodeContents(el);
+          selection.removeAllRanges();
+          selection.addRange(range);
+          inserted = document.execCommand("insertText", false, String(text));
+        }
+      } catch {
+        inserted = false;
+      }
+    }
+    if (!inserted) el.textContent = String(text);
   }
   el.dispatchEvent(new Event("input", { bubbles: true }));
   el.dispatchEvent(new Event("change", { bubbles: true }));

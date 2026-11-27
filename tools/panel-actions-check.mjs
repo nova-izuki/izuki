@@ -194,6 +194,38 @@ test('Enter in a message box is a send, though the box is only called Message', 
   }
 });
 
+test('a composer is a field, and its data-placeholder is its name', () => {
+  const saved = globalThis.document.querySelectorAll;
+  const slack = new FakeEl('DIV', {
+    attrs: { contenteditable: 'true', role: 'textbox', 'aria-label': 'Message #general' },
+  });
+  const notes = new FakeEl('DIV', { attrs: { contenteditable: 'true', 'data-placeholder': 'Notes' } });
+  const inert = new FakeEl('DIV', { attrs: { contenteditable: 'false', 'aria-label': 'Toolbar' } });
+  globalThis.document.querySelectorAll = () => [slack, notes, inert];
+  try {
+    const snap = pageControls();
+    assert.deepEqual(snap.items.map((i) => [i.n, i.kind, i.label, i.sends]), [
+      [1, 'field', 'Message #general', true], // a chat box: Enter sends
+      [2, 'field', 'Notes', false],           // editable, nothing says it sends
+    ], 'contenteditable="false" is never numbered');
+    for (const item of snap.items) byNumber.set(String(item.n), [slack, notes][item.n - 1]);
+
+    // Typing inserts the words; the Enter a send would be is dropped.
+    const typed = typeControl(1, 'on my way', true);
+    assert.equal(typed.ok, true);
+    assert.equal(typed.sent, false);
+    assert.equal(slack.textContent, 'on my way');
+    assert.equal(slack.events.includes('input'), true);
+    assert.equal(slack.events.includes('keydown'), false);
+
+    // A plain editable still takes its Enter.
+    assert.equal(typeControl(2, 'remember milk', true).ok, true);
+    assert.equal(notes.events.includes('keydown'), true);
+  } finally {
+    globalThis.document.querySelectorAll = saved;
+  }
+});
+
 // ---- and each injected function runs on its own ----------------------------
 // chrome.scripting.executeScript({ func }) sends func.toString() and runs it in
 // the page with no module scope at all, so a helper left outside the function
@@ -222,9 +254,20 @@ test('every injected function runs from its own text, with no module scope', () 
     assert.equal(typed.sent, false);
     assert.equal(message.value, 'on my way');
     assert.equal(message.events.includes('keydown'), false);
+
+    // A composer, numbered and typed from the same bare copy.
+    const chat = new FakeEl('DIV', { attrs: { contenteditable: 'true', 'aria-label': 'Message #general' } });
+    globalThis.document.querySelectorAll = () => [chat];
+    const snap2 = fromSource(pageControls)();
+    assert.equal(snap2.items.length, 1);
+    assert.equal(snap2.items[0].kind, 'field');
+    assert.equal(snap2.items[0].sends, true);
+    byNumber.set('1', chat);
+    assert.equal(fromSource(typeControl)(1, 'hello there', false).ok, true);
+    assert.equal(chat.textContent, 'hello there');
   } finally {
     globalThis.document.querySelectorAll = saved;
   }
 });
 
-console.log('\npanel-actions: 12 checks passed');
+console.log('\npanel-actions: 13 checks passed');

@@ -530,3 +530,39 @@ rebuilding the shipped shape on a copy makes that one case fail with
 file passes 12 of 12 in `npm run test:panel`, with `node --check` and
 `git diff --check` clean. Not proven: that the injected code behaves the same in a
 real page — only that it carries everything it calls.
+
+## Chat boxes are fields too (Freebuff, 2026-11-27, owner request)
+
+The page actions could only type into `<input>` and `<textarea>`, so the boxes
+people actually write in — Slack, WhatsApp Web, Gmail's compose body, Discord,
+ChatGPT's prompt — were not in the list at all: they are `div`s with
+`contenteditable`, or a `role="textbox"`, and the panel showed a page of buttons
+with nowhere to type a reply.
+
+`pageControls()` now numbers `[contenteditable]` and `[role="textbox"]` beside the
+old elements, skips `contenteditable="false"` (a toolbar inside an editable
+region), calls them fields rather than buttons, and reads their name from
+`aria-label`, `placeholder` or `data-placeholder` — the last is how Slack and
+WhatsApp label theirs. The Enter rule is untouched and now reaches them, because
+the same `sendsFromHere` reads those names: “Message #general”, “Type a message”,
+“Message Body” are sends, so the words go in and the Enter does not.
+
+`typeControl()` inserts through the browser when it can — select the box's contents
+with a Range and `document.execCommand("insertText")` — because a composer keeps
+its own model of the words and only notices text the browser inserted; if that is
+unavailable it falls back to `textContent` and still fires `input` and `change`.
+Everything stays inside the injected functions: the bare-source case now numbers
+and types into a composer from `func.toString()` alone, so a module reference
+would fail here as it did in Chrome before.
+
+Checked here: 13 cases in `tools/panel-actions-check.mjs`, including a Slack-shaped
+`div[contenteditable][role=textbox][aria-label="Message #general"]` numbered as a
+field with `sends: true`, a `data-placeholder` box numbered from its placeholder, a
+`contenteditable="false"` skipped, typing that sets the text, fires `input` and
+presses no Enter in a sending box, an Enter that still fires in a plain editable,
+and the bare-source composer. `npm run test:panel` passes, with `node --check` and
+`git diff --check` clean. Not checked: none of this has run in Slack, WhatsApp Web
+or Gmail, so whether those editors accept text inserted without a trusted user
+gesture is unproven; `execCommand` is also deprecated, and an editor that ignores
+it would show the text in the box while its own send button still thinks it is
+empty.
