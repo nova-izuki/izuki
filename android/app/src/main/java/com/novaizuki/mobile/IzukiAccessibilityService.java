@@ -1115,15 +1115,6 @@ public class IzukiAccessibilityService extends AccessibilityService {
    * stuttering over another app. Only the newest level matters: it is kept
    * here and one drain is posted at a time.
    */
-  private static volatile float levelPending = 0f;
-  private static volatile boolean levelQueued = false;
-  private static final Runnable pushLevel = () -> {
-    levelQueued = false;
-    float level = levelPending;
-    if (dot != null) dot.setVoice(level);
-    if (glowView != null) glowView.setVoice(level);
-  };
-
   static void voiceLevel(float level) {
     // Nothing on screen to move: no post at all.
     if (orbView == null && glowView == null) return;
@@ -1136,6 +1127,15 @@ public class IzukiAccessibilityService extends AccessibilityService {
   // ---- the glowing screen edges (during a voice turn) -------------------------
 
   private static EdgeGlow glowView;
+  private static volatile float levelPending = 0f;
+  private static volatile boolean levelQueued = false;
+  private static final Runnable pushLevel = () -> {
+    levelQueued = false;
+    float level = levelPending;
+    if (dot != null) dot.setVoice(level);
+    if (glowView != null) glowView.setVoice(level);
+  };
+
   /** Who lit it: "voice" (a voice turn) or "page" (Izuki's own work: a reply, the phone agent, Autopilot). */
   private static String glowOwner = "";
   /** Nobody renewed the light in time (a page that stopped, a turn that never ended): it goes out. */
