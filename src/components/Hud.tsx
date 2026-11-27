@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { Pause, Play, SkipForward, X } from "lucide-react";
+import { Mic, Pause, Play, SendHorizontal, SkipForward, X } from "lucide-react";
 import { api, emit, EV, on, type BoostHealth } from "../lib/ipc";
 import { markHit } from "../lib/hitTest";
 
@@ -183,6 +183,18 @@ export function Hud({ preview = null }: { preview?: HudData | null } = {}) {
   if (urgent.length) {
     recs.push({ id: "mail", icon: "✉️", text: `${urgent.length} urgent ${urgent.length === 1 ? "email" : "emails"}`, fix: "Draft replies", run: async () => ask(`Draft replies to my urgent emails (${urgent.map((u) => u.from).join(", ")}). Show me the drafts — don't send anything.`, "Draft replies") });
   }
+  // Type it or say it: Autopilot takes a line in the user's own words too,
+  // so it isn't limited to the fixes it worked out by itself.
+  const [line, setLine] = useState("");
+  const [micHeld, setMicHeld] = useState(false);
+  const lineRef = useRef<HTMLInputElement>(null);
+  const sendLine = (e: React.FormEvent) => {
+    e.preventDefault();
+    const said = line.trim();
+    if (!said) return;
+    setLine("");
+    ask(said, said.length > 60 ? `${said.slice(0, 58).replace(/[\s,.:;—-]+\S*$/, "")}…` : said);
+  };
   const runFix = async (r: Rec) => {
     setFixing((f) => ({ ...f, [r.id]: "run" }));
     try {
@@ -275,6 +287,49 @@ export function Hud({ preview = null }: { preview?: HudData | null } = {}) {
                     )}
                   </>
                 )}
+                <form onSubmit={sendLine} className="mt-2 flex items-center gap-1.5">
+                  <input
+                    ref={lineRef}
+                    data-izk-hit
+                    value={line}
+                    onChange={(e) => setLine(e.target.value)}
+                    placeholder="Type it — or hold the mic"
+                    aria-label="Tell Autopilot what to do"
+                    className="pointer-events-auto min-w-0 flex-1 rounded-full border border-cyan-300/25 bg-cyan-300/[0.06] px-3 py-1 text-[12px] text-cyan-50 outline-none placeholder:text-cyan-100/40 focus:border-cyan-300/60"
+                  />
+                  <button
+                    type="button"
+                    title="Speak it — hold while you talk"
+                    aria-label="Speak to Autopilot"
+                    aria-pressed={micHeld}
+                    onPointerDown={() => {
+                      lineRef.current?.focus();
+                      setMicHeld(true);
+                      void emit(EV.dictate);
+                    }}
+                    onPointerUp={() => {
+                      setMicHeld(false);
+                      void emit(EV.dictateRelease);
+                    }}
+                    onPointerLeave={() => {
+                      if (!micHeld) return;
+                      setMicHeld(false);
+                      void emit(EV.dictateRelease);
+                    }}
+                    className={`pointer-events-auto inline-flex h-6 w-6 items-center justify-center rounded-full border transition ${micHeld ? "border-cyan-300/70 bg-cyan-300/25 text-cyan-50" : "border-cyan-300/30 bg-cyan-300/10 text-cyan-100/80 hover:bg-cyan-300/25"}`}
+                  >
+                    <Mic size={13} />
+                  </button>
+                  <button
+                    type="submit"
+                    title="Send it"
+                    aria-label="Send it"
+                    disabled={!line.trim()}
+                    className="pointer-events-auto inline-flex h-6 w-6 items-center justify-center rounded-full border border-cyan-300/30 bg-cyan-300/10 text-cyan-100/80 transition hover:bg-cyan-300/25 disabled:opacity-40"
+                  >
+                    <SendHorizontal size={13} />
+                  </button>
+                </form>
               </Panel>
               {data.playing && (
                 <Panel title="NOW PLAYING">

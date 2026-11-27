@@ -31,6 +31,16 @@ pub struct Hog {
     pub window: bool,
 }
 
+/// One process, as the orphan sweep needs it: pid, parent and name from a
+/// single snapshot, so a look costs one pass instead of a handle per process.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Running {
+    pub pid: u32,
+    pub parent: u32,
+    /// Lower case, without ".exe" ("chrome_crashpad_handler").
+    pub name: String,
+}
+
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct Health {
     /// The whole PC's processor use, 0–100.
@@ -259,6 +269,101 @@ pub fn close_named(name: &str) -> Vec<String> {
     vec![pretty(name)]
 }
 
+/// How long a helper must sit with no window at all before it counts as left
+/// behind by its app: ten minutes, long enough that a slow start or an update
+/// that is briefly windowless is never mistaken for a crash.
+const ORPHAN_AFTER: Duration = Duration::from_secs(10 * 60);
+/// How often the sweep looks at all (it is a process walk, not a reading).
+const ORPHAN_EVERY: Duration = Duration::from_secs(60);
+
+/// What the sweep knows about one copy of a helper.
+#[derive(Debug, Clone, Copy)]
+struct Seen {
+    /// Has a window on screen.
+    window: bool,
+    /// How long it has had no window (None: only just seen).
+    quiet_for: Option<Duration>,
+    /// Its app is still running: Chrome's crash handler is not left behind
+    /// while Chrome is open, however quiet it looks.
+    app_open: bool,
+}
+
+/// A helper is "left behind" when its app is gone: no window, none of its own
+/// program running, and no window for ten minutes. Pure, so the rule is pinned
+/// by a test rather than by whoever happens to be watching.
+fn is_orphan(name: &str, seen: Seen) -> bool {
+    !seen.window
+        && !seen.app_open
+        && seen.quiet_for.is_some_and(|d| d >= ORPHAN_AFTER)
+        && safe_helper(name)
+}
+
+/// `chrome_crashpad_handler` and `chrome` are one app: the handler's name
+/// starts with its program's.
+fn same_app(helper: &str, other: &str) -> bool {
+    let (h, o) = (helper.to_lowercase(), other.to_lowercase());
+    o.len() >= 3 && h.len() > o.len() && h.starts_with(&o)
+}
+
+/// Explorer, Task Scheduler, services: they start helpers but are not the app
+/// one belongs to, so what they launched is still left behind once its own
+/// program has gone.
+fn launcher(name: &str) -> bool {
+    NEVER.contains(&name.to_lowercase().as_str())
+}
+
+/// The app behind a helper is still running: another copy of its program, or a
+/// parent that is more than a launcher.
+fn app_open(name: &str, pid: u32, parent: u32, all: &[Running]) -> bool {
+    all.iter()
+        .any(|o| o.pid != pid && (same_app(name, &o.name) || (o.pid == parent && !launcher(&o.name))))
+}
+
+/// When each windowless helper was first seen without a window: (pid, since).
+static QUIET: Mutex<Vec<(u32, Instant)>> = Mutex::new(Vec::new());
+static ORPHAN_AT: Mutex<Option<Instant>> = Mutex::new(None);
+
+/// Close background helpers whose app is gone — no window at all for ten
+/// minutes — so a crash does not leave them running until the next restart.
+/// One snapshot of the process list per look (no handle per process), and a
+/// helper whose program is still open is never touched. Their names.
+pub fn close_orphans() -> Vec<String> {
+    let procs = sys::processes();
+    if procs.is_empty() {
+        return Vec::new();
+    }
+    let windows = windowed_pids();
+    let now = Instant::now();
+    let mut quiet = QUIET.lock();
+    let mut still_here: Vec<(u32, Instant)> = Vec::new();
+    let mut closed: Vec<String> = Vec::new();
+    for p in procs.iter().filter(|p| safe_helper(&p.name)) {
+        // Somebody's using it: not even timed.
+        if windows.contains(&p.pid) {
+            continue;
+        }
+        let since = quiet.iter().find(|(q, _)| *q == p.pid).map_or(now, |(_, t)| *t);
+        still_here.push((p.pid, since));
+        let seen = Seen {
+            window: false,
+            quiet_for: Some(now.saturating_duration_since(since)),
+            app_open: app_open(&p.name, p.pid, p.parent, &procs),
+        };
+        if is_orphan(&p.name, seen) && sys::close(p.pid) {
+            closed.push(pretty(&p.name));
+        }
+    }
+    // Only the helpers still running stay timed, so the list never grows.
+    *quiet = still_here;
+    if !closed.is_empty() {
+        crate::actlog::record(
+            "system",
+            &format!("Closed background helpers that had no window left: {}", closed.join(", ")),
+        );
+    }
+    closed
+}
+
 /// Processes with a window on screen (never trimmed or closed).
 pub fn windowed_pids() -> std::collections::HashSet<u32> {
     sys::windowed()
@@ -418,7 +523,7 @@ pub fn spawn(app: tauri::AppHandle) {
             std::thread::sleep(Duration::from_secs(5));
             let s = crate::state::store().settings();
             // "Keep my PC fast 24/7" watches by itself; "Watch for lag" alone only offers.
-            let tidy = s.tidy_dupes_auto || s.tidy_recycle_auto;
+            let tidy = s.tidy_dupes_auto || s.tidy_recycle_auto || s.close_orphans_auto;
             if !s.pc_boost && !s.pc_boost_auto && !tidy {
                 SAMPLES.lock().clear();
                 continue;
@@ -442,11 +547,40 @@ pub fn spawn(app: tauri::AppHandle) {
                 let line = if s.pc_boost_auto { run(true) } else { String::new() };
                 let dupes = if s.tidy_dupes_auto { dupes_line(crate::dupes::tidy_downloads()) } else { String::new() };
                 if s.tidy_recycle_auto {
-                    crate::recyclebin::clear_older_than(30);
+                    // Its own switch, not part of "Keep my PC fast by itself":
+                    // this deletes for good, so the owner opts in to it alone —
+                    // and it says what went rather than clearing in silence.
+                    let gone = crate::recyclebin::clear_older_than(30);
+                    if gone > 0 {
+                        crate::activity::show_boost(
+                            &format!(
+                                "Recycle Bin: cleared {} thing{} older than 30 days — a restore won't bring them back.",
+                                gone,
+                                if gone == 1 { "" } else { "s" }
+                            ),
+                            false,
+                        );
+                    }
                 }
                 eprintln!("[boost] daily tidy: {line}{dupes}");
                 if !dupes.is_empty() {
                     crate::activity::show_boost(dupes.trim(), false);
+                }
+            }
+            // Helpers left behind by an app that went away: no window at all
+            // for ten minutes. Its own switch, its own line, never silent.
+            if s.close_orphans_auto && ORPHAN_AT.lock().is_none_or(|t| t.elapsed() >= ORPHAN_EVERY) {
+                *ORPHAN_AT.lock() = Some(Instant::now());
+                let left = close_orphans();
+                if !left.is_empty() {
+                    crate::activity::show_boost(
+                        &format!(
+                            "Closed {} background {} that had no window left — it would only have sat there until a restart.",
+                            left.len(),
+                            if left.len() == 1 { "helper" } else { "helpers" }
+                        ),
+                        false,
+                    );
                 }
             }
             // A minute after Auto Care acted: did it help? (Said either way;
@@ -642,6 +776,33 @@ mod sys {
                 n.eq_ignore_ascii_case(want)
             })
             .collect()
+    }
+
+    /// Every process in one snapshot: pid, parent and name (lower case, no
+    /// ".exe"). No handle is opened, so it is one cheap pass.
+    pub fn processes() -> Vec<super::Running> {
+        use windows::Win32::System::Diagnostics::ToolHelp::{
+            CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W, TH32CS_SNAPPROCESS,
+        };
+        let mut out = Vec::new();
+        let Ok(snap) = (unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) }) else { return out };
+        let mut e = PROCESSENTRY32W { dwSize: std::mem::size_of::<PROCESSENTRY32W>() as u32, ..Default::default() };
+        if unsafe { Process32FirstW(snap, &mut e) }.is_ok() {
+            loop {
+                let raw = String::from_utf16_lossy(&e.szExeFile);
+                let name = raw.trim_end_matches('\0').trim_end_matches(".exe").to_lowercase();
+                if e.th32ProcessID > 4 && !name.is_empty() {
+                    out.push(super::Running { pid: e.th32ProcessID, parent: e.th32ParentProcessID, name });
+                }
+                if unsafe { Process32NextW(snap, &mut e) }.is_err() {
+                    break;
+                }
+            }
+        }
+        unsafe {
+            let _ = CloseHandle(snap);
+        }
+        out
     }
 
     /// Every running program's name (lower case).
@@ -860,6 +1021,9 @@ mod sys {
     pub fn pids_named(_name: &str) -> Vec<u32> {
         vec![]
     }
+    pub fn processes() -> Vec<super::Running> {
+        vec![]
+    }
 }
 
 #[cfg(test)]
@@ -889,6 +1053,63 @@ mod tests {
         for n in ["svchost", "explorer", "MsMpEng", "izuki", "chrome", "Spotify", "msedgewebview2", "TiWorker"] {
             assert!(!safe_helper(n), "{n}");
         }
+    }
+
+    fn quiet(secs: Option<u64>) -> Seen {
+        Seen { window: false, quiet_for: secs.map(Duration::from_secs), app_open: false }
+    }
+
+    #[test]
+    fn only_a_helper_with_no_window_and_no_app_is_left_behind() {
+        assert!(!is_orphan("GoogleUpdate", quiet(None)), "just seen: not yet");
+        assert!(
+            !is_orphan("GoogleUpdate", quiet(Some(9 * 60))),
+            "nine minutes is still a start-up or an update"
+        );
+        assert!(is_orphan("GoogleUpdate", quiet(Some(10 * 60))));
+        assert!(
+            !is_orphan("GoogleUpdate", Seen { window: true, ..quiet(Some(60 * 60)) }),
+            "a window means somebody is using it"
+        );
+        assert!(
+            !is_orphan("chrome", quiet(Some(60 * 60))),
+            "a real program is not ours to close, however quiet it is"
+        );
+        assert!(
+            !is_orphan("svchost", quiet(Some(60 * 60))),
+            "a system process, whatever it looks like"
+        );
+        assert!(
+            !is_orphan("chrome_crashpad_handler", Seen { app_open: true, ..quiet(Some(60 * 60)) }),
+            "a browser that is still open keeps its crash handler"
+        );
+        assert!(
+            is_orphan("chrome_crashpad_handler", quiet(Some(60 * 60))),
+            "the browser is gone, so its handler would only sit there"
+        );
+    }
+
+    #[test]
+    fn a_helper_belongs_to_its_app_while_that_app_runs() {
+        let p = |pid: u32, parent: u32, name: &str| Running { pid, parent, name: name.into() };
+        let chrome = [p(100, 4, "chrome"), p(101, 100, "chrome_crashpad_handler")];
+        assert!(
+            app_open("chrome_crashpad_handler", 101, 100, &chrome),
+            "Chrome is open, so its crash handler stays"
+        );
+        assert!(!app_open("chrome", 100, 4, &chrome), "a program is not its own app");
+        let gone = [p(101, 999, "chrome_crashpad_handler")];
+        assert!(
+            !app_open("chrome_crashpad_handler", 101, 999, &gone),
+            "nothing of Chrome is running: it is left behind"
+        );
+        let by_explorer = [p(50, 4, "explorer"), p(102, 50, "googleupdate")];
+        assert!(
+            !app_open("googleupdate", 102, 50, &by_explorer),
+            "a launcher is not the app, so a broken update still gets closed"
+        );
+        let by_app = [p(60, 4, "googledrive"), p(103, 60, "googleupdate")];
+        assert!(app_open("googleupdate", 103, 60, &by_app), "its app started it and is still running");
     }
 
     /// The real PC, read twice (the processor needs two looks):

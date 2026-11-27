@@ -1410,7 +1410,34 @@ ${PROVIDER_REFUSAL_NOTE}` : shown });
   const sendRef = useRef(send);
   sendRef.current = send;
 
-  const dictation = useDictation((heard) => void send(heard));
+  /** The box grows with what's in it — a paragraph, not a slit. */
+  const grow = () => {
+    const box = input.current;
+    if (!box) return;
+    box.style.height = "auto";
+    box.style.height = `${Math.min(200, Math.max(38, box.scrollHeight))}px`;
+  };
+
+  // Spoken words land in the box, editable, and wait for Enter like anything
+  // typed — a misheard name is then a two-second fix instead of a lost
+  // question you have to say all over again.
+  const dictation = useDictation((heard) => {
+    const said = heard.trim();
+    if (!said) return;
+    // Hands-free users keep the old flow: it sends the moment it is heard.
+    if (settings.dictation_autosend) {
+      void send(said);
+      return;
+    }
+    setDraft((d) => (d.trim() ? `${d.trim()} ${said}` : said));
+    requestAnimationFrame(() => {
+      const box = input.current;
+      if (!box) return;
+      box.focus();
+      box.selectionStart = box.selectionEnd = box.value.length;
+      grow();
+    });
+  });
 
   const doOnPc = (i: number) => {
     const ask = [...msgs.slice(0, i)].reverse().find((m) => m.role === "user")?.content;
@@ -1781,7 +1808,20 @@ ${PROVIDER_REFUSAL_NOTE}` : shown });
                 {m.documents?.map((file, j) => <span key={j} className="mb-1 mr-1 inline-block rounded-lg bg-black/15 px-2 py-1 text-[11px]">📎 {file.name}</span>)}
                 {m.calls && m.calls.length > 0 && <ToolCards calls={m.calls} />}
                 {m.steps && m.steps.length > 0 && !m.calls?.length && <Steps steps={m.steps} />}
-                {m.action && <ActionCard action={m.action} busy={busy} onAnswer={(allow) => void answer(i, allow)} ran={m.ran} />}
+                {m.action && (
+                  <ActionCard
+                    action={m.action}
+                    busy={busy}
+                    onAnswer={(allow) => void answer(i, allow)}
+                    // Never asked again: the Allow card here, and the spoken
+                    // "allow" for the orb, both stop appearing from now on.
+                    onAlways={() => {
+                      patch({ chat_auto_run: true });
+                      void answer(i, true);
+                    }}
+                    ran={m.ran}
+                  />
+                )}
                 {m.research && <ResearchPanel r={m.research} />}
                 {m.coding && (
                   <CodingPanel
@@ -1911,7 +1951,7 @@ ${PROVIDER_REFUSAL_NOTE}` : shown });
               e.target.value = "";
             }}
           />
-          <div className="flex flex-wrap items-end gap-1.5">
+          <div className="izk-composer flex flex-wrap items-end gap-2">
             <button
               type="button"
               onClick={() => picker.current?.click()}
@@ -2027,7 +2067,10 @@ ${PROVIDER_REFUSAL_NOTE}` : shown });
               ref={input}
               value={draft}
               rows={1}
-              onChange={(e) => setDraft(e.target.value)}
+              onChange={(e) => {
+                setDraft(e.target.value);
+                grow();
+              }}
               onPaste={(e) => {
                 const files = Array.from(e.clipboardData.files);
                 if (!files.length) return;
@@ -2052,7 +2095,7 @@ ${PROVIDER_REFUSAL_NOTE}` : shown });
                 }
               }}
               placeholder={dictation.listening ? "Listening…" : deep ? "What should I research?" : "Message Izuki"}
-              className="izk-field izk-no-drag max-h-[120px] min-h-[36px] min-w-[150px] flex-1 basis-[220px] resize-none rounded-[18px] py-[8px] text-[13px]"
+              className="izk-field izk-no-drag ml-1 max-h-[200px] min-h-[38px] min-w-[150px] flex-1 basis-[220px] resize-none rounded-[18px] px-3.5 py-[9px] text-[13.5px] leading-snug"
             />
             {busy ? (
               <button
@@ -2321,7 +2364,20 @@ function ToolViewer({ call, output, verdict, onClose }: { call: ToolCall; output
 }
 
 /** A change it wants to make — Allow / No — or, once answered, what happened. */
-function ActionCard({ action, busy, onAnswer, ran }: { action: NonNullable<Msg["action"]>; busy: boolean; onAnswer: (allow: boolean) => void; ran?: string }) {
+function ActionCard({
+  action,
+  busy,
+  onAnswer,
+  onAlways,
+  ran,
+}: {
+  action: NonNullable<Msg["action"]>;
+  busy: boolean;
+  onAnswer: (allow: boolean) => void;
+  /** Allow this and stop asking — the same switch as the ⚡ Auto pill, set for good. */
+  onAlways?: () => void;
+  ran?: string;
+}) {
   // Allowed and done: the same card as any other tool, with what it printed.
   if (action.state === "allowed" && ran !== undefined) {
     const proof = /\[Proof check: ([^\]]+)\]/.exec(ran)?.[1];
@@ -2381,6 +2437,17 @@ function ActionCard({ action, busy, onAnswer, ran }: { action: NonNullable<Msg["
           >
             No
           </button>
+          {onAlways && (
+            <button
+              type="button"
+              onClick={onAlways}
+              disabled={busy}
+              title="Do this one and everything after it without asking again. You still see every command, and you can turn Ask first back on in Settings → Privacy."
+              className="izk-pill izk-no-drag ml-auto h-[26px] px-2.5 text-[11px] text-izk-muted disabled:opacity-50"
+            >
+              Always allow
+            </button>
+          )}
         </div>
       )}
     </div>

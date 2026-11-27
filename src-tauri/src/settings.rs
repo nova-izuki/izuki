@@ -208,6 +208,10 @@ pub struct Settings {
     pub tv_channel_auto: bool,
     #[serde(default = "default_true")]
     pub automatic_update_checks: bool,
+    /// Download an update by itself while the PC sits idle. Its own switch,
+    /// off by default; installing still waits for a click.
+    #[serde(default)]
+    pub auto_update_download: bool,
     #[serde(default = "default_true")]
     pub economy_mode: bool,
     pub ghost_hand: bool,
@@ -449,6 +453,11 @@ pub struct Settings {
     /// you, then back up — like a phone assistant lowering your music.
     #[serde(default = "default_true")]
     pub duck_while_listening: bool,
+    /// Hands-free users: a spoken request sends the moment it is transcribed,
+    /// as it always did. Off (the default): it lands in the chat box so a
+    /// misheard word can be fixed before it goes.
+    #[serde(default)]
+    pub dictation_autosend: bool,
     /// PC Boost: notice when the PC is struggling and offer to speed it up
     /// (boost.rs). Only looks — a few cheap system calls every 5 s.
     #[serde(default = "default_true")]
@@ -469,6 +478,10 @@ pub struct Settings {
     /// for good (off until turned on).
     #[serde(default)]
     pub tidy_recycle_auto: bool,
+    /// Close a background helper that has had no window for ten minutes (its
+    /// app crashed or was closed): its own opt-in switch, off by default.
+    #[serde(default)]
+    pub close_orphans_auto: bool,
     /// PC Care: say on the Island when antivirus, firewall, disk space or a
     /// drive needs attention (on unless turned off).
     #[serde(default = "default_true")]
@@ -1252,6 +1265,7 @@ impl Default for Settings {
             roku_dev_password: String::new(),
             tv_channel_auto: true,
             automatic_update_checks: true,
+            auto_update_download: false,
             economy_mode: true,
             ghost_hand: true,
             ocr_enabled: true,
@@ -1323,11 +1337,13 @@ impl Default for Settings {
             barge_in: true,
             send_bug_reports: true,
             duck_while_listening: true,
+            dictation_autosend: false,
             pc_boost: true,
             match_voice_face: true,
             pc_boost_auto: false,
             tidy_dupes_auto: false,
             tidy_recycle_auto: false,
+            close_orphans_auto: false,
             pc_care_alerts: true,
             sharp_eye: true,
             sharp_eye_tars: false,

@@ -56,6 +56,7 @@ pub mod loopback;
 pub mod coding;
 pub mod offers;
 pub mod storage;
+pub mod skills;
 pub mod pccare;
 pub mod services;
 pub mod flstudio;

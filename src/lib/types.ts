@@ -283,6 +283,8 @@ export interface Settings {
   /** Update the TV's Izuki channel by itself. */
   tv_channel_auto?: boolean;
   automatic_update_checks: boolean;
+  /** Download an update by itself while the PC is idle (installing still waits for a click). */
+  auto_update_download: boolean;
   economy_mode: boolean;
   /** Show the predicted next click after enough samples. */
   ghost_hand: boolean;
@@ -425,6 +427,8 @@ export interface Settings {
   air_game_keys: "arrows" | "wasd";
   /** Once a day, what has sat in the Recycle Bin for 30+ days is cleared for good. */
   tidy_recycle_auto: boolean;
+  /** Close a background helper that has had no window for ten minutes. */
+  close_orphans_auto: boolean;
   /** PC Care: the Island says when antivirus, firewall, space or a drive needs attention. */
   pc_care_alerts: boolean;
   /** Once a day, extra copies of the same download go to the Recycle Bin. */
@@ -499,6 +503,8 @@ export interface Settings {
   send_bug_reports: boolean;
   /** Turn other apps' sound down while Izuki listens. */
   duck_while_listening: boolean;
+  /** Spoken requests send as soon as they are transcribed (hands-free). */
+  dictation_autosend: boolean;
   /** Double-check your words with a cloud speech model (Groq or Gemini key). */
   cloud_ears: boolean;
   /** PC Boost: notice a struggling PC and offer to speed it up. */

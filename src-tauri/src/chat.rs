@@ -421,7 +421,7 @@ left\", \"what's slowing my PC\" — run the check, then say the answer in a sen
 numbers, plain words). Don't open Settings or File Explorer for those. Changing things (uninstalling, \
 deleting) needs the user's yes first.\n";
 
-fn system_prompt(style: Style, apps: bool) -> String {
+fn system_prompt(style: Style, apps: bool, ask: &str) -> String {
     let mut s = match style {
         Style::Voice { expressive } => voice_prompt(expressive),
         Style::Text | Style::Phone => written_prompt(style == Style::Phone),
@@ -451,6 +451,9 @@ fn system_prompt(style: Style, apps: bool) -> String {
     s.push_str(&crate::reminders::prompt_block());
     s.push_str(&crate::memory::prompt_block());
     s.push_str(&crate::voices::prompt_block());
+    // A skill, only when the ask is that job (skills.rs): an email question
+    // never pays for the video-editing recipe book.
+    s.push_str(&crate::skills::prompt_block(ask));
     s
 }
 
@@ -1218,6 +1221,14 @@ fn learn_where(history: &[Turn]) {
 }
 
 fn messages_for(history: &[Turn], style: Style) -> Vec<Value> {
+    // What they typed, for picking up a skill — an attachment or a picture
+    // isn't the ask.
+    let ask = history
+        .iter()
+        .rev()
+        .find(|t| t.role == "user")
+        .map(|t| crate::attachments::typed_only(&t.content))
+        .unwrap_or("");
     // "Quiz me on my mistakes": the cards you keep missing go with the ask.
     if history.last().is_some_and(|t| t.role == "user" && crate::studytrack::parse(&t.content) == Some(crate::studytrack::Ask::Practise)) {
         let list = crate::studytrack::mistakes(&crate::studytrack::events());
@@ -1227,10 +1238,10 @@ fn messages_for(history: &[Turn], style: Style) -> Vec<Value> {
             for t in h.iter_mut().filter(|t| t.role == "user" && crate::studytrack::parse(&t.content) == Some(crate::studytrack::Ask::Practise)) {
                 t.content = prompt.clone();
             }
-            return with_system(&h, system_prompt(style, crate::composio::configured()) + &here_and_now(history));
+            return with_system(&h, system_prompt(style, crate::composio::configured(), ask) + &here_and_now(history));
         }
     }
-    with_system(history, system_prompt(style, crate::composio::configured()) + &here_and_now(history))
+    with_system(history, system_prompt(style, crate::composio::configured(), ask) + &here_and_now(history))
 }
 
 /// The user's own writing style (Settings), for anything written for them to send.
@@ -1309,7 +1320,7 @@ pub fn reply_here(history: &[Turn], style: Style) -> anyhow::Result<String> {
     if let Some(question) = clarify(history) {
         return Ok(question.to_string());
     }
-    complete_with_tools(with_system(history, system_prompt(style, false)), asked)
+    complete_with_tools(with_system(history, system_prompt(style, false, asked)), asked)
 }
 
 /// One question back when a first message has nothing to work from ("answer

@@ -1,7 +1,7 @@
 {
   "name": "izuki",
   "private": true,
-  "version": "1.0.225",
+  "version": "1.0.226",
   "type": "module",
   "description": "IZUKI â€” YO IZUKI, DO IT. Draw on your screen, Izuki does it.",
   "scripts": {
@@ -28,6 +28,7 @@
     "test:panel-browser": "node tools/panel-browser-check.cjs",
     "test:question-page": "node tools/question-page-browser-check.cjs",
     "test:assets": "node tools/asset-check.mjs",
+    "test:versions": "node tools/check-versions-check.mjs",
     "test:bridge": "node tools/bridge-auth-check.mjs",
     "test:workspace": "node tools/workspace-check.mjs && node tools/workspace-worker-check.mjs && node tools/relay-check.mjs",
     "test:chat-text": "node tools/chat-text-check.mjs",

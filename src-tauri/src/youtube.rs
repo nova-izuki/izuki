@@ -120,7 +120,7 @@ pub fn search_url(query: &str) -> String {
 pub fn lesson_video(query: &str) -> Result<(String, String)> {
     let html = reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(10))
-        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36")
+        .user_agent(USER_AGENT)
         .build()?
         .get(search_url(query))
         .header("Accept-Language", "en-US,en;q=0.9")
@@ -132,23 +132,110 @@ pub fn lesson_video(query: &str) -> Result<(String, String)> {
 
 /// The first `videoRenderer` in a results page: (watch link, title).
 fn first_video(html: &str) -> Option<(String, String)> {
+    videos(html).into_iter().next()
+}
+
+/// Every real video on a results page, in YouTube's own order: (watch link,
+/// title). Shorts (`reelItemRenderer`) and ads aren't in this shape, so they
+/// never come back from here.
+fn videos(html: &str) -> Vec<(String, String)> {
     const MARK: &str = "\"videoRenderer\":{\"videoId\":\"";
-    let at = html.find(MARK)? + MARK.len();
-    let id: String = html[at..].chars().take_while(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_').collect();
-    if id.len() != 11 {
-        return None;
+    const TITLE: &str = "\"title\":{\"runs\":[{\"text\":";
+    let mut found = Vec::new();
+    let mut rest = html;
+    while let Some(i) = rest.find(MARK) {
+        let tail = &rest[i + MARK.len()..];
+        rest = tail;
+        let id: String = tail.chars().take_while(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_').collect();
+        if id.len() != 11 {
+            continue;
+        }
+        // Its title: the first "text" after it, read as a JSON string so
+        // escapes decode.
+        let title = tail
+            .find(TITLE)
+            .and_then(|j| {
+                let s = &tail[j + TITLE.len()..];
+                serde_json::Deserializer::from_str(s).into_iter::<String>().next()?.ok()
+            })
+            .unwrap_or_default();
+        found.push((format!("https://www.youtube.com/watch?v={id}"), title));
+        if found.len() == 12 {
+            break;
+        }
     }
-    // Its title: the first "text" after it, read as a JSON string so escapes decode.
-    let rest = &html[at..];
-    let title = rest
-        .find("\"title\":{\"runs\":[{\"text\":")
-        .and_then(|i| {
-            let s = &rest[i + "\"title\":{\"runs\":[{\"text\":".len()..];
-            let mut de = serde_json::Deserializer::from_str(s).into_iter::<String>();
-            de.next()?.ok()
-        })
-        .unwrap_or_default();
-    Some((format!("https://www.youtube.com/watch?v={id}"), title))
+    found
+}
+
+/// How long the direct link gets to start playing before the page-and-click
+/// way takes over. Autoplay can be blocked; then a click is what works.
+const AD_START_WAIT: Duration = Duration::from_secs(6);
+
+/// The same browser YouTube expects, so its results page comes back whole.
+const USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36";
+
+/// The best of the results for what was asked, decided from the page rather
+/// than from a list on screen: the title carrying the most of the words,
+/// skipping what it played lately. For a vague ask ("something chill") none
+/// of them match, and the first one that isn't recent wins — the same rule
+/// [`best_result`] uses on the screen.
+fn pick<'a>(found: &'a [(String, String)], want: &[String], recent: &[String]) -> Option<&'a (String, String)> {
+    let mut best: Option<(usize, &(String, String))> = None;
+    for video in found {
+        if recent.iter().any(|r| *r == key_of(&video.1)) {
+            continue;
+        }
+        let have = words(&video.1);
+        let hits = want.iter().filter(|w| have.contains(w)).count();
+        if best.is_none_or(|(b, _)| hits > b) {
+            best = Some((hits, video));
+        }
+    }
+    best.map(|(_, v)| v)
+}
+
+/// The video to start, fetched straight from YouTube's results page: one
+/// request, no page to read and nothing to click. A short timeout on purpose
+/// — the page-and-click way is the fallback, so a slow network must never
+/// cost the whole request.
+fn resolved(query: &str, want: &[String], recent: &[String]) -> Option<(String, String)> {
+    let html = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(4))
+        .user_agent(USER_AGENT)
+        .build()
+        .ok()?
+        .get(search_url(query))
+        .header("Accept-Language", "en-US,en;q=0.9")
+        .send()
+        .ok()?
+        .error_for_status()
+        .ok()?
+        .text()
+        .ok()?;
+    pick(&videos(&html), want, recent).cloned()
+}
+
+/// Did it start? Windows' media sessions say. When Windows can't tell (no
+/// session registered yet), say yes rather than open the song a second time.
+fn started(within: Duration) -> bool {
+    let began = Instant::now();
+    loop {
+        match crate::media::playing() {
+            Some(true) => return true,
+            None => return true,
+            Some(false) if began.elapsed() >= within => return false,
+            Some(false) => std::thread::sleep(Duration::from_millis(400)),
+        }
+    }
+}
+
+/// What it played, newest last, so "play it again" doesn't repeat the last song.
+fn remember(title: &str) {
+    let mut recent = RECENT.lock();
+    recent.push(key_of(title));
+    if recent.len() > 12 {
+        recent.remove(0);
+    }
 }
 
 /// Search YouTube for `query` and start the best video for it — a friend's
@@ -159,14 +246,27 @@ fn first_video(html: &str) -> Option<(String, String)> {
 pub fn play(query: &str) -> Result<Option<String>> {
     // One song at a time: whatever else is playing stops first.
     crate::media::pause_others();
+    let words = words(query);
+    // Straight to the video: one request for the results page, then the video
+    // itself — no list to read and nothing to click, so it starts in about a
+    // second and no results page is left on screen (nothing to press by
+    // mistake afterwards). If it doesn't start this way, the page-and-click
+    // path below still runs.
+    if let Some((url, title)) = resolved(query, &words, &RECENT.lock().clone()) {
+        if crate::patience::go_to(&url).is_ok() && started(AD_START_WAIT) {
+            eprintln!("[youtube] played \"{title}\" directly — {url}");
+            remember(&title);
+            watch_ads(AD_WATCH);
+            return Ok(Some(short_title(&title)));
+        }
+    }
     // The YouTube tab it already has up, rather than a new tab per song.
     crate::patience::go_to(&search_url(query))?;
     watch_ads(AD_WATCH);
-    let words = words(query);
-    let started = Instant::now();
+    let began = Instant::now();
     // The results take a moment to arrive; look a few times rather than
     // waiting a fixed while.
-    while started.elapsed() < Duration::from_secs(12) {
+    while began.elapsed() < Duration::from_secs(12) {
         std::thread::sleep(Duration::from_millis(700));
         if crate::automation::aborted() {
             return Ok(None);
@@ -180,11 +280,7 @@ pub fn play(query: &str) -> Result<Option<String>> {
             let (x, y) = best.rect.center();
             eprintln!("[youtube] playing \"{}\"", best.name);
             crate::automation::click_at(x, y, enigo::Button::Left, 1, 260)?;
-            let mut r = RECENT.lock();
-            r.push(key_of(&best.name));
-            if r.len() > 12 {
-                r.remove(0);
-            }
+            remember(&best.name);
             return Ok(Some(short_title(&best.name)));
         }
     }
@@ -326,6 +422,49 @@ pub fn watch_ads(how_long: Duration) {
 /// Stop pressing Skip (the stop keys). The watch thread ends within a second.
 pub fn stop_watching_ads() {
     *WATCH_UNTIL.lock() = None;
+}
+
+#[cfg(test)]
+mod direct_tests {
+    use super::*;
+
+    fn page(entries: &[(&str, &str)]) -> String {
+        entries
+            .iter()
+            .map(|(id, title)| {
+                format!(
+                    "...\"videoRenderer\":{{\"videoId\":\"{id}\",\"thumbnail\":{{}},\"title\":{{\"runs\":[{{\"text\":\"{title}\"}}]}}}}..."
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn reads_every_video_on_the_page_in_order() {
+        let html = page(&[("aaaaaaaaaaa", "Lofi Beats to Study"), ("bbbbbbbbbbb", "Chill Lofi Mix")]);
+        let found = videos(&html);
+        assert_eq!(found.len(), 2);
+        assert_eq!(found[0].0, "https://www.youtube.com/watch?v=aaaaaaaaaaa");
+        assert_eq!(found[1].1, "Chill Lofi Mix");
+    }
+
+    #[test]
+    fn picks_the_closest_title_and_skips_what_it_played_lately() {
+        let found = videos(&page(&[
+            ("aaaaaaaaaaa", "Burna Boy - Last Last"),
+            ("bbbbbbbbbbb", "Burna Boy - City Boys"),
+        ]));
+        let recent = vec![key_of("Burna Boy - City Boys")];
+        let picked = pick(&found, &words("play burna boy last last"), &recent).unwrap();
+        assert_eq!(picked.0, "https://www.youtube.com/watch?v=aaaaaaaaaaa");
+        // The one asked for again is skipped: it played it lately.
+        assert_eq!(pick(&found, &words("burna boy city boys"), &recent).unwrap().0, "https://www.youtube.com/watch?v=aaaaaaaaaaa");
+        // A vague ask takes the first that isn't recent.
+        assert_eq!(pick(&found, &words("something chill"), &recent).unwrap().0, "https://www.youtube.com/watch?v=aaaaaaaaaaa");
+        // Everything recent: nothing picked, so the page view still runs.
+        let all = vec![key_of("Burna Boy - Last Last"), key_of("Burna Boy - City Boys")];
+        assert!(pick(&found, &words("burna boy"), &all).is_none());
+    }
 }
 
 #[cfg(test)]

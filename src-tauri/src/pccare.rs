@@ -257,6 +257,26 @@ pub fn spoken() -> String {
     )
 }
 
+/// Below this share of a drive, a PC starts fighting itself: no room for a
+/// Windows Update, no room for a render.
+const TIGHT: f64 = 0.08;
+/// Never tidy more than this often, however full the disk is.
+const TIDY_EVERY: Duration = Duration::from_secs(20 * 3600);
+
+/// Is the disk tight enough that clearing old temp files is worth doing by
+/// itself? Under 8 % free (or under 5 GB), and not done in the last 20 hours.
+/// Pure, so the rule is pinned by tests rather than by whoever is watching.
+fn should_tidy(drives: &[(String, f64, f64)], last: Option<Instant>) -> bool {
+    if last.is_some_and(|t| t.elapsed() < TIDY_EVERY) {
+        return false;
+    }
+    drives.iter().any(|(_, free, total)| {
+        // A total Windows couldn't read only costs the share test, never the
+        // absolute one: 2 GB left is tight on any drive.
+        *free < 5.0 || (*total > 1.0 && *free / *total < TIGHT)
+    })
+}
+
 /// In the background: disk space every 10 minutes (instant), the full check
 /// a few minutes after start and then every 3 hours. Nothing at all while
 /// alerts are switched off.
@@ -264,6 +284,7 @@ pub fn spawn() {
     let _ = std::thread::Builder::new().name("izuki-pc-care".into()).spawn(|| {
         std::thread::sleep(Duration::from_secs(4 * 60));
         let mut full_at: Option<Instant> = None;
+        let mut tidied: Option<Instant> = None;
         loop {
             let on = crate::state::try_store().is_some_and(|s| s.settings().pc_care_alerts);
             if on && !crate::uia::screen_locked() {
@@ -280,6 +301,31 @@ pub fn spawn() {
                     full_at = Some(Instant::now());
                 }
             }
+            // Autopilot for a full disk: with "keep my PC fast by itself" on
+            // and a drive nearly out of room, clear what is provably safe —
+            // temp files untouched for two days, never anything in use — and
+            // say how much came back. Once a day at most.
+            if !crate::uia::screen_locked()
+                && !crate::hotkey::is_busy()
+                && crate::state::try_store().is_some_and(|s| s.settings().pc_boost_auto)
+                && should_tidy(&crate::storage::drives(), tidied)
+            {
+                let freed = crate::boost::clear_old_temp();
+                tidied = Some(Instant::now());
+                eprintln!("[pc-care] the disk was tight: cleared {freed} MB of old temp files");
+                if freed > 0 {
+                    if let Some(app) = crate::state::app() {
+                        crate::buddy::say(
+                            app,
+                            "disk-autotidy",
+                            &format!(
+                                "Your disk was nearly full, so I cleared {freed} MB of old temp files. Nothing of yours was touched."
+                            ),
+                            crate::buddy::Level::Chat,
+                        );
+                    }
+                }
+            }
             std::thread::sleep(Duration::from_secs(10 * 60));
         }
     });
@@ -289,6 +335,22 @@ pub fn spawn() {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn a_full_disk_is_tidied_by_itself_but_not_over_and_over() {
+        let tight = vec![("C:".to_string(), 3.0, 500.0)];
+        let roomy = vec![("C:".to_string(), 120.0, 500.0)];
+        assert!(should_tidy(&tight, None), "3 GB left on a 500 GB drive");
+        assert!(!should_tidy(&roomy, None), "a quarter free needs nothing");
+        assert!(should_tidy(&[("D:".to_string(), 39.0, 500.0)], None), "just under the 8% share");
+        assert!(!should_tidy(&tight, Some(Instant::now())), "not twice in one evening");
+        assert!(should_tidy(&tight, Some(Instant::now() - Duration::from_secs(21 * 3600))));
+        assert!(!should_tidy(&[], None), "no drive known: nothing to decide");
+        assert!(
+            should_tidy(&[("C:".to_string(), 2.0, 0.0)], None),
+            "under 5 GB is tight even when Windows won't say how big the drive is"
+        );
+    }
 
     /// The real check on this PC: run by hand with --ignored --nocapture.
     #[test]

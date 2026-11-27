@@ -375,3 +375,63 @@ Fix whatever breaks; keep each fix small.
   directly, with the PC off, with no proxy.
 - Composio keys start `ak_` and must stay out of error reports: they are in the
   scrub list in both `bugs.rs` and `docs/shared/bugs.js`.
+
+## Two machines: working from either laptop
+
+The owner has two Windows PCs and either one can be the machine that is on.
+The repo is the handoff: what is pushed to `origin` is what the other laptop
+can see, and nothing else transfers. A chat or a doc artifact lives in the
+cloud; code does not.
+
+**Where the work lives.** `origin` is `https://github.com/nova-izuki/izuki.git`.
+The shared branch is `milestone-196`, not `main`. The Freebuff feature branches
+`freebuff/watch-everywhere` (3545e92) and `freebuff/file-organizer` (0edad95)
+are pushed and ready for review. On 2026-11-26 every local-only branch was
+pushed (44 of them), so no branch now exists on one disk only.
+
+**First run on a laptop that has not seen the repo:**
+
+```bash
+git clone https://github.com/nova-izuki/izuki.git
+cd izuki
+git fetch --all --prune
+git switch milestone-196
+git pull --ff-only
+npm install            # only if node_modules is missing
+```
+
+If the folder is already there, skip the clone:
+`git fetch --all --prune && git switch milestone-196 && git pull --ff-only`.
+
+Then read `AGENTS.md`, `docs/COLLAB.md` (who holds what), this file and
+`docs/NEXT-RELEASE.md` (what is waiting to ship). `docs/HOW-IZUKI-WORKS.md`
+explains the code. To edit from a chat, open the repo folder itself in
+Freebuff Desktop — not a copy of it — or file tools land somewhere that looks
+like Izuki but is not the repo.
+
+**Rules that stop the two machines fighting:**
+
+- One machine owns a branch at a time. `git pull --ff-only` when you sit down,
+  `git push` before you close the lid.
+- Claim the work in `docs/COLLAB.md` first, and say which PC it is.
+- Never force-push a shared branch. If push says "behind", pull `--ff-only`;
+  if it says "diverged", stop and merge deliberately.
+- An unpushed commit is one dead disk away from gone. Push before switching off.
+
+**Do not sync the folder itself.** No OneDrive/Dropbox on the repo: 30+
+worktrees, a live `.git` index and `node_modules` on a synced folder corrupts
+the index and invents conflicts. Git is the sync.
+
+**Checking state from either machine:**
+
+```bash
+git log --oneline -5 origin/milestone-196   # what the other laptop sees
+git status -sb                              # what this one has not pushed
+```
+
+`[ahead N]` in `git status -sb` is work that exists on this disk only.
+
+**Running the checks on the other machine** (same as here): `npx tsc --noEmit`,
+`npm run build`, and in `src-tauri` `IZUKI_TEST_MANIFEST=1 cargo test --lib`
+(the environment variable is required on Windows, or the test binary fails to
+start with 0xc0000139).

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { BellRing, Copy, Gauge, Loader2, RefreshCw, Rocket, ShieldCheck, Stethoscope, Trash2, Undo2, Wand2, Zap } from "lucide-react";
+import { BellRing, Copy, Gauge, Ghost, Loader2, RefreshCw, Rocket, ShieldCheck, Stethoscope, Trash2, Undo2, Wand2, Zap } from "lucide-react";
 import { Row, Section, Toggle } from "./ui";
 import { useIzuki } from "../lib/store";
 import { api, emit, EV, IS_TAURI, type BackgroundService, type BoostHealth, type CareCheck, type CareReport, type DeepReport } from "../lib/ipc";
@@ -427,6 +427,13 @@ export function BoostCard() {
         icon={<Trash2 size={14} strokeWidth={2.3} />}
       >
         <Toggle checked={settings.tidy_recycle_auto} onChange={(v) => patch({ tidy_recycle_auto: v })} />
+      </Row>
+      <Row
+        label="Close helpers left behind"
+        hint="A background helper that has had no window at all for ten minutes is closed — the kind left over when its app crashed or shut down. They start again when they're needed, and nothing with a window, plus every system and security process, is ever touched."
+        icon={<Ghost size={14} strokeWidth={2.3} />}
+      >
+        <Toggle checked={settings.close_orphans_auto} onChange={(v) => patch({ close_orphans_auto: v })} />
       </Row>
       {bin && bin[0] > 0 && (
         <div className="mt-1 flex items-center justify-between gap-2 rounded-[12px] bg-white/[0.04] px-3 py-2 text-[11.5px] text-izk-muted">
