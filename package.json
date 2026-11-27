@@ -24,7 +24,7 @@
     "test:island": "node tools/island-chat-check.cjs",
     "test:companion": "node tools/companion-check.mjs",
     "test:finder": "node tools/finder-check.mjs",
-    "test:panel": "node tools/panel-check.mjs",
+    "test:panel": "node tools/panel-check.mjs && node tools/panel-actions-check.mjs",
     "test:panel-browser": "node tools/panel-browser-check.cjs",
     "test:question-page": "node tools/question-page-browser-check.cjs",
     "test:assets": "node tools/asset-check.mjs",

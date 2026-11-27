@@ -429,3 +429,47 @@ does this say?"). Prompt line in `chat.rs`, copy in `AppsTab.tsx`.
 been run on this PC yet. Files owned here: `src-tauri/src/browser.rs`,
 `src-tauri/src/chat.rs` (one prompt line), `src/components/tabs/AppsTab.tsx`, one
 line in `docs/NEXT-RELEASE.md`, this section.
+
+## The side panel works the tab you are on (Freebuff, 2026-11-27, owner request)
+
+The owner asked for the extension to drive the tab they are actually in: read the
+current Chrome page and click or type on it from the side panel, so Izuki works
+on the site they are signed in to instead of only in its own window. The panel
+could already read a page (`extractPage` in `sidepanel-state.js`, text and links,
+never form values); it could not act on one.
+
+New `extension/page-actions.js` holds the whole thing: `pageControls()` (injected
+with `chrome.scripting.executeScript({ func })`, so it stands alone) numbers every
+visible thing that can be pressed or typed into and stamps each with
+`data-izuki-n="<n>"`; `clickControl(n)` and `typeControl(n, text, submit)` act on
+the element that number was given to, so a page that reflows between the look and
+the press cannot move the click; `actionTags()` reads the tags out of an answer,
+`stripActions()` is what the person reads, and `actionPrompt()` is the numbered
+list plus the limits given to the model. `riskyControl()` names the presses that
+commit — send, post, publish, submit, buy, pay, delete, log out — and
+`actOnPage()` in `sidepanel.js` refuses those before clicking, saying which one it
+left alone. Passwords, hidden/file/image inputs, disabled elements and off-screen
+elements are never numbered, and a password box is refused even if one is asked
+for by number.
+
+The tags are `[PAGE_CLICK: n]` and `[PAGE_TYPE: n | words ⏎]` on purpose: the PC
+app owns `[CLICK]`/`[TYPE]` for its own WebView2 window, and a tag must never be
+performed by the wrong side. The panel does at most four steps per answer, then
+looks at the page once more (`ask(..., after)`) so a two-step task finishes
+without another question being typed. A new switch, `act-page` in
+`sidepanel.html`, is off until the person turns it on, and it needs
+`share` (the page reader) on as well.
+
+Checked here: `node tools/panel-actions-check.mjs` (10 cases on a stub DOM:
+ordering, a tag with no words or no such number doing nothing, stripping, the
+prompt's numbers, numbering that skips passwords/hidden/off-screen/disabled, the
+exact element pressed, a vanished item reported instead of guessed, typing that
+fires input and change, a form's own `requestSubmit`, a password box refused, and
+the commit-word rule), `npm run test:panel`, `npm run test:html`,
+`node --check` on both touched scripts, `git diff --check`. Not checked: this has
+not run in Chrome against a real signed-in site — `chrome.scripting` injection,
+the switch, and the look-again round are only covered by the stubs. Files owned
+here: `extension/page-actions.js`, `extension/sidepanel.js`,
+`extension/sidepanel.html` (one switch), `tools/panel-actions-check.mjs`,
+`package.json` (`test:panel` runs the new check), one line in
+`docs/NEXT-RELEASE.md`, this section.
