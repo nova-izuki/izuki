@@ -931,6 +931,54 @@
     } catch {}
     try { window.izukiBugs?.crumb(message, "voice"); } catch {}
   };
+
+  // ---- a turn's timeline (tested by tools/phone-check/turntime.test.cjs) ----
+  /**
+   * One line for Diagnostics: how long each part of a turn took, counted from
+   * the moment it began — a tap, a wake word, opening the call, or typing.
+   * `turn` is {source, began, heard, words, thinking, sound, done, voice};
+   * every time is a stamp in milliseconds, 0 for a part that never happened,
+   * so a stage that never came is left out instead of reading as instant.
+   */
+  function turnLine(turn, label) {
+    const name = label || "Last turn";
+    if (!turn || !turn.began) return name + ": none yet";
+    const secs = (ms) => (Math.max(0, ms - turn.began) / 1000).toFixed(1) + " s";
+    const parts = [
+      ["first words", turn.heard],
+      ["transcript", turn.words],
+      ["first token", turn.thinking],
+      ["first sound", turn.sound],
+      ["last sound", turn.done],
+    ];
+    const seen = parts.filter(([, ms]) => ms > 0).map(([part, ms]) => part + " " + secs(ms));
+    const heard = turn.done > 0 && turn.sound > 0 ? " · " + ((turn.done - turn.sound) / 1000).toFixed(1) + " s of sound" : "";
+    return name + " (" + (turn.source || "?") + "): " + (seen.length ? seen.join(" · ") : "no stages yet")
+      + heard + " · " + (turn.voice || "no voice");
+  }
+  /** The turn being timed now, the last one that finished, and what began the next. */
+  let turnNow = null, turnLast = null, turnSource = "tap";
+  const turnOpen = () => !!turnNow && !turnNow.closed;
+  /** A tap, a wake word, the call or typing: a new timeline starts here. */
+  function turnStart(source) {
+    if (turnOpen()) turnClose();
+    turnNow = { source: source || turnSource || "tap", began: Date.now(), heard: 0, words: 0, thinking: 0, sound: 0, done: 0, voice: "", closed: false };
+    return turnNow;
+  }
+  /** The first time each stage happens is the one that counts. */
+  function turnMark(stage) {
+    if (turnOpen() && !turnNow[stage]) turnNow[stage] = Date.now();
+  }
+  /** Which voice spoke: the last one wins, so a fallback is what gets shown. */
+  function turnVoice(which) {
+    if (turnOpen() && which) turnNow.voice = which;
+  }
+  function turnClose() {
+    if (!turnOpen()) return;
+    turnNow.closed = true;
+    turnLast = turnNow;
+  }
+  // ---- end of a turn's timeline ----
   // A standing fact for the copy ("why didn't it search?"), not a report.
   const fact = (name, value) => { try { window.izukiBugs?.fact(name, value); } catch {} };
 
@@ -3021,6 +3069,7 @@
   function finishRequest() {
     answered();
     requestAbort = null;
+    turnClose();
   }
   const brainName = () => (usesGemini() ? "Gemini" : BRAINS[brain]?.name || "your AI");
   /** The words for a request that ended without an answer. */
@@ -3120,6 +3169,9 @@
   async function ask(said, audio) {
     said = (said || "").trim();
     const files = attached;
+    // Typing opens no listening session, so its turn starts here.
+    if (!turnOpen()) turnStart(turnSource);
+    if (said && !audio) turnMark("words");
     if (busy || (!said && !audio && !files.length)) return;
     // A voice turn on the lock screen: general questions only.
     if (turnCtx?.locked && said && !audio) return askLocked(said);
@@ -3236,6 +3288,7 @@
         finishRequest();
         busy = false; refreshSend(); setOrb(""); setStatus(""); if (talking && requestEnd !== "cancelled") listen(); return;
       }
+      turnMark("words");
       const stoppedHearing = !!requestEnd;
       finishRequest();
       busy = false; refreshSend(); setStatus("");
@@ -3484,7 +3537,7 @@
         if (!writing && t.trim()) { writing = true; stage(""); }
         const heard = t.match(/^\s*\[HEARD:\s*([^\]]*)\]?/i);
         if (heard) { me.textContent = heard[1].trim() || "🎙️"; liveHeard(heard[1].trim()); t = t.slice(heard[0].length); }
-        if (!/^\s*\[?P?C?\]?\s*$/i.test(t)) { out.textContent = shown(t) || "…"; early?.feed(shown(t)); }
+        if (!/^\s*\[?P?C?\]?\s*$/i.test(t)) { out.textContent = shown(t) || "…"; early?.feed(shown(t)); turnMark("thinking"); }
         log.scrollTop = log.scrollHeight;
       });
       // Stopped mid-answer: a partial reply is not shown or spoken.
@@ -4152,7 +4205,7 @@
         const stopCaption = followCaption(t, () => (began ? (((performance.now() - began) / 1000) * 14) / Math.max(1, t.length) : 0));
         const stop = () => { void native.hushSpeech(); };
         stopSound = stop;
-        native.speak(t, { turn: turnCtx?.id || "", onStart: () => { began = performance.now(); } }).then((how) => {
+        native.speak(t, { turn: turnCtx?.id || "", onStart: () => { began = performance.now(); turnMark("sound"); turnVoice("Android's own voice"); } }).then((how) => {
           stopCaption();
           if (stopSound === stop) stopSound = null;
           if (how === "error") { note("android voice failed"); onBlocked(); }
@@ -4200,7 +4253,7 @@
         }
         clearTimeout(startGuard);
         startGuard = setTimeout(blocked, 3000);
-        u.onstart = () => { clearTimeout(startGuard); pieceAt = performance.now(); };
+        u.onstart = () => { clearTimeout(startGuard); pieceAt = performance.now(); turnMark("sound"); turnVoice("the phone's voice"); };
         u.onboundary = (e) => { bounds = true; at = e.charIndex; };
         u.onend = () => { clearTimeout(startGuard); next(); };
         u.onerror = (e) => { if (e.error === "interrupted" || e.error === "canceled") finish(); else { note("phone voice error: " + e.error); blocked(); } };
@@ -4252,6 +4305,7 @@
       player.onerror = () => fallBack("error");
       const stop = () => { try { player.pause(); } catch {} finish(); };
       stopSound = stop;
+      player.onplaying = () => { turnMark("sound"); turnVoice("Gemini's voice"); };
       player.src = url;
       window.IzukiOrb?.trackAudio(player, url);
       player.play().catch((e) => {
@@ -4308,6 +4362,9 @@
     // One voice at a time: a new line stops whatever is still playing. An
     // older line's loop already stopped (speakSeq), but the audio it had
     // started kept going under the new line, so two voices talked at once.
+    // The whole answer is here (streaming marks this as soon as its first word
+    // arrives, so this only fills in the non-streamed path).
+    turnMark("thinking");
     if (!stream) hush();
     const s = stream || voiceStream({ siri });
     const ducked = localStorage.getItem("izuki.duck") === "1" && window.IzukiNative?.installed?.();
@@ -4318,6 +4375,7 @@
       await s.end(t);
     } finally {
       pageVoice(false);
+      turnMark("done");
       if (ducked) void window.IzukiNative?.audioFocus?.(false);
     }
   }
@@ -4430,7 +4488,10 @@
         window.IzukiOrb?.say?.(p.words);
         let blocked = false;
         if (url && overApps && window.IzukiNative?.canPlayClip?.()) {
-          const how = await window.IzukiNative.playClip(url, p.words, { turn: turnCtx?.id || "" });
+          const how = await window.IzukiNative.playClip(url, p.words, {
+            turn: turnCtx?.id || "",
+            onStart: () => { turnMark("sound"); turnVoice("Gemini's voice, played by Android"); },
+          });
           URL.revokeObjectURL(url);
           if (how === "error" && alive()) await speakWithPhone(p.words, () => {});
         } else if (url) {
@@ -4612,6 +4673,7 @@
 
   function listen() {
     if (!talking || busy || manualPlayback) return;
+    if (!turnOpen()) turnStart(turnSource);
     heardInListen = false;
     listenStartedAt = Date.now();
     // A wake whose own audio was unavailable leaves a voice check pending.
@@ -4641,6 +4703,7 @@
       final = "";
       for (const r of e.results) (r.isFinal ? (final += r[0].transcript) : (interim += r[0].transcript));
       liveHeard(final + interim);
+      turnMark("heard");
       IzukiOrb.kick(0.55);
     };
     recog.onerror = (e) => { failed = e.error; if (e.error !== "no-speech" && e.error !== "aborted") note("speech recognition: " + e.error); };
@@ -4702,6 +4765,7 @@
       if (my !== earSeq || !talking) return;
       if (words.trim()) heardInListen = true;
       liveHeard(words);
+      turnMark("heard");
       IzukiOrb.kick(0.55);
     });
     if (my !== earSeq || !talking || busy || manualPlayback) return;
@@ -4923,6 +4987,7 @@
     // A new call gives Android's recognizer another go: last call's fallback to
     // recording (if any) doesn't carry over into this one.
     useNativeEars = true;
+    turnSource = "call";
     $("live-name").textContent = person().name;
     $("live-style").textContent = person().style;
     liveHeard(""); liveSaid("");
@@ -4967,6 +5032,7 @@
       talking = true;
       unlockAudio();
       listen();
+      turnSource = "listening";
     }
   }
   function endLive() {
@@ -5149,7 +5215,7 @@
     }
     if (window.IzukiNative?.canListen?.() && useNativeEars) {
       // Waiting after a quiet spell: listen now. Listening: "I'm done", the words so far count.
-      if (talking && !busy && (waitingForTap || orbState !== "listening")) { setStatus(""); listen(); return; }
+      if (talking && !busy && (waitingForTap || orbState !== "listening")) { setStatus(""); turnSource = "tap"; listen(); return; }
       void window.IzukiNative.stopListening(true);
       return;
     }
@@ -5199,6 +5265,7 @@
     if (!t && !attached.length) return;
     text.value = "";
     text.style.height = "auto";
+    turnSource = "typed";
     ask(t);
     refreshSend();
   });
@@ -5746,6 +5813,9 @@
         w.lastError ? `  last error: ${w.lastError} (${when(w.lastErrorAt)})` : "",
         ...(Array.isArray(w.events) ? w.events.slice(-12).map((e) => "  " + e) : []),
         "",
+        "",
+        turnLine(turnLast, "Last turn"),
+        ...(turnOpen() ? [turnLine(turnNow, "Turn in progress")] : []),
         "",
         `Voice: ${window.IzukiNative?.canSpeak?.() ? "Android's own voice" : "the page's voice"} · ${window.IzukiNative?.canListen?.() ? (useNativeEars ? "ears: Android's recognizer" : "ears: recording (fallback)") : "ears: none"} · call ${talking ? "on" : "off"}${busy ? " · busy" : ""}${waitingForTap ? " · waiting for a tap" : ""} · orb ${orbState || "hidden"}`,
         ...voiceTrail.map((line) => "  " + line),
@@ -7047,6 +7117,7 @@
         return;
       }
       if (stopped()) return;
+      turnSource = "wake";
       await ask(said);
     } catch (e) {
       note("voice turn failed: " + (e?.message || e));

@@ -81,6 +81,8 @@ assert.ok(trimmed.length < clip.length && trimmed.length >= 16000, "quiet margin
       bubble: (_, words) => notices.push(words), endedSay: () => "Request timed out",
       groqHear: async () => { context.requestEnd = reason; return "delete this late transcript"; },
       listen: () => listening++, Error,
+      // The turn clock lives outside this slice (turntime.test.cjs covers it).
+      turnSource: "tap", turnOpen: () => false, turnStart() {}, turnMark() {}, turnVoice() {}, turnClose() {},
     });
     vm.runInContext(html.slice(askStart, askEnd) + "\nglobalThis.runAsk = ask;", context);
     await context.runAsk("", { type: "audio/wav", b64: "test" });
