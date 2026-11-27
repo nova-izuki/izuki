@@ -118,15 +118,15 @@ public class VoiceTextTest {
     assertTrue(VoiceText.greetingEcho("Yes?", "Yes?"));
     assertTrue(VoiceText.greetingEcho("yes", "Yes?"));
     assertTrue(VoiceText.greetingEcho("Mm", "Mm-hm?"));
-    assertTrue(VoiceText.greetingEcho("I'm", "I'm here."), "a half-heard word still fits");
-    assertTrue(VoiceText.greetingEcho("here", "I'm here."), "a middle word fits");
-    assertTrue(VoiceText.greetingEcho("  YES!  ", "Yes?"), "punctuation and case do not matter");
-    assertFalse(VoiceText.greetingEcho("open maps", "Yes?"), "a real request is not the greeting");
-    assertFalse(VoiceText.greetingEcho("yes, open maps", "Yes?"), "a longer sentence is the person");
+    assertTrue("a half-heard word still fits", VoiceText.greetingEcho("I'm", "I'm here."));
+    assertTrue("a middle word fits", VoiceText.greetingEcho("here", "I'm here."));
+    assertTrue("punctuation and case do not matter", VoiceText.greetingEcho("  YES!  ", "Yes?"));
+    assertFalse("a real request is not the greeting", VoiceText.greetingEcho("open maps", "Yes?"));
+    assertFalse("a longer sentence is the person", VoiceText.greetingEcho("yes, open maps", "Yes?"));
     assertFalse(VoiceText.greetingEcho("what's the battery", "I'm here."));
     assertFalse(VoiceText.greetingEcho("", "Yes?"));
     assertFalse(VoiceText.greetingEcho(null, "Yes?"));
-    assertFalse(VoiceText.greetingEcho("Yes?", ""), "no greeting was said, nothing to filter");
+    assertFalse("no greeting was said, nothing to filter", VoiceText.greetingEcho("Yes?", ""));
     assertFalse(VoiceText.greetingEcho("hi", "No."));
   }
 
