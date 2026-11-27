@@ -99,6 +99,15 @@ pub fn stop() -> String {
     }
 }
 
+/// Native rescue skips TURN and disk logging: fading out must not wait for
+/// a stuck Focus task. Its HWND is hidden and checked separately by rescue.
+pub fn emergency_stop() {
+    FOR_FOCUS.store(false, Ordering::SeqCst);
+    STOPPING.store(true, Ordering::SeqCst);
+    TARGET.store(0, Ordering::SeqCst);
+    win::nudge();
+}
+
 /// Focus mode started: dim the rest, unless you already did yourself.
 /// True when the rest is dimmed now (by Focus mode or by you).
 pub fn for_focus() -> bool {
@@ -129,6 +138,9 @@ pub fn focus_over() {
 /// Bring the veil up at `level` (or change its darkness), in turn. A new
 /// veil counts only once its window is really on screen.
 fn begin(turn: parking_lot::MutexGuard<'_, ()>, level: Level) -> Result<()> {
+    // A late Focus-mode or dim request must not recreate the veil after an
+    // emergency stop. Restore overlay clears this latch explicitly.
+    crate::overlay::rescue_check()?;
     if RUNNING.load(Ordering::SeqCst) {
         TARGET.store(level.alpha(), Ordering::SeqCst);
         STOPPING.store(false, Ordering::SeqCst);
@@ -462,6 +474,10 @@ mod win {
             None,
         )
         .ok()?;
+        if !crate::rescue_native::register(veil.0 as isize) {
+            let _ = DestroyWindow(veil);
+            return None;
+        }
         let _ = SetLayeredWindowAttributes(veil, COLORREF(0), 0, LWA_ALPHA);
         // Screenshots, recordings and the phone remote see the real screen.
         // If Windows won't keep it out of them, it never shows at all.
@@ -471,7 +487,21 @@ mod win {
             return None;
         }
         WINDOW.store(veil.0 as isize, Ordering::SeqCst);
+        // An emergency stop can land after begin()'s first check but before
+        // this window is shown. Check on both sides of the show: a stop just
+        // before it is caught here, and one just after it is hidden by the
+        // native rescue pass that follows.
+        if crate::overlay::rescue_check().is_err() {
+            WINDOW.store(0, Ordering::SeqCst);
+            let _ = DestroyWindow(veil);
+            return None;
+        }
         follow(veil, true);
+        if crate::overlay::rescue_check().is_err() {
+            WINDOW.store(0, Ordering::SeqCst);
+            let _ = DestroyWindow(veil);
+            return None;
+        }
         Some(veil)
     }
 }

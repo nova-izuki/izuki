@@ -127,6 +127,10 @@ const fixture = '<!doctype html><body><button id="target">Continue</button><form
   assert(await evaluate('!document.getElementById("face-tune").hidden'), 'face customise panel did not appear');
   await evaluate(`document.getElementById('orb-style').value='liquid';document.getElementById('orb-style').dispatchEvent(new Event('change'))`);
   assert(await evaluate('!!document.getElementById("apps-refresh")'));
+  // Phone settings fold their later sections. Open the real heading first;
+  // scrolling a display:none preview cannot render it.
+  await evaluate(`(()=>{const section=document.getElementById('orb-preview').closest('section');const head=section.querySelector('.fold-head');if(head?.getAttribute('aria-expanded')==='false')head.click();})()`);
+  assert(await evaluate('document.getElementById("orb-preview").checkVisibility()'), 'opening the orb section should reveal its preview');
   await evaluate('document.getElementById("orb-preview").scrollIntoView({block:"center"})');
   await pause(250);
   assert(await evaluate('document.getElementById("orb-preview").getContext("2d").getImageData(0,0,100,100).data.some((v,i)=>i%4===3&&v>0)'), 'visible Orb Studio should render');
@@ -165,18 +169,22 @@ const fixture = '<!doctype html><body><button id="target">Continue</button><form
       const toolbar = await evaluate(`(() => {
         const rects = [...document.querySelectorAll('header .tools > button')].map(b => b.getBoundingClientRect());
         return {
-          fits: rects.length === 9 && rects.every(r => r.left >= 0 && r.right <= innerWidth),
+          fits: rects.length === 6 && rects.every(r => r.left >= 0 && r.right <= innerWidth),
           touchable: rects.every(r => r.width >= 44 && r.height >= 44),
           iconsVisible: [...document.querySelectorAll('header .tools > button svg')].every(svg => svg.getBoundingClientRect().width >= 17),
-          separate: rects.every((r, i) => rects.slice(i + 1).every(s => r.right <= s.left || s.right <= r.left || r.bottom <= s.top || s.bottom <= r.top))
+          separate: rects.every((r, i) => rects.slice(i + 1).every(s => r.right <= s.left || s.right <= r.left || r.bottom <= s.top || s.bottom <= r.top)),
+          commands: ['go-drive', 'go-remote', 'go-lecture', 'go-touch'].every(id => !!document.querySelector('#tools-sheet #' + id)),
+          more: !!document.getElementById('more-tools'),
+          sizes: rects.map(r => r.width.toFixed(1) + 'x' + r.height.toFixed(1)),
+          iconWidths: [...document.querySelectorAll('header .tools > button svg')].map(svg => svg.getBoundingClientRect().width.toFixed(1))
         };
       })()`);
-      assert(toolbar.fits && toolbar.touchable && toolbar.iconsVisible && toolbar.separate, phoneOS + ' toolbar must fit with separate touch targets at ' + width + ': ' + JSON.stringify(toolbar));
+      assert(toolbar.fits && toolbar.touchable && toolbar.iconsVisible && toolbar.separate && toolbar.commands && toolbar.more, phoneOS + ' toolbar must fit with separate touch targets and reachable commands at ' + width + ': ' + JSON.stringify(toolbar));
       fs.writeFileSync(path.join(os.tmpdir(), 'izuki-toolbar-' + phoneOS + '-' + width + '.png'), Buffer.from((await call('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
     }
     fs.writeFileSync(path.join(os.tmpdir(), 'izuki-toolbar-' + phoneOS + '.png'), Buffer.from((await call('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
   }
-  console.log('Phone toolbar: iOS and Android fit at 320, 390, 768 and 1024 with separate 44px touch targets.');
+  console.log('Phone toolbar: six controls and the four Command Centre actions fit iOS and Android at 320, 390, 768 and 1024 with separate 44px touch targets.');
   await call('Page.removeScriptToEvaluateOnNewDocument', { identifier: nativeMock.identifier });
   await navigate('/dist/index.html', '!!document.querySelector(".izk-finder-trigger")');
   assert(await evaluate('(() => { const bar=document.getElementById("draw-command");return !!bar && !bar.closest("main") && bar.getBoundingClientRect().top<innerHeight*0.4; })()'), 'the Draw command bar must stay in the header, at the top — not scroll away with the page');
@@ -234,6 +242,14 @@ const fixture = '<!doctype html><body><button id="target">Continue</button><form
   await navigate('/docs/', 'document.readyState === "complete" && !!document.getElementById("features")');
   assert(await evaluate('document.getElementById("features").textContent.includes("Two ways to take control")'));
   assert(await evaluate('[...document.querySelectorAll("a.dl")].every(a => a.href.endsWith("/releases/latest/download/Izuki-Setup.exe"))'));
+  assert(await evaluate('!!document.getElementById("wake-demo")'), 'phone wake preview missing');
+  await evaluate('document.querySelector("[data-wake=\\"locked\\"]").click()');
+  await pause(800);
+  assert.equal(await evaluate('document.getElementById("wake-demo-status").textContent'), 'LOCKED', 'wake preview did not show the lock hand-off');
+  await pause(1200);
+  assert.equal(await evaluate('document.getElementById("wake-demo-status").textContent'), 'UNLOCKED', 'wake preview did not continue after unlock');
+  assert(await evaluate('document.getElementById("wake-demo-lock").hidden'), 'lock overlay stayed after unlock');
+  console.log('Website: phone wake preview shows the lock-screen hand-off.');
   for (const width of [390, 1280]) {
     await call('Emulation.setDeviceMetricsOverride', { width, height: 844, deviceScaleFactor: 1, mobile: false });
     await pause(300);

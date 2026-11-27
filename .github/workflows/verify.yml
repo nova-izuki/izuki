@@ -31,6 +31,7 @@ jobs:
       - name: Every binary asset is whole
         run: npm run test:assets
       - run: npm run build
+      - run: npm run test:live-field
       - run: npm run test:phone
       - run: npm run test:conversation
       - run: npm run test:voice
@@ -81,3 +82,5 @@ jobs:
       - run: npm run icons
       - name: Windows unit tests (Common Controls v6 manifest)
         run: ./tools/test-windows.ps1
+      - name: Native overlay emergency rescue (disposable windows only)
+        run: npm run test:rescue

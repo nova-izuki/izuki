@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { AlarmClock, AlertTriangle, Check, ChevronDown, ChevronRight, Copy, FolderOpen, History, Link2, Loader2, Maximize2, Mic, Minimize2, MonitorSmartphone, Paperclip, Pencil, Pin, RotateCcw, Send, Sparkles, Square, Trash2, Volume2, X } from "lucide-react";
+import { AlarmClock, AlertTriangle, Check, ChevronDown, ChevronRight, Copy, FolderOpen, History, Keyboard, Link2, Loader2, Maximize2, Mic, Minimize2, MonitorSmartphone, Paperclip, Pencil, Pin, RotateCcw, Send, Sparkles, Square, Trash2, Volume2, X } from "lucide-react";
 import { api, CAMERA_PICTURE_KEY, emit, EV, ISLAND_TO_CHAT_KEY, on, type CodingUpdate, type ResearchUpdate } from "../../lib/ipc";
 import { ResearchPanel, researchAsk, type ResearchState } from "../ResearchPanel";
 import { CodingPanel, type CodingState } from "../CodingPanel";
@@ -20,7 +20,9 @@ import { attachmentContext, CHAT_FILE_TYPES, keepDocumentText, readChatFile, typ
 import { rememberPrompt } from "../../lib/recentPrompts";
 import { chatTitle, orderSessions, pinSession, rememberSession, removeSession, renameSession, searchSessions, startingMessages, timeAgo, type ChatSession, type LiveCopy } from "../../lib/chatHistory";
 import { clarificationFor, friendlyProviderError, providerRefusal, PROVIDER_REFUSAL_NOTE } from "../../lib/chatIntent";
-import { looksLikeDirections, needsApps, opensAnApp, recentHistory, shareHistory } from "../../lib/conversation";
+import { isNoteStudyPrompt } from "../../lib/notes";
+import { answerOnScreenPrompt, answersOnScreenQuestion, forgetHistory, looksLikeDirections, MISSION_ADD, needsApps, opensAnApp, recentHistory, shareHistory, wantsDirectAnswer } from "../../lib/conversation";
+import { parseInstant } from "../../lib/instant";
 
 /**
  * Izuki as a plain chat companion — no screen, no mouse. Ask anything,
@@ -108,8 +110,13 @@ function setChatSessionId(id: string) {
 /** A failure that setting up a brain would fix. */
 const NEEDS_BRAIN = /no chat-capable brain|add an api key|key was rejected|rejected the key|unauthori[sz]ed|\b401\b|invalid api key|api key not valid/i;
 
-/** How long to wait for the first words before saying something's wrong. */
-const FIRST_WORDS_MS = 45_000;
+/**
+ * How long to wait for the first words before saying something's wrong.
+ * 45 s of a silent "Thinking…" read as frozen — and the screen agent spent
+ * a second 45 s behind it. Twenty matches its budget (brain.rs
+ * LOOK_BUDGET), so a dead brain is admitted once, not twice.
+ */
+const FIRST_WORDS_MS = 20_000;
 
 const KEY = "izuki.chat.v1";
 /** The last write number given to either copy of the open chat (LiveCopy). */
@@ -128,6 +135,10 @@ const ACCOUNTS =
 const WRITE_ONLY =
   /\b(help me (write|draft|compose)|write (me )?(an? )?(e-?mail|message|note|reply)|draft (me )?(an? )?(e-?mail|message|note|reply))\b/i;
 const wantsApps = (t: string) => (ACCOUNTS.test(t) || needsApps(t)) && !opensAnApp(t) && !WRITE_ONLY.test(t) && !/\b(remind me|set (a |an )?reminder)\b/i.test(t);
+// Mail is answered by the inbox/search lane at once. "Any good message"
+// must reach instant_command, where headsup.rs checks the inbox, rather
+// than the model inventing a keyword search for "chrome good".
+const MAIL_ASK = /\b(?:e-?mails?|gmail|inbox|mail)\b/i;
 const APPS = /^\s*\[?APPS\]?\s*$/i;
 const REMIND_TAG = /\s*\[(?:REMIND|ALARM)[^\]]*\]?\s*/gi;
 // Focus mode and Recall are answered on the PC itself, at once.
@@ -696,6 +707,8 @@ export function ChatTab() {
    *  second thought during a lab isn't silently dropped. */
   const [queued, setQueued] = useState<{ text: string; pics: string[]; docs: ChatAttachment[] } | null>(null);
   const [fileError, setFileError] = useState("");
+  /** "Typed it" / "couldn't type" after the keyboard button under the composer. */
+  const [typedNote, setTypedNote] = useState("");
   const [readingFiles, setReadingFiles] = useState(false);
   const fileGeneration = useRef(0);
   const readingNow = useRef(false);
@@ -829,7 +842,7 @@ export function ChatTab() {
       baseline.current = { session, from: msgs.length };
       return;
     }
-    shareHistory(msgs.slice(b.from).map(({ role, content }) => ({ role, content })));
+    shareHistory(msgs.slice(b.from).map(({ role, content }) => ({ role, content })), session);
   }, [msgs, session]);
 
   /** Coding mode on, and its project (remembered on this PC). */
@@ -916,7 +929,9 @@ export function ChatTab() {
         }
       }
       const hasChatContext = msgs.some((m) => m.role === "user" && m.content.trim() && !clarificationFor(m.content, false)) || images.length > 0 || attached.length > 0;
-      const ask = !note && !here ? clarificationFor(t, hasChatContext) : null;
+      // "answer" / "answer this" is already a complete request: don't stop a
+      // first turn at "Which question do you mean?" before the answer branch.
+      const ask = !note && !here && !answersOnScreenQuestion(t) ? clarificationFor(t, hasChatContext) : null;
       if (ask) {
         setMsgs((m) => [...m, { role: "user", content: t }, { role: "assistant", content: ask }]);
         return;
@@ -1030,16 +1045,77 @@ export function ChatTab() {
         }
         return;
       }
+      // "Open Chrome", "launch Notepad", "go to amazon.com": the same local
+      // shortcut the orb and voice already take — Windows starts it at once,
+      // with no brain to wait on. Typed here it used to become a job for the
+      // screen agent, which on a slow or rate-limited free brain could spend
+      // the better part of a minute on what Windows does in a blink.
+      if (!note && !here && !images.length && !attached.length) {
+        const instant = parseInstant(t);
+        if (instant) {
+          const appName = instant.name.charAt(0).toUpperCase() + instant.name.slice(1);
+          let opened: string | null = null;
+          if (instant.kind === "play") {
+            const title = await api.playYoutube(instant.name).catch(() => null);
+            opened = title ? `Playing ${title}.` : `Here's ${instant.name} on YouTube — pick the one you want.`;
+          } else {
+            if (instant.kind === "app") {
+              opened = await api.openApp(instant.name).then(() => `Opening ${appName}.`).catch(() => null);
+            }
+            // Not installed by that name: a known site still opens straight away.
+            if (!opened && instant.url) {
+              opened = await api.openUrl(instant.url).then(() => `Opening ${appName}.`).catch(() => null);
+            }
+          }
+          if (opened) {
+            if (streamId.current !== id) return;
+            setLast({ content: opened, status: undefined });
+            streamId.current = null;
+            setBusy(false);
+            return;
+          }
+        }
+      }
+      // "Answer this" / "what's the answer to number 3": read the actual
+      // question on screen. This used to fall through to the Study-log
+      // fallback and reply "Study log off. What's already saved stays in
+      // Notes." instead of answering.
+      if (!note && !here && !images.length && !attached.length && !isNoteStudyPrompt(t) && !MISSION_ADD.test(t) && wantsDirectAnswer(t)) {
+        // The user turn and its reply bubble were already added above. Ask the
+        // same screen agent the voice path uses, then put its answer in this
+        // bubble: calling sendChatCommand() here would speak the answer while
+        // leaving this chat stuck on "Reading…" forever.
+        setLast({ content: "Reading the question on your screen… 👀", status: undefined });
+        // Stop calls finish.current before clearing the stream, so this can
+        // replace the placeholder even though the late native result is ignored.
+        const finishReading = (why: string) => setLast({ content: why || "Stopped.", status: undefined });
+        finish.current = finishReading;
+        try {
+          const plan = await api.submitVoiceCommand(answerOnScreenPrompt(t), history);
+          if (streamId.current !== id) return;
+          setLast({ content: plan.summary?.trim() || "I couldn't read a clear answer on this screen. Give me a clearer view and ask again.", status: undefined });
+        } catch (e) {
+          if (streamId.current !== id) return;
+          setLast({ content: `I couldn't read the question — ${String(e)}`, failed: true, retry: true, status: undefined });
+        } finally {
+          if (finish.current === finishReading) finish.current = null;
+          if (streamId.current === id) { streamId.current = null; setBusy(false); }
+        }
+        return;
+      }
       // The Later list ("remind me later I'm buying…", "what's on my list"): done at once.
-      if (!attached.length && (LATER.test(t) || INSTANT_ASK.test(t) || STORAGE_ASK.test(t) || STUDY_ASK.test(t))) {
+      if (!attached.length && (LATER.test(t) || (MAIL_ASK.test(t) && wantsApps(t)) || INSTANT_ASK.test(t) || STORAGE_ASK.test(t) || STUDY_ASK.test(t))) {
         const said = await api.instantCommand(t).catch(() => null);
+        // Stop may have been pressed while the mail check ran; never start the
+        // apps fallback for a request the person already cancelled.
+        if (streamId.current !== id) return;
         if (said) {
           setLast({ content: said, status: undefined });
           if (streamId.current === id) { streamId.current = null; setBusy(false); }
           return;
         }
-        if (STUDY_ASK.test(t)) {
-          setLast({ content: "Open the quiz or assignment in your browser, then ask again — I can walk you through it, but I won't answer or submit it for you.", status: undefined });
+        if (STUDY_ASK.test(t) && !answersOnScreenQuestion(t)) {
+          setLast({ content: "Open the quiz or assignment in your browser, then ask again — I can answer the question you point at, or walk you through it. I won't submit it for you.", status: undefined });
           if (streamId.current === id) { streamId.current = null; setBusy(false); }
           return;
         }
@@ -1236,6 +1312,8 @@ ${PROVIDER_REFUSAL_NOTE}` : shown });
 
   const deleteChat = (chat: RecentChat) => {
     commitRecent(removeSession(recentRef.current, chat.id));
+    // Its lines leave the conversation the orb and the phone share, too.
+    forgetHistory(chat.id);
     if (chat.id === chatSessionId) beginChat(false);
   };
   /** The chat being renamed, and the title typed so far. */
@@ -1261,6 +1339,7 @@ ${PROVIDER_REFUSAL_NOTE}` : shown });
     }
     setArmedClear(false);
     commitRecent([]);
+    forgetHistory(null);
     beginChat(false); setRecentsOpen(false); setRecentQuery("");
   };
 
@@ -1364,7 +1443,20 @@ ${PROVIDER_REFUSAL_NOTE}` : shown });
     const ask = [...msgs.slice(0, i)].reverse().find((m) => m.role === "user")?.content;
     if (!ask) return;
     setMsgs((m) => m.map((x, j) => (j === i ? { ...x, content: "On it — watch your screen. 🖥️", screen: false } : x)));
-    void sendChatCommand(ask);
+    // The marker is the user pressing the button: it bypasses the local
+    // shortcuts (including the assignment coach) so the screen agent actually
+    // does the task instead of turning it into another plan.
+    void sendChatCommand(`[DO IT] On my screen, do this for me: actually do it, don't explain the steps. Stop before submitting, sending or deleting anything.\n\n${ask}`);
+  };
+
+  /** Type text into the app behind Izuki — exactly as written, with no AI in
+   *  the middle and nothing sent or submitted. This is the keyboard path for
+   *  words the user already has (a draft, notes, a journal they wrote). */
+  const typeText = async (text: string) => {
+    if (!text.trim()) return;
+    const ok = await api.typeHere(text).catch(() => false);
+    setTypedNote(ok ? "Typed it on your PC — nothing was sent or submitted." : "I couldn't type there — click into the text box first, then try again.");
+    window.setTimeout(() => setTypedNote(""), 4500);
   };
 
   return (
@@ -1753,7 +1845,13 @@ ${PROVIDER_REFUSAL_NOTE}` : shown });
                   <ResearchPanel r={m.research} footer text={m.content} onContinue={i === msgs.length - 1 && !busy ? () => void send("continue the research", false, false, [], [], false) : undefined} />
                 )}
                 {m.role === "assistant" && m.content && !m.failed && !(busy && i === msgs.length - 1) && (
-                  <ReplyTools text={m.content} onRetry={i === msgs.length - 1 ? () => retry(i) : undefined} onAsk={i === msgs.length - 1 ? (ask) => void send(ask, false, false, [], [], false) : undefined} />
+                  <ReplyTools
+                    text={m.content}
+                    onRetry={i === msgs.length - 1 ? () => retry(i) : undefined}
+                    onAsk={i === msgs.length - 1 ? (ask) => void send(ask, false, false, [], [], false) : undefined}
+                    onDo={!m.screen && i === msgs.length - 1 && !busy && msgs.slice(0, i).some((x) => x.role === "user" && x.content.trim()) ? () => doOnPc(i) : undefined}
+                    onType={() => void typeText(m.content)}
+                  />
                 )}
                 {m.setup && i === msgs.length - 1 && (
                   <button
@@ -1828,6 +1926,7 @@ ${PROVIDER_REFUSAL_NOTE}` : shown });
           {documents.length > 0 && <div className="mb-2 flex flex-wrap gap-2">{documents.map((file, i) => <span key={i} className="flex max-w-full items-center gap-2 rounded-lg border border-white/15 px-2 py-1 text-[11px]"><span className="truncate">📎 {file.name}</span><button type="button" aria-label={`Remove ${file.name}`} onClick={() => setDocuments((all) => all.filter((_, j) => j !== i))}><X size={12} /></button></span>)}</div>}
           {readingFiles && <p role="status" className="mb-2 text-[11px] text-izk-muted">Reading your files…</p>}
           {fileError && <p role="alert" className="mb-2 text-[11px] text-izk-danger">{fileError}</p>}
+          {typedNote && <p role="status" className="mb-2 text-[11px] text-izk-teal">{typedNote}</p>}
           {notKept && (
             <p role="alert" className="mb-2 text-[11px] text-izk-danger">
               {notKept}
@@ -1881,6 +1980,16 @@ ${PROVIDER_REFUSAL_NOTE}` : shown });
               ) : (
                 <Mic size={15} strokeWidth={2.3} className="text-izk-ink" />
               )}
+            </button>
+            <button
+              type="button"
+              onClick={() => void typeText(draft)}
+              disabled={!draft.trim()}
+              aria-label="Type it on my PC"
+              title="Type what's in the box into the app behind Izuki — exactly as written, nothing sent or submitted"
+              className="flex h-[36px] w-[36px] shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/6 hover:bg-white/10 disabled:opacity-40"
+            >
+              <Keyboard size={15} strokeWidth={2.3} className="text-izk-ink" />
             </button>
             {/* Ask first ↔ Auto-run, like Claude Code's modes (the same switch as the orb's chat bar). */}
             <button
@@ -2041,6 +2150,7 @@ function firstStatus(t: string): string {
   if (/\b(battery|cpu|ram|memory|running|slow|lag)\b/.test(s)) return "🩺 Checking your PC…";
   if (/\b(wifi|wi-fi|internet|network|ip address)\b/.test(s)) return "📶 Checking your network…";
   if (/\b(weather|forecast|rain)\b/.test(s)) return "🌤️ Checking the weather…";
+  if (MAIL_ASK.test(s) && !WRITE_ONLY.test(s) && !/\b(send|draft|reply|write|compose)\b/.test(s)) return "📬 Checking your inbox…";
   if (/\b(news|latest|today|price|search|look up|who is|what is the)\b/.test(s)) return "🔎 Looking it up…";
   if (/\b(write|draft|email|essay|letter|poem|story|caption)\b/.test(s)) return "✍️ Writing…";
   if (/\b(explain|why|how does|teach|help me understand)\b/.test(s)) return "💡 Working it out…";
@@ -2346,7 +2456,7 @@ function ActionCard({
 
 /** Copy, read it out loud, or ask again — under each finished reply — and
  * a ⋯ menu like ChatGPT's: shorter, simpler, more, translate, save, share. */
-function ReplyTools({ text, onRetry, onAsk }: { text: string; onRetry?: () => void; onAsk?: (ask: string) => void }) {
+function ReplyTools({ text, onRetry, onAsk, onDo, onType }: { text: string; onRetry?: () => void; onAsk?: (ask: string) => void; onDo?: () => void; onType?: () => void }) {
   const [copied, setCopied] = useState(false);
   const [more, setMore] = useState(false);
   const [saved, setSaved] = useState("");
@@ -2389,6 +2499,16 @@ function ReplyTools({ text, onRetry, onAsk }: { text: string; onRetry?: () => vo
       <button type="button" className={btn} title="Read it out loud" onClick={() => void emit(EV.say, { text, reply: true })}>
         <Volume2 size={11} /> Read aloud
       </button>
+      {onType && (
+        <button type="button" className={btn} title="Type this into the app behind Izuki — exactly as written, nothing sent" onClick={onType}>
+          <Keyboard size={11} /> Type it
+        </button>
+      )}
+      {onDo && (
+        <button type="button" className={btn} title="Actually do this on your PC — Izuki stops before submitting" onClick={onDo}>
+          <MonitorSmartphone size={11} /> Do it
+        </button>
+      )}
       {onRetry && (
         <button type="button" className={btn} title="Ask again for a different answer" onClick={onRetry}>
           <RotateCcw size={11} /> Again

@@ -25,6 +25,10 @@ pub enum Act {
     /// Sound on or off for the whole PC — set, not toggled, so "unmute"
     /// never mutes a PC that was already playing.
     Mute(bool),
+    /// The microphone back on: Windows' own mute off and its level up to at
+    /// least 80% (seen 2026-11-23: the laptop mic muted at 28% for eleven days,
+    /// and every listen heard pure silence).
+    MicOn,
     /// Music or video playing (`true`) or paused — set, not toggled, so
     /// "pause" never starts something that was quiet.
     Playing(bool),
@@ -81,6 +85,9 @@ pub fn parse(said: &str) -> Option<(Act, &'static str)> {
         "mute the sound" | "mute the volume" | "mute the audio" | "mute the video" | "mute the music"
         | "mute my pc" | "mute my computer" | "mute the computer" | "mute the pc" | "mute my laptop"
         | "mute sound" | "mute audio" => (Act::Mute(true), "Muted."),
+        "unmute my mic" | "unmute my microphone" | "unmute the mic" | "unmute the microphone" | "turn my mic on"
+        | "turn on my mic" | "turn my microphone on" | "turn on my microphone" | "turn the mic on" | "turn on the mic"
+        | "mic on" | "microphone on" | "fix my mic" | "fix my microphone" => (Act::MicOn, "Your microphone's on."),
         "unmute" | "unmute it" | "unmute the sound" | "unmute the volume" | "unmute the audio"
         | "unmute the video" | "unmute the music" | "unmute my pc" | "unmute my computer" | "unmute sound"
         | "sound on" | "turn the sound on" | "turn the sound back on" => (Act::Mute(false), "Sound's on."),
@@ -304,7 +311,7 @@ pub fn steps(act: Act) -> Vec<ActionStep> {
             let key = if crate::uia::foreground_title().to_lowercase().contains("youtube") { "f" } else { "f11" };
             vec![step(json!({ "action": "key", "key": key, "confidence": 1.0, "reasoning": "instant command" }))]
         }
-        Act::Minimize | Act::Mute(_) | Act::Playing(_) | Act::SetVolume(_) | Act::Tell(_) => Vec::new(),
+        Act::Minimize | Act::Mute(_) | Act::MicOn | Act::Playing(_) | Act::SetVolume(_) | Act::Tell(_) => Vec::new(),
     }
 }
 
@@ -313,6 +320,7 @@ pub fn run_direct(act: Act) -> bool {
     match act {
         Act::Minimize => minimize_front(),
         Act::Mute(on) => set_mute(on),
+        Act::MicOn => mic_on(),
         // Windows couldn't say what's playing: the media key, as before.
         Act::Playing(play) => crate::media::set_playing(play)
             .unwrap_or_else(|| crate::automation::press_key("playpause").is_ok()),
@@ -417,6 +425,49 @@ fn minimize_front() -> bool {
     false
 }
 
+/// The default microphone as Windows has it: (muted, level 0–100), or
+/// `None` when the audio stack won't say. Read only; nothing is recorded.
+#[cfg(windows)]
+pub fn mic_state() -> Option<(bool, u8)> {
+    let mut out = None;
+    with_endpoint(true, |v| unsafe {
+        let (Ok(level), Ok(muted)) = (v.GetMasterVolumeLevelScalar(), v.GetMute()) else { return false };
+        out = Some((muted.as_bool(), (level * 100.0).round().clamp(0.0, 100.0) as u8));
+        true
+    });
+    out
+}
+
+#[cfg(not(windows))]
+pub fn mic_state() -> Option<(bool, u8)> {
+    None
+}
+
+/// Windows' mute off, and the level up to at least 80%.
+#[cfg(windows)]
+pub fn mic_on() -> bool {
+    with_endpoint(true, |v| unsafe {
+        let level = v.GetMasterVolumeLevelScalar().unwrap_or(0.0);
+        v.SetMute(false, std::ptr::null()).is_ok() && (level >= 0.8 || v.SetMasterVolumeLevelScalar(0.8, std::ptr::null()).is_ok())
+    })
+}
+
+#[cfg(not(windows))]
+pub fn mic_on() -> bool {
+    false
+}
+
+/// What to tell someone whose microphone only sends silence, from what
+/// Windows says about it — or `None` when Windows has it on (then it's the
+/// hardware, a mute key Windows can't see, or another app holding it).
+pub fn mic_advice(state: Option<(bool, u8)>) -> Option<String> {
+    match state {
+        Some((true, _)) => Some("Windows has your microphone muted, so I can't hear you. Type \"unmute my mic\" and I'll turn it back on.".into()),
+        Some((false, level)) if level < 10 => Some(format!("Your microphone's level is at {level}% in Windows, too low to hear you. Type \"unmute my mic\" and I'll turn it up.")),
+        _ => None,
+    }
+}
+
 #[cfg(windows)]
 fn set_mute(on: bool) -> bool {
     with_volume(|volume| unsafe { volume.SetMute(on, std::ptr::null()).is_ok() })
@@ -441,15 +492,25 @@ fn set_volume(_level: u8) -> bool {
 fn with_volume(
     f: impl FnOnce(&windows::Win32::Media::Audio::Endpoints::IAudioEndpointVolume) -> bool,
 ) -> bool {
+    with_endpoint(false, f)
+}
+
+/// The default speakers' (or, `mic`, microphone's) volume control, opened once per call.
+#[cfg(windows)]
+fn with_endpoint(
+    mic: bool,
+    f: impl FnOnce(&windows::Win32::Media::Audio::Endpoints::IAudioEndpointVolume) -> bool,
+) -> bool {
     use windows::Win32::Media::Audio::Endpoints::IAudioEndpointVolume;
-    use windows::Win32::Media::Audio::{eMultimedia, eRender, IMMDeviceEnumerator, MMDeviceEnumerator};
+    use windows::Win32::Media::Audio::{eCapture, eConsole, eMultimedia, eRender, IMMDeviceEnumerator, MMDeviceEnumerator};
     use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CLSCTX_ALL, COINIT_MULTITHREADED};
     unsafe {
         let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
         let Ok(devices) = CoCreateInstance::<_, IMMDeviceEnumerator>(&MMDeviceEnumerator, None, CLSCTX_ALL) else {
             return false;
         };
-        let Ok(speaker) = devices.GetDefaultAudioEndpoint(eRender, eMultimedia) else { return false };
+        let found = if mic { devices.GetDefaultAudioEndpoint(eCapture, eConsole) } else { devices.GetDefaultAudioEndpoint(eRender, eMultimedia) };
+        let Ok(speaker) = found else { return false };
         let Ok(volume) = speaker.Activate::<IAudioEndpointVolume>(CLSCTX_ALL, None) else { return false };
         f(&volume)
     }
@@ -461,6 +522,14 @@ mod tests {
 
     fn act(s: &str) -> Option<Act> {
         parse(s).map(|(a, _)| a)
+    }
+
+    #[test]
+    fn a_muted_or_silent_mic_gets_plain_advice() {
+        assert!(mic_advice(Some((true, 28))).unwrap().contains("muted"));
+        assert!(mic_advice(Some((false, 3))).unwrap().contains("3%"));
+        assert_eq!(mic_advice(Some((false, 80))), None, "on and loud: it's not Windows");
+        assert_eq!(mic_advice(None), None);
     }
 
     #[test]
@@ -478,6 +547,9 @@ mod tests {
         assert_eq!(act("open a new tab"), Some(Act::Keys { key: "ctrl+t", times: 1 }));
         assert_eq!(act("unmute"), Some(Act::Mute(false)));
         assert_eq!(act("mute the sound"), Some(Act::Mute(true)));
+        assert_eq!(act("unmute my mic"), Some(Act::MicOn));
+        assert_eq!(act("turn on my microphone"), Some(Act::MicOn));
+        assert_eq!(act("fix my mic"), Some(Act::MicOn));
         assert_eq!(act("minimize this window"), Some(Act::Minimize));
     }
 

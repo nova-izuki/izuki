@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { AnimatePresence, motion } from "motion/react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { AlarmClock, Camera, Check, GripHorizontal, Mic, Pause, Pencil, Play, Settings2, SkipBack, SkipForward, Sparkles, Square, X } from "lucide-react";
 import { api, CAMERA_PICTURE_KEY, emit, EV, IS_TAURI, on } from "../lib/ipc";
 import { workArea } from "../lib/floating";
@@ -70,6 +70,8 @@ function islandScale(size: string): number {
 
 /** How close to the top edge counts as "reaching for the Island". */
 const PEEK_EDGE = 4;
+/** Once revealed, it stays while the pointer is this close to the top (moving into it). */
+const PEEK_HOLD = 140;
 /** Dragged this far down from the top and it leaves the edge for good. */
 const UNDOCK_AT = 46;
 const ISLAND_DOCKED_KEY = "izk.island.docked";
@@ -146,11 +148,18 @@ export function Island({
   doing,
   thinking,
   peeks = true,
-  always = true,
+  always = false,
   free = false,
   wave = "auto",
   look = "default",
   size = "normal",
+  opacity = 94,
+  blur = 0,
+  accent = "#22d3ee",
+  shadow = true,
+  lightGlass = false,
+  animated = true,
+  autoExpand = false,
   visualizing = false,
   onVisualize,
   onPlaying,
@@ -170,12 +179,28 @@ export function Island({
   look?: string;
   /** "small", "normal" or "large" (setting island_size). */
   size?: string;
+  /** Glass opacity, percent. */
+  opacity?: number;
+  /** Glass blur in px (0 for the low-power default). */
+  blur?: number;
+  /** Accent colour for the rim and glow. */
+  accent?: string;
+  /** Draw the soft shadow. */
+  shadow?: boolean;
+  /** Frostier glass for the Screen notch and Float. */
+  lightGlass?: boolean;
+  /** Springy transitions; off is calm/low-power. */
+  animated?: boolean;
+  /** Open into the task panel when a task starts. */
+  autoExpand?: boolean;
   /** Music mode is showing (the orb flowing with the music). */
   visualizing?: boolean;
   onVisualize?: () => void;
   /** Music started or stopped on the PC. */
   onPlaying?: (playing: boolean) => void;
 }) {
+  const reducedMotion = useReducedMotion();
+  const calm = !animated || !!reducedMotion;
   const [status, setStatus] = useState<IslandStatus>({ media: null, fullscreen: false, suggestions: [], context: "" });
   const [peek, setPeek] = useState<Suggestion | null>(null);
   const peeked = useRef(new Map<string, number>());
@@ -197,12 +222,28 @@ export function Island({
   }, []);
   // Reaching for a docked Island: the top few pixels of the screen bring it
   // down, iPhone-style. Pulled out of the dock, it's simply always there.
+  // The Screen notch answers only the top middle, like a laptop's notch.
+  const lookRef = useRef(look);
+  lookRef.current = look;
   useEffect(() => {
     if (!docked) {
       setPeeking(false);
       return;
     }
-    const off = watchPointer((_x, y) => setPeeking(y - workArea().top <= PEEK_EDGE));
+    let shown = false;
+    const off = watchPointer((x, y) => {
+      const fromTop = y - workArea().top;
+      const r = pill.current?.getBoundingClientRect();
+      const middle = r && r.width > 0 ? r.left + r.width / 2 : window.innerWidth / 2;
+      const nearMiddle = Math.abs(x - middle) < EDGE_BAND;
+      // The Screen notch answers only the top middle, like a laptop's notch.
+      const reaching = fromTop <= PEEK_EDGE && (lookRef.current !== "notch" || nearMiddle);
+      // Once it's coming down, it stays while the pointer moves on into it
+      // (before the hover opens it): leaving the 4 px edge used to hide it
+      // again, so the pointer missed it.
+      shown = reaching || (shown && fromTop < PEEK_HOLD && nearMiddle);
+      setPeeking(shown);
+    });
     return off;
   }, [docked]);
   const [position, setPosition] = useState<IslandPosition>(loadIslandPosition);
@@ -232,12 +273,20 @@ export function Island({
   const pill = useRef<HTMLDivElement>(null);
   const openRef = useRef(false);
   openRef.current = open;
+  // Opened by a task rather than by hovering: don't let the hover close timer
+  // take it away while that task is still running. A deliberate close clears
+  // this, so the person stays in charge.
+  const taskOpened = useRef(false);
   // Held open while you're asking about the page or reading the answer —
   // moving the mouse away mustn't throw the answer away.
   // Each thing holding it (the Ask box, the quick note) counts on its own.
   const holders = useRef(new Set<string>());
   const holdRef = useRef(false);
   const wantRef = useRef(false);
+  const closeIsland = useCallback(() => {
+    taskOpened.current = false;
+    setOpen(false);
+  }, []);
   const hold = useCallback((on: boolean, who = "ask") => {
     if (on) holders.current.add(who);
     else holders.current.delete(who);
@@ -246,7 +295,7 @@ export function Island({
     holdRef.current = any;
     if (!any) {
       window.setTimeout(() => {
-        if (!wantRef.current && !holdRef.current) setOpen(false);
+        if (!wantRef.current && !holdRef.current && !taskOpened.current) setOpen(false);
       }, CLOSE_AFTER_MS);
     }
   }, []);
@@ -395,7 +444,7 @@ export function Island({
             // Look again before closing: the pointer may be back, or a note
             // may be being jotted, and neither sends a pointer update that
             // would have cancelled this.
-            if (!wantRef.current && !holdRef.current) setOpen(false);
+            if (!wantRef.current && !holdRef.current && !taskOpened.current) setOpen(false);
           }, CLOSE_AFTER_MS);
         }
       } else if (closeTimer) {
@@ -612,6 +661,22 @@ export function Island({
             ? { kind: "activity", a: update }
             : { kind: "rest" };
 
+  // A task can open the panel once, when it starts. Turning the setting off
+  // keeps the compact progress notch; closing it by hand stays closed.
+  // Missions own the visible status while they run, so a mission task can
+  // be `live.kind === "missions"` and never show as "working". `busy` is the
+  // actual running signal in that case.
+  const taskActive = live.kind === "working" || live.kind === "approval" || (live.kind === "missions" && busy);
+  const wasTaskActive = useRef(false);
+  useEffect(() => {
+    if (autoExpand && taskActive && !wasTaskActive.current && !openRef.current) {
+      taskOpened.current = true;
+      setOpen(true);
+    }
+    if (!taskActive) taskOpened.current = false;
+    wasTaskActive.current = taskActive;
+  }, [autoExpand, taskActive]);
+
   // Your character reacts beside the Island (IslandPal): it points at what
   // needs you and cheers when a task or your missions finish.
   const [palCue, setPalCue] = useState<PalCue | null>(null);
@@ -643,36 +708,60 @@ export function Island({
 
   const scale = islandScale(size);
   const fitted = fitIslandPosition(position, scale);
+  // A notch is attached to the edge, not floating six pixels under it. Once
+  // it is dragged away it keeps its own place like the other styles.
+  const attached = look === "notch" && docked && !free;
+  const top = attached ? workArea().top : fitted.y;
+  // The full panel is deliberately capped on short screens. Without this it
+  // grew to almost the whole 720p desktop when opened. The compact notch is
+  // unaffected; only the expanded card scrolls inside this height.
+  const viewportH = typeof window === "undefined" ? 800 : window.innerHeight;
+  const panelMaxH =
+    look === "notch"
+      ? Math.min(viewportH - top - 16, Math.max(360, Math.min(620, viewportH * 0.66)))
+      : viewportH - top - 16;
   return (
     <>
     <IslandPal cue={palCue} pill={pill} away={palAway} />
     <div
       className="pointer-events-none fixed z-[60] flex justify-center"
-      style={{ left: fitted.x - ISLAND_WIDTH / 2, width: ISLAND_WIDTH, top: fitted.y, transform: scale !== 1 ? `scale(${scale})` : undefined, transformOrigin: "top center" }}
+      style={{ left: fitted.x - ISLAND_WIDTH / 2, width: ISLAND_WIDTH, top, transform: scale !== 1 ? `scale(${scale})` : undefined, transformOrigin: "top center" }}
     >
       <motion.div
         ref={pill}
         layout
         data-izk-hit={open ? "" : undefined}
-        transition={{ type: "spring", stiffness: 520, damping: 38, mass: 0.8 }}
+        transition={calm ? { duration: 0 } : { type: "spring", stiffness: 520, damping: 38, mass: 0.8 }}
         className={
           "izk-island relative overflow-hidden text-white " +
-          (open ? "pointer-events-auto" : "pointer-events-none") +
+          (open ? (look === "notch" ? "pointer-events-none" : "pointer-events-auto") : "pointer-events-none") +
           // At rest: the always-on pill, or fully hidden until your mouse
           // reaches the top edge (or something's happening). Pulled out of
-          // the dock it stays where you put it and is always there.
-          (live.kind === "rest" && !open && !always && docked && !peeking ? " izk-island-hidden" : "") +
+          // the dock it stays where you put it and is always there. The
+          // Screen notch always hides at rest: it slides down from the top
+          // middle when the mouse goes there, like a laptop notch.
+          (live.kind === "rest" && !open && docked && !peeking && (!always || look === "notch") ? " izk-island-hidden" : "") +
           (open ? " izk-island-open" : "") +
           // Lit up while Izuki is really listening, thinking or working.
           (busy || orb === "listening" || orb === "speaking" || live.kind === "missions" ? " izk-island-active" : "") +
           (look !== "default" ? ` izk-theme-${look}` : "") +
-          (docked ? " izk-island-docked" : "")
+          (docked ? " izk-island-docked" : "") +
+          (live.kind === "rest" && !open ? " izk-island-resting" : "") +
+          (!shadow ? " izk-island-flat" : "") +
+          (lightGlass ? " izk-island-light" : "") +
+          (blur > 0 ? " izk-island-blurred" : "") +
+          (calm ? " izk-island-calm" : "")
         }
-        style={{ borderRadius: look === "squircle" ? (open ? 16 : 11) : open ? 28 : 22 }}
+        style={{
+          borderRadius: look === "squircle" ? (open ? 16 : 11) : open ? 28 : 22,
+          "--izk-island-alpha": String(Math.min(1, Math.max(0.5, opacity / 100))),
+          "--izk-island-blur": `${Math.min(24, Math.max(0, blur))}px`,
+          "--izk-island-accent": accent,
+        } as CSSProperties}
         // Esc closes it from anywhere inside (not just the Ask box).
         onKeyDown={(e) => {
           if (e.key === "Escape" && menu) setMenu(null);
-          else if (e.key === "Escape" && open) setOpen(false);
+          else if (e.key === "Escape" && open) closeIsland();
         }}
         // Right-click: the Island's own quick menu.
         onContextMenu={(e) => {
@@ -686,20 +775,26 @@ export function Island({
           const t = e.target as HTMLElement;
           if (!open || !t.closest("[data-island-top]") || t.closest("button, input, textarea, a, [role=tab]")) return;
           void emit(EV.airCall);
-          setOpen(false);
+          closeIsland();
         }}
       >
+        {look === "notch" && (
+          <>
+            <span aria-hidden className="izk-notch-shell" />
+            <span aria-hidden data-izk-hit="" className="izk-notch-hit" />
+          </>
+        )}
         {menu && (
           <IslandMenu
             at={menu}
             onClose={() => setMenu(null)}
             onTalk={() => {
               void emit(EV.airCall);
-              setOpen(false);
+              closeIsland();
             }}
             onQuiet={() => {
               setQuietUntil(Date.now() + 60 * 60_000);
-              setOpen(false);
+              closeIsland();
             }}
             quiet={quiet}
             onWake={() => {
@@ -710,7 +805,12 @@ export function Island({
         )}
         <AnimatePresence mode="popLayout" initial={false}>
           {open ? (
-            <motion.div key="open" {...fade} className="relative z-10 w-[372px] max-w-[calc(100vw-32px)] p-3.5">
+            <motion.div
+              key="open"
+              {...fade}
+              className={`izk-island-content relative z-10 w-[372px] max-w-[calc(100vw-32px)] p-3.5 ${look === "notch" ? "izk-notch-content" : ""}`}
+              style={look === "notch" ? { paddingLeft: 14, paddingRight: 14, paddingBottom: 14 } : undefined}
+            >
               <Expanded
                 live={live}
                 media={media}
@@ -721,6 +821,7 @@ export function Island({
                 page={status.page ?? null}
                 onHold={hold}
                 wave={wave}
+                calm={calm}
                 next={next}
                 coming={coming}
                 onCancelReminder={cancelReminder}
@@ -733,26 +834,32 @@ export function Island({
                 onVisualize={onVisualize}
                 onMoveStart={beginMove}
                 onMoveKey={moveByKeyboard}
-                onDone={() => setOpen(false)}
+                onDone={closeIsland}
                 onClearError={() => setFailure(null)}
                 onSeenSite={(url) => setSiteSeen(url)}
                 due={due}
                 remote={remote}
                 scale={scale}
-                maxH={(typeof window === "undefined" ? 800 : window.innerHeight) - fitted.y - 16}
+                maxH={panelMaxH}
               />
             </motion.div>
+          ) : look === "notch" ? (
+            // The compact live notch from the reference: a small piece of
+            // real status under the top edge, not the whole panel. Hovering
+            // still opens the full Island; this is what the notch shows the
+            // rest of the time.
+            <motion.div key="notch-mini" {...fade}>
+              <NotchMini live={live} doing={doing} thinking={thinking} now={now} onOpen={() => { taskOpened.current = true; setOpen(true); }} />
+            </motion.div>
           ) : live.kind === "rest" ? (
-            // At rest: the black pill of an iPhone's Dynamic Island (still —
-            // it sits over everything all day), or the faint sliver.
-            // The small sliver it has always been. "Always show" decides
-            // whether it's there at rest, not how big it is — growing it into
+            // At rest outside the notch look: the faint sliver. "Always show"
+            // decides whether it's there, not how big it is — growing it into
             // a pill made something that sits over everything all day far too
             // loud.
             <motion.div key="rest" {...fade} className="h-[5px] w-[72px]" />
           ) : (
-            <motion.div key={live.kind} {...fade} className="flex h-[34px] items-center gap-2.5 pl-1.5 pr-3">
-              <Compact live={live} dancing={dancing} wave={wave} />
+            <motion.div key={live.kind} {...fade} className={`flex h-[34px] items-center gap-2.5 pl-1.5 pr-3${look === "notch" ? " izk-notch-content" : ""}`}>
+              <Compact live={live} dancing={dancing} wave={wave} calm={calm} />
             </motion.div>
           )}
         </AnimatePresence>
@@ -815,7 +922,127 @@ function LiveBars({ color }: { color: string }) {
   );
 }
 
-function Compact({ live, dancing, wave = "auto" }: { live: Live; dancing: boolean; wave?: string }) {
+type MiniStep = { current: number; total: number };
+
+/** Read a real step count out of the status line ("Step 2 of 5", "step 2/5"). */
+function readMiniStep(...parts: (string | null | undefined)[]): MiniStep | null {
+  const text = parts.filter(Boolean).join(" ");
+  const hit = /step\s+(\d+)\s*(?:of|\/)\s*(\d+)/i.exec(text);
+  if (!hit) return null;
+  const total = Math.max(1, Number.parseInt(hit[2], 10) || 1);
+  return { current: Math.min(total, Math.max(1, Number.parseInt(hit[1], 10) || 1)), total };
+}
+
+/** The compact notch's one-line status, built only from real Island events. */
+function notchMiniCopy(live: Live, doing: string | null, thinking: boolean): {
+  line: string;
+  meta: string;
+  active: boolean;
+  alert: boolean;
+  done: boolean;
+  step: MiniStep | null;
+} {
+  const step = readMiniStep(
+    live.kind === "working" ? live.text : null,
+    live.kind === "missions" ? live.now : null,
+    live.kind === "missions" ? live.step : null,
+    doing,
+  );
+  switch (live.kind) {
+    case "working":
+      return { line: live.text, meta: step ? `Step ${step.current} of ${step.total}` : "Working", active: true, alert: false, done: false, step };
+    case "missions":
+      return { line: live.now || "Starting mission…", meta: live.left > 0 ? `${live.left} more waiting` : "Mission running", active: true, alert: false, done: false, step };
+    case "listening":
+      return { line: "Listening…", meta: "Go ahead", active: true, alert: false, done: false, step: null };
+    case "speaking":
+      return { line: "Speaking…", meta: "Izuki", active: true, alert: false, done: false, step: null };
+    case "lesson":
+      return { line: live.text, meta: step ? `Step ${step.current} of ${step.total}` : "Lesson", active: true, alert: false, done: false, step };
+    case "approval":
+      return { line: `Waiting for your OK · ${live.app}`, meta: "Open to review", active: false, alert: true, done: false, step: null };
+    case "error":
+      return { line: live.message, meta: "Needs attention", active: false, alert: true, done: false, step: null };
+    case "sitedown":
+      return { line: `${live.name} is down`, meta: "Site check", active: false, alert: true, done: false, step: null };
+    case "finished":
+      return { line: "Done", meta: "Finished", active: false, alert: false, done: true, step: null };
+    case "music":
+      return { line: live.m.title, meta: live.m.artist || live.m.app, active: false, alert: false, done: false, step: null };
+    case "reminder":
+      return { line: live.r.text, meta: live.urgent ? "Soon" : until(live.r.at), active: false, alert: live.urgent, done: false, step: null };
+    case "due":
+      return { line: live.title, meta: `Due ${until(live.at)}`, active: false, alert: false, done: false, step: null };
+    case "focus":
+      return { line: `Focus · ${Math.ceil(live.secs / 60)} min left`, meta: "Focus mode", active: false, alert: false, done: false, step: null };
+    case "activity":
+      return { line: live.a.title, meta: live.a.detail || "Activity", active: false, alert: false, done: false, step: null };
+    case "lecture":
+      return { line: live.title, meta: `Recording · ${Math.floor(live.secs / 60)} min`, active: true, alert: false, done: false, step: null };
+    case "remote":
+      return { line: live.device || "Your phone", meta: live.controlling ? "Controlling this PC" : "Viewing your screen", active: false, alert: false, done: false, step: null };
+    case "suggest":
+      return { line: `${live.s.label}?`, meta: "Suggestion", active: false, alert: false, done: false, step: null };
+    default:
+      return { line: "Ask me anything", meta: thinking ? "Thinking" : "", active: thinking, alert: false, done: false, step: null };
+  }
+}
+
+/** A real, static progress ring (no fake percentage, no idle animation). */
+function NotchRing({ step }: { step: MiniStep | null }) {
+  const pct = step ? Math.max(6, Math.min(100, (step.current / step.total) * 100)) : 28;
+  return (
+    <span
+      className="izk-notch-ring"
+      role="progressbar"
+      aria-label={step ? `Task progress, step ${step.current} of ${step.total}` : "Task in progress"}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={step ? Math.round((step.current / step.total) * 100) : undefined}
+      aria-valuetext={step ? `Step ${step.current} of ${step.total}` : "In progress"}
+    >
+      <svg viewBox="0 0 22 22" aria-hidden>
+        <circle className="izk-notch-ring-track" cx="11" cy="11" r="8.5" />
+        <circle
+          className="izk-notch-ring-arc"
+          cx="11"
+          cy="11"
+          r="8.5"
+          pathLength={100}
+          strokeDasharray={`${pct} 100`}
+          transform="rotate(-90 11 11)"
+        />
+      </svg>
+    </span>
+  );
+}
+
+/** Level 1 of the notch: a small, screen-attached live card. */
+function NotchMini({ live, doing, thinking, now, onOpen }: { live: Live; doing: string | null; thinking: boolean; now: number; onOpen: () => void }) {
+  const copy = notchMiniCopy(live, doing, thinking);
+  const time = new Date(now).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return (
+    <button
+      type="button"
+      data-izk-hit
+      onClick={onOpen}
+      className={"izk-notch-mini pointer-events-auto" + (copy.alert ? " is-alert" : "") + (copy.done ? " is-done" : "")}
+      aria-label={`Open Izuki Island. ${copy.line}. ${copy.meta}`}
+      aria-expanded={false}
+      title={copy.line}
+    >
+      <div className="izk-notch-mini-head">
+        <span className="izk-notch-mini-orb" aria-hidden />
+        <span className="izk-notch-mini-brand">IZUKI</span>
+        {copy.active ? <NotchRing step={copy.step} /> : <span className="izk-notch-mini-clock">{time}</span>}
+      </div>
+      <div className="izk-notch-mini-line">{copy.line}</div>
+      <div className="izk-notch-mini-meta">{copy.meta}</div>
+    </button>
+  );
+}
+
+function Compact({ live, dancing, wave = "auto", calm = false }: { live: Live; dancing: boolean; wave?: string; calm?: boolean }) {
   switch (live.kind) {
     case "listening":
       return (
@@ -977,7 +1204,7 @@ function Compact({ live, dancing, wave = "auto" }: { live: Live; dancing: boolea
         </>
       );
     default:
-      return <Face size={24} mood={dancing ? "dancing" : "idle"} />;
+      return <Face size={24} mood={dancing && !calm ? "dancing" : "idle"} />;
   }
 }
 
@@ -992,7 +1219,7 @@ function IslandMenu({ at, onClose, onTalk, onQuiet, quiet, onWake }: { at: { x: 
     <div
       role="menu"
       aria-label="Island menu"
-      className="absolute z-30 w-[188px] rounded-[12px] border border-white/15 bg-[#0d1018]/95 p-1 shadow-[0_12px_32px_rgba(0,0,0,0.5)] backdrop-blur-md"
+      className="izk-island-menu absolute z-30 w-[188px] rounded-[12px] border border-white/15 bg-[#0d1018]/95 p-1 shadow-[0_12px_32px_rgba(0,0,0,0.5)] backdrop-blur-md"
       // Inside the Island: opens above the pointer when there's no room below.
       style={{ left: Math.min(at.x, 372 - 196), top: at.y + 260 > (typeof window === "undefined" ? 9999 : window.innerHeight) ? Math.max(4, at.y - 250) : at.y }}
       onClick={(e) => e.stopPropagation()}
@@ -1213,6 +1440,7 @@ function Expanded({
   page = null,
   onHold,
   wave = "auto",
+  calm = false,
   scale = 1,
 }: {
   /** The running task's to-do list. */
@@ -1220,6 +1448,8 @@ function Expanded({
   /** The Island's size scale: the panel's height limit allows for it. */
   scale?: number;
   wave?: string;
+  /** Calm motion: draw the waveform once instead of animating the canvas. */
+  calm?: boolean;
   page?: string | null;
   onHold?: (on: boolean, who?: string) => void;
   weather?: [string, number, string] | null;
@@ -1286,10 +1516,10 @@ function Expanded({
         <GripHorizontal size={16} />
       </div>
       <div data-island-top title="Double-click to talk to Nova" className="flex items-center gap-3">
-        <Face size={40} mood={busy ? "busy" : live.kind === "finished" ? "happy" : dancing ? "dancing" : "idle"} pokeable />
+        <Face size={40} mood={busy ? "busy" : live.kind === "finished" ? "happy" : dancing && !calm ? "dancing" : "idle"} pokeable calm={calm} />
         <div className="min-w-0 flex-1">
           <div className="text-[15px] font-semibold leading-tight">{busy ? "On it" : greeting(now)}</div>
-          <div className="truncate text-[12.5px] text-white/60">
+          <div className="izk-island-subtitle truncate text-[12.5px] text-white/60">
             {busy
               ? doing || "Thinking…"
               : live.kind === "finished"
@@ -1408,7 +1638,7 @@ function Expanded({
               })()}
             </div>
             <div className="mt-1 h-6">
-              <Waveform playing={playing} width={120} height={24} style={waveFor(wave, media.title)} />
+              <Waveform playing={playing} width={120} height={24} style={waveFor(wave, media.title)} frozen={calm} />
             </div>
           </div>
           <div className="flex items-center gap-1">
@@ -1844,7 +2074,7 @@ type Mood = "idle" | "busy" | "happy" | "dancing";
  * the DOM — no re-render per cursor move), blink now and then, squish into
  * "> <" when poked, and spin dizzy after a few pokes in a row.
  */
-function Face({ size, mood, pokeable }: { size: number; mood: Mood; pokeable?: boolean }) {
+function Face({ size, mood, pokeable, calm = false }: { size: number; mood: Mood; pokeable?: boolean; calm?: boolean }) {
   const eyes = useRef<HTMLDivElement>(null);
   const [poke, setPoke] = useState<"none" | "squish" | "dizzy">("none");
   const pokes = useRef<number[]>([]);
@@ -1885,10 +2115,10 @@ function Face({ size, mood, pokeable }: { size: number; mood: Mood; pokeable?: b
       ? { scaleX: [1, 1.18, 0.95, 1], scaleY: [1, 0.8, 1.05, 1] }
       : mood === "happy"
         ? { y: [0, -size * 0.18, 0, -size * 0.08, 0] }
-        : mood === "dancing"
+        : mood === "dancing" && !calm
           ? { y: [0, -size * 0.07, 0], rotate: [0, -6, 0, 6, 0] }
           : { y: 0, rotate: 0, scaleX: 1, scaleY: 1 };
-  const bobRepeat = mood === "dancing" && poke === "none" ? Infinity : 0;
+  const bobRepeat = mood === "dancing" && poke === "none" && !calm ? Infinity : 0;
 
   return (
     <motion.div

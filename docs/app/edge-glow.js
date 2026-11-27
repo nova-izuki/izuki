@@ -12,7 +12,9 @@
 (() => {
   "use strict";
   const VIVID = "#5EE7FF, #7C5CFF, #FF5CAA, #FFB547, #4ECDC4, #5EE7FF";
-  const CALM = "#5EE7FF, #3BB8FF, #8FF5FF, #4ECDC4, #5EE7FF";
+  // Listening is the same rainbow as everything else (Android's light over
+  // other apps is one rainbow too), just slower and softer.
+  const CALM = "#5EE7FF, #7C5CFF, #FF5CAA, #FFB547, #4ECDC4, #5EE7FF";
   const SPEED = { listening: 1, thinking: 3.2, speaking: 1.6 };
   const LOOP_MS = 9000;
   const FADE_MS = 650;
@@ -21,6 +23,9 @@
   try { on = localStorage.getItem(KEY) !== "0"; } catch {}
   const still = !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
   let root = null, layers = null, anims = [], mode = "idle", hideTimer = 0, fadeIn = 0;
+  // Android draws the light itself, over every app and this page too: the
+  // page's own edges stay off so there's never a second one.
+  let nativeDrawn = false;
 
   const build = () => {
     root = document.createElement("div");
@@ -105,7 +110,12 @@
   window.IzukiEdge = {
     mode(m) {
       mode = SPEED[m] ? m : "idle";
-      if (on && mode !== "idle") show(mode); else hide();
+      if (on && !nativeDrawn && mode !== "idle") show(mode); else hide();
+    },
+    /** Android control is on and draws the light (true), or the page draws it (false). */
+    useNative(v) {
+      nativeDrawn = !!v;
+      this.mode(mode);
     },
     level(v) {
       if (!root || !Number.isFinite(v)) return;

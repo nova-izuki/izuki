@@ -177,6 +177,9 @@ async function restore(windowId, was) {
 let splitting = false;
 
 async function sideBySide({ tabId = null, url = null } = {}) {
+  // The panel's own window; if it never said, the last normal browser
+  // window the person was in.
+  if (pageWindow == null) pageWindow = (await chrome.windows.getLastFocused({ windowTypes: ["normal"] }).catch(() => null))?.id ?? null;
   if (pageWindow == null) throw Error("Open the panel from a browser window first.");
   // One arrangement at a time, and never on top of one: the first one's
   // "how it was" is what Back to one window puts back.
@@ -280,6 +283,10 @@ async function connect({ automatic = false } = {}) {
   try {
     if (p.local) {
       const up = await izukiIsUp();
+      // Another assistant chosen while it checked: that one's state stands.
+      if (state.providerId !== p.id) return false;
+      state.izukiUp = up;
+      state.ready = up;
       say(up ? "Connected to Izuki on this PC." : "Izuki isn't running — open the Izuki app, then press Connect.");
       return up;
     }
@@ -486,6 +493,7 @@ export async function setUpConnection({ ask, onFollowed, windowId = null }) {
   $("provider-tabs")?.addEventListener("change", (e) => {
     state.tabId = e.target.value ? Number(e.target.value) : null;
     state.ready = false;
+    window.dispatchEvent(new Event("izuki:connected"));
     remember();
   });
 
@@ -519,6 +527,20 @@ export async function setUpConnection({ ask, onFollowed, windowId = null }) {
   // The AI tab is usually already open when the panel appears. Connecting to
   // it sends nothing and types nothing — it only says which tab answers.
   if (state.autoConnect) await autoConnectNow();
+  // Izuki on this PC: asked quietly when the panel opens and when it comes
+  // back into view, so "ready" is a fact, never a default.
+  const checkIzuki = async () => {
+    const asked = state.providerId;
+    if (!provider(asked).local) return;
+    const up = await izukiIsUp().catch(() => false);
+    // Another assistant chosen while it checked: never overwrite its state.
+    if (state.providerId !== asked) return;
+    state.izukiUp = up;
+    state.ready = up;
+    window.dispatchEvent(new Event("izuki:connected"));
+  };
+  void checkIzuki();
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") void checkIzuki(); });
   // ...and it is often opened *after* the panel: the Gemini icon, a new tab.
   chrome.tabs.onUpdated.addListener((_id, change) => {
     if (change.status === "complete" || change.url) scheduleAutoConnect();

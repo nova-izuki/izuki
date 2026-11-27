@@ -1,0 +1,215 @@
+name: Build Izuki VR for Meta Quest
+
+# Izuki VR as an app in a Quest's library. Meta's Bubblewrap wraps the live web
+# app (izukinova.ai/app/?vr=app) in a small Android package (a Trusted Web
+# Activity); quest/twa-manifest.json is its whole configuration. See docs/VR.md.
+#
+# Signed with the private preview key (IZUKI_PREVIEW_KEYSTORE_B64, see
+# docs/ANDROID-SIGNING.md). izukinova.ai/.well-known/assetlinks.json names that
+# key: that's what lets the app show the site as itself, without a URL bar.
+# Without the secret the package is still built (so the build stays proven),
+# but signed with a throwaway key and named TEST-ONLY: the site won't vouch
+# for it, so it isn't meant to be installed.
+
+on:
+  push:
+    branches: [main]
+    # The app's files, and what tools/quest-check.cjs compares them with
+    # (the same list under pull_request).
+    paths: ['quest/**', 'docs/.well-known/**', '.github/workflows/quest.yml', 'tools/quest-check.cjs', 'docs/ANDROID-SIGNING.md', 'docs/CNAME', 'docs/app/manifest.webmanifest', 'docs/app/icon-*.png']
+  pull_request:
+    paths: ['quest/**', 'docs/.well-known/**', '.github/workflows/quest.yml', 'tools/quest-check.cjs', 'docs/ANDROID-SIGNING.md', 'docs/CNAME', 'docs/app/manifest.webmanifest', 'docs/app/icon-*.png']
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: "Where main's store build goes: alpha (private testers) or store (a DRAFT in Production, to attach to a store submission; it goes live only after Meta's review and a release from the dashboard)"
+        type: choice
+        options: [alpha, store]
+        default: alpha
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quest-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quest:
+    name: Izuki VR for Meta Quest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: The app's settings and the site's vouching agree
+        run: node tools/quest-check.cjs
+      # On main, nothing is built or signed (preview or store copy) from a
+      # commit whose app tests fail: they run first, right here.
+      - name: The app's tests pass for this commit
+        if: github.ref == 'refs/heads/main'
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run test:phone
+          npm run test:site
+      - name: Meta's Bubblewrap, told where Java and the Android SDK are
+        run: |
+          npm install --global @meta-quest/bubblewrap-cli@1.24.1
+          # Bubblewrap wants the SDK laid out the way it downloads it: a bin/
+          # folder at the top. The runner's SDK keeps it in cmdline-tools/latest/.
+          [ -e "$ANDROID_HOME/bin" ] || ln -s "$ANDROID_HOME/cmdline-tools/latest/bin" "$ANDROID_HOME/bin"
+          ls "$ANDROID_HOME/bin/sdkmanager" "$ANDROID_HOME/build-tools/34.0.0/zipalign"
+          mkdir -p ~/.bubblewrap
+          printf '{"jdkPath":"%s","androidSdkPath":"%s"}\n' "$JAVA_HOME" "$ANDROID_HOME" > ~/.bubblewrap/config.json
+          bubblewrap --version
+      # The private key signs only reviewed code on main: a branch, a pull
+      # request or a manual run elsewhere builds TEST-ONLY with a throwaway key
+      # (and never sees the secret).
+      - name: Signing key (decoded outside the checkout)
+        id: key
+        env:
+          KEY_B64: ${{ github.ref == 'refs/heads/main' && secrets.IZUKI_PREVIEW_KEYSTORE_B64 || '' }}
+          KEY_PASSWORD: ${{ github.ref == 'refs/heads/main' && secrets.IZUKI_PREVIEW_KEYSTORE_PASSWORD || '' }}
+        run: |
+          ks="$RUNNER_TEMP/izuki-quest.p12"
+          if [ -n "$KEY_B64" ] && [ -n "$KEY_PASSWORD" ]; then
+            printf '%s' "$KEY_B64" | base64 -d > "$ks"
+            fp=$(keytool -list -v -keystore "$ks" -storetype PKCS12 -storepass:env KEY_PASSWORD -alias izuki | sed -n 's/^[[:space:]]*SHA256: //p' | tr -d '[:space:]')
+            if ! grep -q "\"$fp\"" docs/.well-known/assetlinks.json; then
+              echo "::error::The key in IZUKI_PREVIEW_KEYSTORE_B64 ($fp) isn't the one izukinova.ai/.well-known/assetlinks.json vouches for."
+              exit 1
+            fi
+            { echo "BUBBLEWRAP_KEYSTORE_PASSWORD=$KEY_PASSWORD"; echo "BUBBLEWRAP_KEY_PASSWORD=$KEY_PASSWORD"; } >> "$GITHUB_ENV"
+            echo "name=Izuki-VR-Quest.apk" >> "$GITHUB_OUTPUT"
+            echo "Signed with the private preview key ($fp)."
+          else
+            pw=$(openssl rand -hex 16)
+            echo "::add-mask::$pw"
+            keytool -genkeypair -storetype PKCS12 -keystore "$ks" -alias izuki -keyalg RSA -keysize 2048 -validity 30 \
+              -storepass "$pw" -keypass "$pw" -dname "CN=Izuki VR test build" >/dev/null
+            { echo "BUBBLEWRAP_KEYSTORE_PASSWORD=$pw"; echo "BUBBLEWRAP_KEY_PASSWORD=$pw"; } >> "$GITHUB_ENV"
+            echo "name=Izuki-VR-Quest-TEST-ONLY.apk" >> "$GITHUB_OUTPUT"
+            echo "::warning::No IZUKI_PREVIEW_KEYSTORE_B64 secret yet (docs/ANDROID-SIGNING.md): this build is TEST-ONLY, signed with a throwaway key the site doesn't vouch for."
+          fi
+      # The version code is the minute of the build (since 2026): it only ever
+      # grows, so no build, re-runs of old runs included, repeats or goes below
+      # one already made. (Fits Android's limit for thousands of years.)
+      - name: A new version number for every build (the store needs it to grow)
+        working-directory: quest
+        run: |
+          node -e "const fs=require('fs'),m=JSON.parse(fs.readFileSync('twa-manifest.json','utf8')),n=Number(process.env.GITHUB_RUN_NUMBER),a=Number(process.env.GITHUB_RUN_ATTEMPT||1);m.appVersionCode=Math.floor((Date.now()-Date.UTC(2026,0,1))/60000);m.appVersion='1.0.'+n+(a>1?'.'+a:'');fs.writeFileSync('twa-manifest.json',JSON.stringify(m,null,2))"
+          grep -E '"appVersion(Code)?"' twa-manifest.json
+      - name: Generate the Android project from quest/twa-manifest.json
+        working-directory: quest
+        run: |
+          bubblewrap update --skipVersionUpgrade
+          # The template still lists jcenter(), which no longer exists.
+          sed -i 's/jcenter()/mavenCentral()/g' build.gradle
+          # No Android backups of the app's data (Meta's security test flags
+          # them: "Application allows backup of private data").
+          m=app/src/main/AndroidManifest.xml
+          if grep -q 'android:allowBackup=' "$m"; then
+            sed -i 's/android:allowBackup="[^"]*"/android:allowBackup="false"/' "$m"
+          else
+            sed -i '0,/<application/s//<application android:allowBackup="false"/' "$m"
+          fi
+          grep -o 'android:allowBackup="[^"]*"' "$m"
+      - name: Build and sign
+        working-directory: quest
+        run: bubblewrap build --skipPwaValidation --signingKeyPath "$RUNNER_TEMP/izuki-quest.p12" --signingKeyAlias izuki
+      - name: Check the package
+        run: |
+          tools="$ANDROID_HOME/build-tools/34.0.0"
+          "$tools/apksigner" verify --print-certs quest/app-release-signed.apk
+          "$tools/aapt2" dump badging quest/app-release-signed.apk | grep -E "^package:|^application-label:|uses-permission|launchable-activity|sdkVersion|targetSdkVersion"
+          "$tools/aapt2" dump badging quest/app-release-signed.apk | grep -q "package: name='com.novaizuki.vr'"
+          if ! "$tools/aapt2" dump xmltree --file AndroidManifest.xml quest/app-release-signed.apk | grep -Eq 'allowBackup\([^)]*\)=false'; then
+            echo "::error::The package still allows Android backups of its data."
+            exit 1
+          fi
+          cp quest/app-release-signed.apk "${{ steps.key.outputs.name }}"
+          rm -f "$RUNNER_TEMP/izuki-quest.p12"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: izuki-vr-quest
+          path: ${{ steps.key.outputs.name }}
+          if-no-files-found: error
+      # The Meta Horizon Store copy: the same package, signed with the store key
+      # (tools/quest-store-key.ps1; main only, never a branch or pull request).
+      - name: The store version (signed with the store key)
+        if: github.ref == 'refs/heads/main'
+        env:
+          STORE_B64: ${{ github.ref == 'refs/heads/main' && secrets.IZUKI_QUEST_STORE_KEYSTORE_B64 || '' }}
+          STORE_PASSWORD: ${{ github.ref == 'refs/heads/main' && secrets.IZUKI_QUEST_STORE_KEYSTORE_PASSWORD || '' }}
+        run: |
+          if [ -z "$STORE_B64" ] || [ -z "$STORE_PASSWORD" ]; then echo "No store key in GitHub yet (tools/quest-store-key.ps1)."; exit 0; fi
+          # Windows PowerShell can add a byte-order mark and a line break when it
+          # pipes text into gh: keep only what can belong. The key is base64; the
+          # password is letters and digits by construction (tools/quest-store-key.ps1).
+          STORE_B64=$(printf '%s' "$STORE_B64" | tr -cd 'A-Za-z0-9+/=')
+          STORE_PASSWORD=$(printf '%s' "$STORE_PASSWORD" | tr -cd 'A-Za-z0-9')
+          export STORE_PASSWORD
+          echo "::add-mask::$STORE_PASSWORD"
+          ks="$RUNNER_TEMP/izuki-quest-store.p12"
+          printf '%s' "$STORE_B64" | base64 -d > "$ks"
+          alias=$(keytool -list -keystore "$ks" -storetype PKCS12 -storepass:env STORE_PASSWORD | sed -n 's/^\([^,]*\),.*PrivateKeyEntry.*/\1/p' | head -1)
+          fp=$(keytool -list -v -keystore "$ks" -storetype PKCS12 -storepass:env STORE_PASSWORD -alias "$alias" | sed -n 's/^[[:space:]]*SHA256: //p' | tr -d '[:space:]')
+          if ! grep -q "\"$fp\"" docs/.well-known/assetlinks.json; then
+            echo "::error::The store key ($fp) isn't one izukinova.ai/.well-known/assetlinks.json vouches for."
+            rm -f "$ks"; exit 1
+          fi
+          tools="$ANDROID_HOME/build-tools/34.0.0"
+          "$tools/apksigner" sign --ks "$ks" --ks-type PKCS12 --ks-pass env:STORE_PASSWORD --ks-key-alias "$alias" --out Izuki-VR-Quest-store.apk quest/app-release-unsigned-aligned.apk
+          rm -f "$ks"
+          "$tools/apksigner" verify --print-certs Izuki-VR-Quest-store.apk
+          echo "STORE_APK=1" >> "$GITHUB_ENV"
+      - uses: actions/upload-artifact@v4
+        if: env.STORE_APK == '1'
+        with:
+          name: izuki-vr-quest-store
+          path: Izuki-VR-Quest-store.apk
+          if-no-files-found: error
+      # Straight on to the private Alpha channel, so a new version reaches the
+      # owner's Quest with no upload by hand (Meta's website no longer takes
+      # uploads; this is Meta's own uploader). Only with the app secret in
+      # GitHub (IZUKI_QUEST_APP_SECRET, docs/QUEST-STORE.md); without it this
+      # step only says so. Going public stays a person's choice: a build reaches
+      # the store only after Meta's review and a release from the dashboard.
+      # Run by hand with channel "store" instead, it uploads a DRAFT to the
+      # Production (Store) channel: Meta attaches only such drafts to a store
+      # submission, and a draft is never shown to anyone until released.
+      - name: Upload the store version (private Alpha, or a store draft when asked)
+        if: github.ref == 'refs/heads/main' && env.STORE_APK == '1'
+        env:
+          APP_SECRET: ${{ github.ref == 'refs/heads/main' && secrets.IZUKI_QUEST_APP_SECRET || '' }}
+          CHANNEL: ${{ github.event_name == 'workflow_dispatch' && inputs.channel || 'alpha' }}
+        run: |
+          if [ -z "$APP_SECRET" ]; then echo "No IZUKI_QUEST_APP_SECRET in GitHub yet: upload by hand (docs/QUEST-STORE.md)."; exit 0; fi
+          # A re-run of an older commit would put an older app on Alpha (its
+          # version code is still the newest): only main's latest commit uploads.
+          head=$(git ls-remote origin refs/heads/main | cut -f1)
+          if [ "$head" != "$GITHUB_SHA" ]; then echo "main has moved on to ${head::7}: not uploading this older build."; exit 0; fi
+          APP_SECRET=$(printf '%s' "$APP_SECRET" | tr -cd 'A-Za-z0-9')
+          echo "::add-mask::$APP_SECRET"
+          util="$RUNNER_TEMP/ovr-platform-util"
+          curl -fsSL --retry 3 -o "$util" "https://www.oculus.com/download_app/?id=5159709737372459"
+          chmod +x "$util"
+          v=$(node -p "require('./quest/twa-manifest.json').appVersion")
+          # The age group is the owner's own self-certification in the
+          # dashboard (2026-11-22: teens and adults, 13+). If they ever change
+          # it there, change it here too.
+          # Meta's names: ALPHA, and "store" for Production (Store). The age
+          # group has no 18+ choice (only 13+, mixed ages, children): the
+          # store text says the AI key needs an adult (Gemini's terms).
+          case "$CHANNEL" in
+            store) where=(--channel store --draft) ;;
+            *) where=(--channel ALPHA) ;;
+          esac
+          "$util" upload-quest-build --app-id 1490038460856480 --app-secret "$APP_SECRET" \
+            --apk Izuki-VR-Quest-store.apk "${where[@]}" --age-group TEENS_AND_ADULTS \
+            --notes "IZUKI NOVA $v (${GITHUB_SHA::7})"

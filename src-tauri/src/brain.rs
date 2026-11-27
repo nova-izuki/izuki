@@ -459,6 +459,11 @@ pub struct Look {
     /// A GRADED quiz or test with answer choices on screen (assess.rs): the
     /// student picks. A practice page the page itself calls practice isn't.
     pub test_page: bool,
+    /// A quiz the page itself calls practice, with choices on screen: Izuki
+    /// may answer it on the page when asked.
+    pub practice_page: bool,
+    /// A school assignment or assessment: handing it in always stays the user's.
+    pub school_page: bool,
     /// Where each answer choice is on screen (a mark there marks the choice).
     pub choice_rects: Vec<Rect>,
 }
@@ -490,7 +495,15 @@ impl Look {
             .collect();
         let options: Vec<String> = chosen.iter().map(|c| c.name.trim().to_lowercase()).collect();
         let choice_rects = chosen.iter().map(|c| c.rect).collect();
-        Look { test_page: kind == crate::assess::Kind::Graded && options.len() >= 2, options, choice_rects }
+        let choices = options.len() >= 2;
+        // Written-answer quizzes have no radio buttons. Keep ordinary course
+        // uploads/downloads available even when their title says "assessment".
+        let words = words_of(&format!("{title} {page_text}"));
+        let answering = choices
+            || controls.iter().any(|c| matches!(c.kind.as_str(), "Edit" | "TextBox"))
+            || [" quiz ", " test ", " exam ", " question ", " attempts remaining ", " finish attempt "].iter().any(|w| words.contains(w));
+        let school_page = testy || [" assignment ", " homework ", " worksheet ", " course ", " lesson "].iter().any(|w| words.contains(w));
+        Look { test_page: kind == crate::assess::Kind::Graded && answering, practice_page: kind == crate::assess::Kind::Practice, school_page, options, choice_rects }
     }
 }
 
@@ -504,13 +517,22 @@ fn reads_as_choice(name: &str) -> bool {
 }
 
 /// Told to the brain while a quiz or test is on screen.
-const QUIZ_PROMPT: &str = "QUIZ OR TEST IN PROGRESS: the student answers it. Explain what the question asks and the idea behind it, point at the key words in the question, and help them reason it out — but never say, hint at or mark which choice is correct, and never confirm or reject a choice they picked. Never click or type an answer. Going to the next question when they ask is fine.\n";
+const QUIZ_PROMPT: &str = "GRADED OR UNCLEAR QUIZ OR TEST: work the question out, say the answer plainly and explain why. The person selects or enters it: never click a choice, type an answer or use keys to enter one. Never press Submit, Turn in, Finish or End test, even when asked. Going to the next question when they ask is fine. If they ask for coaching without the answer, explain without naming it.\n";
 
 /// The owner asked for direct answers when explicitly requested. Coaching
 /// remains a separate mode; answering never authorizes a click or submission.
 pub(crate) fn direct_answer_requested(prompt: &str) -> bool {
     let latest = prompt.split("\n\n(The conversation just before,").next().unwrap_or(prompt);
-    let s = latest.to_lowercase();
+    let s = latest.replace('’', "'").to_lowercase();
+    // The front-end wraps the request in instructions that say "do not click
+    // or submit". Those prohibitions must not look like a request to act.
+    // When the wrapper quotes the person, judge the action words from that
+    // quote; otherwise judge the whole request.
+    let asked = latest
+        .split_once("They said: \"")
+        .and_then(|(_, rest)| rest.split_once('"').map(|(said, _)| said))
+        .unwrap_or(latest)
+        .to_lowercase();
     if ["don't answer", "do not answer", "without the answer", "coach me", "tutor mode", "teacher mode"].iter().any(|p| s.contains(p)) {
         return false;
     }
@@ -521,10 +543,10 @@ pub(crate) fn direct_answer_requested(prompt: &str) -> bool {
     const PICKS_OR_SENDS: [&str; 11] = [
         "submit", "select", "choose", "pick", "tick", "check the box", "mark it", "finish the test", "end test", "hand in", "turn it in",
     ];
-    if PICKS_OR_SENDS.iter().any(|w| s.contains(w)) {
+    if PICKS_OR_SENDS.iter().any(|w| asked.contains(w)) {
         return false;
     }
-    if crate::companion::asks_to_do(latest) && !["next", "previous", "back", "forward", "carry on", "keep going"].iter().any(|w| s.contains(w)) {
+    if crate::companion::asks_to_do(&asked) && !["next", "previous", "back", "forward", "carry on", "keep going"].iter().any(|w| s.contains(w)) {
         return false;
     }
     // Not a list of exact sentences: people don't say "what is the answer",
@@ -537,6 +559,12 @@ pub(crate) fn direct_answer_requested(prompt: &str) -> bool {
     (answering && (about_this || s.contains("the answer") || s.contains("what") || s.contains("which")))
         || matches!(s.trim().trim_end_matches(['?', '!', '.']), "answer" | "answer it" | "answer this" | "ans")
 }
+
+/// "Answer this" on a practice quiz (the page says so): done on the page,
+/// then said in a line. It used to
+/// get DIRECT_ANSWER_PROMPT's "explanation-only" on every page, so Izuki named
+/// the answer and never clicked it, even where acting was allowed.
+const ANSWER_ON_PAGE_PROMPT: &str = "This page is practice: click the right choice or type the answer into its box (by its control number), then say in one short line which you picked and why. If several questions are visible, answer the one they mean (the first unanswered one if that's unclear). Never press Submit, Turn in, Finish or End test, even when asked: handing it in stays the person's. If they ask for coaching without the answer, explain without naming or entering it.\n";
 
 const DIRECT_ANSWER_PROMPT: &str = "The user explicitly asked for the answer. Answer the visible factual question directly: answer first, with the option label only when clearly visible, then a short explanation. Do not refuse to name a factual answer or turn this into a walkthrough. Do not guess unreadable choices. If you are not certain of the fact, say which part you are unsure about instead of stating it confidently — being wrong costs them marks, and saying it is probably B but they should check whether X applies is far more use than a confident wrong letter. This is an explanation-only request: do not select, click, type or submit answers. Do not offer to save Notes.\n";
 
@@ -563,29 +591,29 @@ fn keep_answers_out(plan: &mut VisionPlan, steps: &mut Vec<ActionStep>, look: &L
     }
 }
 
+/// Explain graded answers, while keeping explicit coaching answer-free.
 fn apply_answer_mode(plan: &mut VisionPlan, steps: &mut Vec<ActionStep>, look: &Look, prompt: &str) {
-    // Only a quiz or test needs the answer kept out of Izuki's hands. On an
-    // ordinary page this used to throw away the scroll that reaches the
-    // question and the ask that says "I can't read the choices".
-    if !look.test_page {
-        return keep_answers_out(plan, steps, look);
+    let asked = prompt.replace('\u{2019}', "'").to_lowercase();
+    if ["don't answer", "do not answer", "without the answer", "coach me", "tutor mode", "teacher mode"].iter().any(|w| asked.contains(w)) {
+        let mut coaching = look.clone();
+        coaching.test_page |= coaching.practice_page;
+        keep_answers_out(plan, steps, &coaching);
+        if coaching.test_page {
+            steps.retain(|s| !enters_quiz_answer(s, &coaching));
+        }
     }
-    if direct_answer_requested(prompt) {
-        // Naming a fact is not permission to act on the test or page.
-        let latest = prompt.split("\n\n(The conversation just before,").next().unwrap_or(prompt).to_lowercase();
-        steps.retain(|step| {
-            let name = step.snapped_to.as_deref().unwrap_or("").trim().to_lowercase();
-            let navigation = match name.as_str() {
-                "next" | "next question" => latest.contains("next question") || latest.contains("click next"),
-                "previous" | "previous question" | "back" => latest.contains("previous question") || latest.contains("click back"),
-                _ => false,
-            };
-            navigation && matches!(step.action, Intent::Click | Intent::Auto)
-                && !look.options.contains(&name)
-        });
-        plan.ask = None;
-    } else {
-        keep_answers_out(plan, steps, look);
+}
+
+/// A choice, written answer, or keyboard activation; named navigation and
+/// ordinary course controls stay available. Unidentified clicks are unsafe.
+fn enters_quiz_answer(step: &ActionStep, look: &Look) -> bool {
+    match step.action {
+        Intent::Type => true,
+        Intent::Key => !step.key.as_deref().is_some_and(|key| matches!(key.to_ascii_lowercase().as_str(), "pageup" | "pagedown" | "page up" | "page down")),
+        Intent::Click | Intent::DoubleClick | Intent::Auto | Intent::Drag | Intent::Stroke => {
+            step.snapped_to.as_deref().is_none_or(|s| s.trim().is_empty()) || marks_a_choice(step, look)
+        }
+        _ => false,
     }
 }
 
@@ -667,15 +695,15 @@ fn final_button(step: &ActionStep) -> Option<String> {
 /// Never on a guess: typing a command into a terminal (it runs, and can
 /// delete things) unless the user spelled that command out, and writing
 /// notes on the screen unless they asked to be shown or taught something.
-/// Drops those steps (and what came after a held-back command) and says why,
-/// for the next look. `None` when the plan was fine.
 /// A held-back step, said to the person in plain words (the reasons from
 /// `guard_steps` are written for the AI).
 fn plainly(why: &str) -> String {
-    if why.contains("Typing a command into a terminal") {
+    if why.contains("Handing in school work") {
+        "I left handing it in to you. I never press Submit, Turn in or Finish on school work, even when asked.".into()
+    } else if why.contains("This is a graded or unclear quiz") {
+        "I can explain the answer and why it fits. You select or enter it on this quiz.".into()
+    } else if why.contains("Typing a command into a terminal") {
         "I didn't type that command into your terminal — I only run commands you spell out exactly. Tell me the exact command, or say what you want done (like “clear the safe stuff” to free up space) and I'll do it my own way.".into()
-    } else if why.contains("This is a quiz or test") {
-        crate::assess::what_i_can_do(crate::assess::Kind::Graded).into()
     } else if let Some(rest) = why.strip_prefix("Pressing “") {
         let name = rest.split('”').next().unwrap_or("that");
         format!("I stopped before pressing “{name}” — it's a final button, so I only press it when you tell me to exactly.")
@@ -684,6 +712,8 @@ fn plainly(why: &str) -> String {
     }
 }
 
+/// Drops held-back steps (and what came after a held-back command) and says
+/// why, for the next look. `None` when the plan was fine.
 fn guard_steps(steps: &mut Vec<ActionStep>, prompt: &str, lesson: bool, front: &str) -> Option<String> {
     let look = this_look();
     guard_steps_with(steps, prompt, lesson, front, &look)
@@ -697,6 +727,18 @@ fn guard_steps_with(steps: &mut Vec<ActionStep>, prompt: &str, lesson: bool, fro
     //    model once submitted a whole test anyway — this makes it certain.
     // Every final step is checked; the plan stops at the first one not said.
     let said = words_of(&asked);
+    let school = look.school_page || look.test_page || look.practice_page;
+    let school_finish = |s: &ActionStep| {
+        school && matches!(s.action, Intent::Click | Intent::DoubleClick | Intent::Auto | Intent::Key)
+            && s.snapped_to.as_deref().is_some_and(|name| {
+                let words = words_of(name);
+                [" submit ", " turn in ", " hand in ", " finish ", " end test ", " end quiz ", " end exam ", " grade "].iter().any(|w| words.contains(w))
+            })
+    };
+    if let Some(i) = steps.iter().position(school_finish) {
+        steps.truncate(i);
+        why.push("Handing in school work wasn't done: never press Submit, Turn in, Finish, End test or Grade, even with consent. The person must press it themselves; do not ask for permission to do it.".to_string());
+    }
     let held = steps.iter().enumerate().find_map(|(i, s)| {
         let name = final_button(s)?;
         let phrase = final_phrase(&name)?;
@@ -710,18 +752,12 @@ fn guard_steps_with(steps: &mut Vec<ActionStep>, prompt: &str, lesson: bool, fro
         steps.truncate(i);
         why.push(format!("Pressing “{name}” wasn't done: it's final. Stop right before it and set \"ask\" to check with the user first (\"Want me to {phrase} it?\")."));
     }
-    // 0b. On a quiz or test the student picks the answers: Izuki explains,
-    //     points at the key words and lets them choose (academic honesty).
+    // 0b. Explain graded/unclear answers; only practice may be filled in.
     if look.test_page {
         let before = steps.len();
-        steps.retain(|s| {
-            let picks_answer = matches!(s.action, Intent::Click | Intent::DoubleClick | Intent::Auto)
-                && s.snapped_to.as_deref().is_some_and(|n| look.options.contains(&n.trim().to_lowercase()));
-            let types_answer = s.action == Intent::Type && s.text_to_type.as_deref().is_some_and(|t| !asked.contains(&t.trim().to_lowercase()));
-            !(picks_answer || types_answer)
-        });
+        steps.retain(|s| !enters_quiz_answer(s, look));
         if steps.len() < before {
-            why.push("This is a quiz or test, so the answer wasn't picked: the student chooses. Explain the question and the idea behind it, point at the key words, and let them click their answer — then you can tell them why it's right or wrong.".to_string());
+            why.push("This is a graded or unclear quiz: explain the answer and why, but the person selects or enters it. Do not click, type or use keys to enter an answer.".to_string());
         }
     }
     // 1. Commands.
@@ -792,7 +828,7 @@ fn merge_page(controls: &mut Vec<uia::Control>, page_text: &mut String, page: cr
             Some(h) if !h.is_empty() => h.chars().take(80).collect(),
             _ => e.name.clone(),
         };
-        listed.push((next, e.dom_id.clone()));
+        listed.push((next, e.dom_id.clone(), e.name.clone()));
         controls.push(uia::Control {
             id: next,
             kind: e.kind.clone(),
@@ -865,6 +901,41 @@ fn better_text(from_window: String, from_pixels: String) -> String {
     }
 }
 
+/// The next look takes a screenshot again: set when a step failed or a
+/// page-only look wasn't enough (see [`page_look`]).
+static PICTURE_NEXT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Fewer numbered controls than this: draw the grid (tags::grid).
+const GRID_BELOW: usize = 6;
+/// What a gridded look tells the brain.
+const GRID_NOTE: &str = "GRID ON THE PICTURE: this app has almost nothing to number, so thin lines are drawn every 100 pixels with their x along the top edge and y down the left edge (yellow numbers). For a click, drag or stroke with no number, read the position off the grid: count from the nearest lines. Coordinates are still pixels in this picture.";
+
+/// What a page-only look tells the brain.
+const PAGE_LOOK: &str = "READING THE PAGE ITSELF (no screenshot this look, it's faster): the numbered page elements and the page's text below ARE what's on screen right now. Act on them by number. If you truly need to see it (a picture, a chart, the layout), give no steps and say so, and you'll get a screenshot on the next look.";
+
+/// A request about how things look needs the picture, whatever the page says.
+fn needs_picture(prompt: &str) -> bool {
+    let latest = prompt.split("\n\n(The conversation just before,").next().unwrap_or(prompt).to_lowercase();
+    let padded = format!(" {} ", latest.replace(|c: char| !c.is_alphanumeric() && c != '\'', " "));
+    [" screen ", " picture ", " pictures ", " image ", " images ", " photo ", " photos ", " look at ", " see ", " colour ", " color ", " video ",
+     " chart ", " graph ", " map ", " draw ", " point ", " circle ", " highlight ", " what's this ", " what is this ", " this one ", " that one ",
+     " design ", " layout ", " looks ", " watch ", " game ", " captcha ", " where is the ", " where's the "]
+        .iter()
+        .any(|w| padded.contains(w))
+}
+
+/// Seen 2026-11-23: every agent step on a web page sent a screenshot (about
+/// 3,700 tokens: Groq's free per-minute allowance ran out after one or two
+/// looks) and waited 3.5–7 s on a vision model, even though the extension had
+/// already read the page's 60 real elements and its text. With enough of
+/// them, and nothing visual asked, the look is the page itself: no picture,
+/// a faster text answer, the same numbered targets (clicked through the
+/// extension, no mouse). A failed step or a reply with nothing to do brings
+/// the picture back for the next look.
+fn page_look(prompt: &str, page_controls: usize, page_text: &str, zoomed: bool, picture_asked: bool) -> bool {
+    !zoomed && !picture_asked && page_controls >= 8 && page_text.trim().len() >= 80 && !needs_picture(prompt)
+}
+
 /// `wants_action`: the request is something to *do* (not a question), so a
 /// reply that does nothing can't win the race — see [`good_enough`].
 fn ask_model(
@@ -931,6 +1002,7 @@ fn ask_model(
     // only show your tab — and every step goes into that page by number.
     let tab_mode = crate::ext::check_tab_hidden();
     let mut tab_title = String::new();
+    let mut page_controls = 0usize;
     if tab_mode {
         controls.clear();
         page_text.clear();
@@ -943,6 +1015,12 @@ fn ask_model(
              Act only on the numbered page elements with \"target\" (click, type) or scroll the page; nothing else can happen until they come back.\n{page_text}"
         );
         eprintln!("[agent] working in the pinned tab while you're on another one");
+        // In Izuki's own window: show what it looks like now, in the task panel.
+        if crate::ext::in_workspace() {
+            if let Some(shot) = crate::ext::workspace_shot() {
+                crate::state::task_shot(shot);
+            }
+        }
     } else if crate::ext::connected() && is_browser(&uia::foreground_app()) {
         if let Some(page) = crate::ext::snapshot() {
             // A question whose answer may be behind a link: read the most
@@ -952,6 +1030,7 @@ fn ask_model(
             } else {
                 String::new()
             };
+            page_controls = page.elements.len();
             merge_page(&mut controls, &mut page_text, page);
             if !behind.is_empty() {
                 page_text.push_str("\n");
@@ -968,7 +1047,24 @@ fn ask_model(
         });
     }
     crate::tags::draw(&mut scaled, &desktop, &controls);
-    let image_jpeg = if tab_mode { Vec::new() } else { scaled.to_jpeg(80)? };
+    // Almost nothing to number (a game, a drawing app, a map, a canvas): a
+    // grid with rulers, so a bare x/y is read off it rather than guessed.
+    let gridded = !tab_mode && controls.len() < GRID_BELOW && crate::ext::snapshot_url_cached().is_none();
+    if gridded {
+        crate::tags::grid(&mut scaled);
+        eprintln!("[brain] {} things to number here — drew a grid on the picture", controls.len());
+        page_text = format!("{GRID_NOTE}
+{page_text}");
+    }
+    let picture_asked = PICTURE_NEXT.swap(false, std::sync::atomic::Ordering::SeqCst);
+    let text_only = !tab_mode && page_controls > 0 && page_look(&session.prompt, page_controls, &page_text, zoomed, picture_asked);
+    if text_only {
+        eprintln!("[brain] reading the page itself — {page_controls} elements, no screenshot this look");
+        page_text = format!("{PAGE_LOOK}\n{page_text}");
+    }
+    // Kept for a second try with the picture when the page alone wasn't enough.
+    let picture = if text_only { Some(scaled.clone()) } else { None };
+    let image_jpeg = if tab_mode || text_only { Vec::new() } else { scaled.to_jpeg(80)? };
 
     let ocr_text = session
         .marks
@@ -980,6 +1076,7 @@ fn ask_model(
     let title = if tab_mode && !tab_title.is_empty() { tab_title } else { uia::foreground_title() };
     let look = Look::of(&controls, &page_text, &title);
     let on_a_test = look.test_page;
+    let on_practice = look.practice_page;
     LOOK.with(|l| *l.borrow_mut() = look);
     let req = VisionRequest {
         image_jpeg,
@@ -998,9 +1095,21 @@ fn ask_model(
             + &crate::reminders::prompt_block()
             + &crate::voices::prompt_block()
             + &crate::lessons::prompt_block(&uia::foreground_app(), crate::ext::snapshot_url_cached().as_deref())
+            // Hardware requests start from facts: this PC's maker, model and
+            // maker apps, and where a setting like a charge limit really lives.
+            + &crate::hardware::prompt_block(&session.prompt)
             + crate::selfknow::PROMPT
-            + if direct_answer_requested(&session.prompt) { DIRECT_ANSWER_PROMPT } else if on_a_test { QUIZ_PROMPT } else { "" }
-            + if wants_pointing(&session.prompt) { POINTING_PROMPT } else { "" },
+            + match (on_a_test, direct_answer_requested(&session.prompt)) {
+                (true, true) => DIRECT_ANSWER_PROMPT,
+                (true, false) => QUIZ_PROMPT,
+                // Practice: answered on the page. Anywhere else, "answer this"
+                // is still a factual answer: say it, don't act on the page.
+                (false, _) if on_practice => ANSWER_ON_PAGE_PROMPT,
+                (false, true) => DIRECT_ANSWER_PROMPT,
+                _ => "",
+            }
+            + if wants_pointing(&session.prompt) { POINTING_PROMPT } else { "" }
+            + crate::practical::prompt_block(),
         windows: uia::open_windows(14),
         page_text,
         think,
@@ -1008,6 +1117,9 @@ fn ask_model(
     let prep_ms = started.elapsed().as_millis();
 
     let mut chain = brain_chain();
+    if let Some(issue) = selected_model_issue(false) {
+        return Err(anyhow!(issue));
+    }
     if chain.is_empty() {
         return Err(anyhow!("{}", if online() { NO_BRAIN } else { OFFLINE }));
     }
@@ -1016,7 +1128,17 @@ fn ask_model(
     // instead of doing it ("no brain acted" 35 times in one user's log, all
     // from an 11B model). They stay as backups.
     smartest_first(&mut chain);
+    let retry = picture.as_ref().map(|_| req.clone());
     let mut plan = ask_racing(&chain, req, prep_ms, wants_action)?;
+    // Something to do, and the page alone gave no step: look at the picture now.
+    if let (Some(mut again), Some(pic)) = (retry, picture) {
+        if wants_action && plan.steps.is_empty() && !plan.done {
+            eprintln!("[brain] the page alone wasn't enough — looking at the screenshot");
+            again.image_jpeg = pic.to_jpeg(80)?;
+            again.page_text = again.page_text.replacen(PAGE_LOOK, "", 1);
+            plan = ask_racing(&chain, again, prep_ms, wants_action)?;
+        }
+    }
     // Marks aimed at words go exactly where those words really are.
     anchor_marks(&mut plan.steps, frame);
     // "Remind me…" said while it works the screen: set it, don't say the tag.
@@ -1096,8 +1218,39 @@ pub const OFFLINE: &str = "You're offline right now — check your Wi-Fi, then a
 /// acts through the numbered controls list).
 pub fn brain_chain() -> Vec<crate::settings::ProviderConfig> {
     let mut chain = offline_only(brain_chain_inner());
-    swap_local_text_model(&mut chain, tiny_describer, false);
+    swap_local_text_model(&mut chain, tiny_describer, false, brain_mode());
+    with_starter(&mut chain);
     chain
+}
+
+/// No key at all: Izuki's free starter brain, so nobody has to set anything
+/// up to start (owner, 2026-11-24: "free everywhere, no stress"). Pollinations'
+/// free text AI: an open model, no key or account, about one answer every 45
+/// seconds per internet connection. It can't see pictures (a look is sent
+/// again as words). A free key in Settings makes everything fast.
+pub fn starter_brain() -> crate::settings::ProviderConfig {
+    crate::settings::ProviderConfig {
+        id: crate::settings::ProviderId::Openai,
+        label: "Izuki's free starter brain".into(),
+        base_url: "https://text.pollinations.ai/openai".into(),
+        model: "openai".into(),
+        api_key: String::new(),
+        enabled: true,
+    }
+}
+
+fn with_starter(chain: &mut Vec<crate::settings::ProviderConfig>) {
+    if starter_allowed(chain, brain_mode()) && online() && !RESTING.lock().iter().any(|(p, until)| *p == crate::settings::ProviderId::Openai && *until > std::time::Instant::now()) {
+        chain.push(starter_brain());
+    }
+}
+
+fn provider_ready(cfg: &crate::settings::ProviderConfig) -> bool {
+    cfg.enabled && (!cfg.api_key.trim().is_empty() || cfg.on_this_pc())
+}
+
+fn starter_allowed(chain: &[crate::settings::ProviderConfig], mode: crate::settings::BrainMode) -> bool {
+    mode != crate::settings::BrainMode::One && !chain.iter().any(provider_ready)
 }
 
 /// Chat needs a text model. Ollama happily returns `moondream`, a
@@ -1107,12 +1260,13 @@ pub fn brain_chain() -> Vec<crate::settings::ProviderConfig> {
 /// model, or drop it so a cloud brain can answer.
 pub fn chat_chain() -> Vec<crate::settings::ProviderConfig> {
     let mut chain = offline_only(brain_chain_inner());
-    swap_local_text_model(&mut chain, picture_only_model, true);
+    swap_local_text_model(&mut chain, picture_only_model, true, brain_mode());
     // Another model on the same key is another brain: only when switching
     // freely.
     if switches_freely() {
         use_siblings_for_resting(&mut chain);
     }
+    with_starter(&mut chain);
     chain
 }
 
@@ -1168,7 +1322,10 @@ pub fn rest_gone_model(cfg: &crate::settings::ProviderConfig) {
 /// Swap the configured Ollama model for an installed chat model when `unfit`
 /// says it's wrong for this lane, and (with `drop_unfit`) leave it out when
 /// nothing else is installed.
-fn swap_local_text_model(chain: &mut Vec<crate::settings::ProviderConfig>, unfit: fn(&str) -> bool, drop_unfit: bool) {
+fn swap_local_text_model(chain: &mut Vec<crate::settings::ProviderConfig>, unfit: fn(&str) -> bool, drop_unfit: bool, mode: crate::settings::BrainMode) {
+    if mode != crate::settings::BrainMode::Auto {
+        return;
+    }
     let Some(base_url) = chain
         .iter()
         .find(|c| c.id == crate::settings::ProviderId::Ollama && unfit(&c.model))
@@ -1201,6 +1358,24 @@ fn picture_only_model(model: &str) -> bool {
     ["moondream", "llava", "bakllava", "minicpm-v", "qwen2.5vl", "qwen2-vl", "llama3.2-vision"]
         .iter()
         .any(|name| m.contains(name))
+}
+
+/// "Only my brain" means exactly that model, including when it is unsuitable.
+/// Explain the limitation instead of silently replacing it with another model.
+pub(crate) fn selected_model_issue(chat_lane: bool) -> Option<String> {
+    let store = crate::state::try_store()?;
+    let settings = store.settings();
+    if settings.brain_mode != crate::settings::BrainMode::One {
+        return None;
+    }
+    local_model_issue(settings.provider(settings.active_provider)?, chat_lane)
+}
+
+fn local_model_issue(cfg: &crate::settings::ProviderConfig, chat_lane: bool) -> Option<String> {
+    let unsupported = if chat_lane { picture_only_model(&cfg.model) } else { tiny_describer(&cfg.model) };
+    (cfg.id == crate::settings::ProviderId::Ollama && unsupported).then(|| {
+        format!("Your chosen model, {}, cannot handle {}. Choose a chat model in Settings, or allow Izuki to switch brains.", cfg.model, if chat_lane { "chat" } else { "screen tasks" })
+    })
 }
 
 /// Pick a sensible installed chat model rather than the first line of
@@ -1313,15 +1488,12 @@ fn configured_chain() -> Vec<crate::settings::ProviderConfig> {
 /// other brain with a key.
 fn chain_for(settings: &crate::settings::Settings) -> Vec<crate::settings::ProviderConfig> {
     use crate::settings::BrainMode;
-    let Some(primary) = settings.provider(settings.active_provider).cloned() else {
-        return Vec::new();
-    };
-    let mut chain = vec![primary];
+    let mut chain: Vec<_> = settings.provider(settings.active_provider).filter(|p| provider_ready(p)).cloned().into_iter().collect();
     if settings.brain_mode == BrainMode::One {
         return chain;
     }
     if let Some(f) = settings.fallback_provider.and_then(|id| settings.provider(id).cloned()) {
-        if f.id != chain[0].id && (!f.api_key.trim().is_empty() || f.on_this_pc()) {
+        if !chain.iter().any(|c| c.id == f.id) && provider_ready(&f) {
             chain.push(f);
         }
     }
@@ -1329,7 +1501,7 @@ fn chain_for(settings: &crate::settings::Settings) -> Vec<crate::settings::Provi
         return chain;
     }
     for p in &settings.providers {
-        if !p.api_key.trim().is_empty() && !p.on_this_pc() && !chain.iter().any(|c| c.id == p.id) {
+        if provider_ready(p) && !p.on_this_pc() && !chain.iter().any(|c| c.id == p.id) {
             chain.push(p.clone());
         }
     }
@@ -1481,7 +1653,7 @@ fn rest_for(err: &str) -> Option<std::time::Duration> {
     if e.contains("request too large") || e.contains("too large for model") || e.contains("context length") {
         return None;
     }
-    let limited = e.contains("429") || e.contains("too many requests") || e.contains("rate-limit") || e.contains("rate limit");
+    let limited = e.contains("429") || e.contains("too many requests") || e.contains("rate-limit") || e.contains("rate limit") || e.contains("free limit reached");
     if !limited {
         return None;
     }
@@ -1509,7 +1681,7 @@ fn unreachable_rest(err: &str) -> Option<std::time::Duration> {
 /// "please try again in 7.2s", "retry in 1m30s", "retry after 12 seconds",
 /// "retry_after: 20" → that long.
 fn retry_after(e: &str) -> Option<std::time::Duration> {
-    let at = ["try again in ", "retry in ", "retry after ", "retry_after\":", "retry_after:", "retry-after:", "retrydelay\":\""]
+    let at = ["try again in ", "retry in ", "retry after ", "please wait ", "retry_after\":", "retry_after:", "retry-after:", "retrydelay\":\""]
         .iter()
         .find_map(|k| e.find(k).map(|i| i + k.len()))?;
     let rest: Vec<char> = e[at..].trim_start_matches([' ', '"']).chars().take(16).collect();
@@ -1867,7 +2039,9 @@ fn is_hopeless(err: &str) -> bool {
     let e = err.to_ascii_lowercase();
     let out_of_money = ["no credits", "insufficient_quota", "billing"].iter().any(|p| e.contains(p));
     // "Too many requests" is waiting, not broken — unless it says the money ran out.
-    let limited = has_status(&e, "429") || e.contains("too many requests") || e.contains("rate limit") || e.contains("rate-limit");
+    // The free starter brain answers "402 … Free limit reached … wait 44
+    // seconds": a wait, not an empty wallet.
+    let limited = has_status(&e, "429") || e.contains("too many requests") || e.contains("rate limit") || e.contains("rate-limit") || e.contains("free limit reached");
     if limited && !out_of_money {
         return false;
     }
@@ -2026,6 +2200,15 @@ const TAB_WAIT_OVER: &str = "tab_wait_over: you stayed on another tab";
 // (and third) brain on nearly every look and burned through the daily
 // limits. Only a really slow brain gets company now.
 const HEDGE_AFTER: std::time::Duration = std::time::Duration::from_millis(5000);
+
+/// The most a screen look may go with nothing usable before Izuki stops
+/// and says so. This was 45 s: on 2026-11-22 every free brain refused at
+/// once (Groq and OpenRouter rate-limited, OpenAI out of credits, Gemini
+/// unreachable for 20 s, NVIDIA gone), and a look that could never finish
+/// kept the whole app busy for 45 s after the chat had already answered —
+/// the next request waited behind it. A real look on a slow Gemini day is
+/// 9–15 s, so 20 s still leaves room for one hedged answer.
+const LOOK_BUDGET: std::time::Duration = std::time::Duration::from_secs(20);
 
 /// Ask the brains in `chain` order, but don't wait on a slow one: if the
 /// current brain hasn't answered after `HEDGE_AFTER`, the next one is asked
@@ -2224,7 +2407,7 @@ fn ask_racing(
     let mut fallback: Option<(usize, VisionPlan)> = None;
     loop {
         if automation::aborted() { return Err(anyhow!("stopped")); }
-        if began.elapsed() > Duration::from_secs(45) {
+        if began.elapsed() > LOOK_BUDGET {
             return match fallback.take() {
                 Some((_, plan)) => Ok(last_resort(plan, wants_action)),
                 None => Err(anyhow!("the screen model took too long; try a faster brain in Settings")),
@@ -2292,7 +2475,7 @@ fn ask_racing(
                         eprintln!(
                             "[brain] all {} failed, but only temporarily — one more round with {}s left",
                             finished,
-                            Duration::from_secs(45).saturating_sub(began.elapsed()).as_secs()
+                            LOOK_BUDGET.saturating_sub(began.elapsed()).as_secs()
                         );
                         errors.clear();
                         finished = 0;
@@ -2390,6 +2573,18 @@ pub fn run_steps(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep]) {
     run_steps_then(app, store, steps, || {});
 }
 
+/// Replay the last real multi-step plan from the Task Stage's finished card.
+/// Only a plan that actually ran is kept, and a replay still stops rather than
+/// guessing when the screen has moved on.
+pub fn rerun_last_task(app: &AppHandle, store: &Arc<Store>) -> bool {
+    let steps = LAST_TASK_STEPS.lock().clone();
+    if steps.len() < 2 {
+        return false;
+    }
+    run_steps(app, store, &steps);
+    true
+}
+
 /// Same as [`run_steps`], but calls `on_done` once the plan finishes — whether
 /// it completed, failed on a step, or was stopped with the panic key. Voice
 /// and chat commands use this to close the preview overlay behind them
@@ -2404,6 +2599,11 @@ where
 fn run_steps_for_task<F>(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep], task: u64, on_done: F)
 where F: FnOnce() + Send + 'static,
 {
+    // The finished Task Stage offers the last real plan again. Keep only a
+    // multi-step plan; a single stray click is not a task worth replaying.
+    if steps.len() > 1 {
+        *LAST_TASK_STEPS.lock() = steps.to_vec();
+    }
     let steps = steps.to_vec();
     let app = app.clone();
     let store = store.clone();
@@ -2413,7 +2613,7 @@ where F: FnOnce() + Send + 'static,
         .name("izuki-act".into())
         .spawn(move || {
             let _execution = crate::execution::attach(execution_context);
-            let (finished, _) = run_steps_blocking(&app, &store, &steps, &|| task_alive(task));
+            let (finished, _, _) = run_steps_blocking(&app, &store, &steps, &|| task_alive(task));
             // A replay has no brain to take a fresh look: when it stopped
             // part-way (paused and resumed, a covered or greyed-out button),
             // it says so rather than going quiet or clicking stale spots.
@@ -2436,6 +2636,11 @@ where F: FnOnce() + Send + 'static,
 /// Why the last run of steps stopped, when it's something the brain can fix
 /// on its next look (a window on top of the button, a greyed-out button).
 static STEP_SNAG: Mutex<Option<String>> = Mutex::new(None);
+/// What this round's direct steps brought back (a report, a reading): real
+/// data for the next look, word for word, never just "did it".
+/// Each entry is tagged with the task that ran the step: a step a stopped
+/// task finished late never lands in the next task's look.
+static DIRECT_SAID: Mutex<Vec<(u64, String)>> = Mutex::new(Vec::new());
 
 /// A final control that has been attempted, keyed by its exact visible label.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -2460,6 +2665,7 @@ thread_local! {
 
 /// Start a new task with no stale re-plan signal or final-action memory.
 fn clear_replan_state() {
+    DIRECT_SAID.lock().clear();
     STEP_REPLAN.with(|f| f.set(false));
     FINAL_TRIED.with(|f| f.borrow_mut().clear());
     FINAL_CONFIRMED.with(|f| f.borrow_mut().clear());
@@ -2605,8 +2811,15 @@ struct Working(u64);
 
 impl Working {
     fn on(task: &str) -> Self {
+        Self::on_with(task, false)
+    }
+
+    /// `continuing`: the checkpoint's restored objective is not a new
+    /// request; keep the practical mode the person chose after writing it.
+    fn on_with(task: &str, continuing: bool) -> Self {
         let id = WORK_SEQ.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
         *WORK_TASK.lock() = (id, task.to_string());
+        crate::practical::begin(id, task, continuing);
         Working(id)
     }
 
@@ -2686,16 +2899,98 @@ fn wait_while_paused(app: &AppHandle, alive: &dyn Fn() -> bool, step_index: usiz
     Hold::Resumed
 }
 
+/// A step that's the person's (practical.rs): the hand points where it is,
+/// Izuki says what to do and why, and waits while they do it.
+fn your_turn(app: &AppHandle, step: &ActionStep, what: &str, i: usize, total: usize, alive: &dyn Fn() -> bool) -> crate::practical::Turn {
+    if step.x != 0 || step.y != 0 {
+        let _ = crate::overlay::ensure_caption_visible(app);
+        let _ = app.emit(
+            events::HAND,
+            HandCommand {
+                highlight: true,
+                x: step.x,
+                y: step.y,
+                x2: step.x2,
+                y2: step.y2,
+                action: Intent::Point,
+                duration_ms: 300,
+                label: Some(format!("{}/{total}", i + 1)),
+                shape: None,
+                text: None,
+                desktop: Some({
+                    let b = capture::virtual_bounds();
+                    crate::model::DesktopBounds { x: b.x, y: b.y, w: b.w, h: b.h, scale: 1.0 }
+                }),
+            },
+        );
+    }
+    let _ = app.emit("izuki://say", serde_json::json!({ "text": what, "mood": "calm", "reply": true, "quick": false }));
+    let _ = app.emit(
+        events::STATUS,
+        StatusEvent {
+            kind: "working",
+            message: format!("Your turn · step {} of {total}", i + 1),
+            detail: Some(format!("{what} I'm watching: say \"I did it\" or \"do it for me\".")),
+        },
+    );
+    let turn = {
+        // Your hands now: Izuki's own buttons take clicks, Esc is the app's.
+        let _yours = crate::overlay::yours(app);
+        let _esc = crate::hotkey::yours();
+        // A real progress line every so often: the voice watchdog must not
+        // cancel a person who needs more than a minute for their step.
+        let beat = || {
+            let _ = app.emit(
+                events::STATUS,
+                StatusEvent {
+                    kind: "working",
+                    message: format!("Your turn · step {} of {total}", i + 1),
+                    detail: Some(format!("{what} Take your time — say \"I did it\" or \"do it for me\".")),
+                },
+            );
+        };
+        crate::practical::wait_for_person(alive, step.action == Intent::Type, &beat)
+    };
+    // What you did on your turn is yours, not "you grabbed the PC while I worked".
+    *LAST_OWN.lock() = Some(std::time::Instant::now());
+    turn
+}
+
 /// Run `steps` on this thread. `true` if every step ran (not stopped and
 /// no step failed).
-fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep], alive: &dyn Fn() -> bool) -> (bool, usize) {
-            if !crate::execution::allowed() { return (false, 0); }
+fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep], alive: &dyn Fn() -> bool) -> (bool, usize, Vec<String>) {
+            if !crate::execution::allowed() { return (false, 0, Vec::new()); }
             let _active = TaskActive::begin();
             STEP_SNAG.lock().take();
             take_step_replan();
             let executed = std::cell::Cell::new(0usize);
+            // The task these steps belong to (what their direct results are tagged with).
+            let step_task = WORK_TASK.lock().0;
+            // Person-completed steps are real progress but are not automated
+            // clicks: keep them out of `executed` (and last_click replay).
+            let people = std::cell::RefCell::new(Vec::new());
             let settings = store.settings();
             let move_ms = settings.move_duration_ms;
+            // Let the Task Stage appear before the first click. Without this
+            // the stage waited for the "Step 1/N" status after the first
+            // action, which made a real task look like it started late.
+            if steps.len() > 1 {
+                // The stage lives in the follow overlay; if the person has
+                // every always-on surface switched off it still needs a home
+                // for Pause/Stop while a real task runs.
+                let _ = crate::overlay::ensure_caption_visible(app);
+                let _ = app.emit(
+                    events::STATUS,
+                    StatusEvent {
+                        kind: "working",
+                        message: "Task Stage is ready".into(),
+                        detail: Some(format!(
+                            "{} steps ready. Taking a first look before step 1.",
+                            steps.len()
+                        )),
+                    },
+                );
+            }
             // No clear_abort() here: each task clears the flag once, when it
             // starts. Clearing it again right before the clicks threw away a
             // stop pressed while the model was still thinking.
@@ -2758,6 +3053,36 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
                     // Pointing is only seen on the overlay — make sure it's up.
                     if matches!(step.action, Intent::Point | Intent::Draw) {
                         let _ = crate::overlay::ensure_caption_visible(app);
+                    }
+                    // Practical mode: this step may be the person's (teach me,
+                    // do it with me). Shown and watched, never performed; the
+                    // next look checks it worked (practical.rs).
+                    if crate::practical::hands_for(step) == crate::practical::Hands::Person {
+                        let what = crate::practical::say_what(step);
+                        match your_turn(app, step, &what, i, steps.len(), alive) {
+                            crate::practical::Turn::HandBack => {
+                                // The hand-back click is not the person
+                                // competing with Izuki: refresh the input
+                                // watermark before the step is performed.
+                                own.set(std::time::Instant::now());
+                            }
+                            crate::practical::Turn::Done => {
+                                crate::practical::record(crate::practical::Hands::Person, &what);
+                                // The person's step is progress, but not an
+                                // automated click: last_click must never replay it.
+                                people.borrow_mut().push(format!("step {} of {}: {what}", i + 1, steps.len()));
+                                *STEP_SNAG.lock() = Some(format!("{} step {} of {}: {what}", crate::practical::YOUR_TURN_DONE, i + 1, steps.len()));
+                                return false;
+                            }
+                            crate::practical::Turn::Stopped => {
+                                let _ = app.emit(events::STATUS, StatusEvent::info("Stopped."));
+                                return false;
+                            }
+                            crate::practical::Turn::Idle => {
+                                *STEP_SNAG.lock() = Some(crate::practical::YOUR_TURN_IDLE.into());
+                                return false;
+                            }
+                        }
                     }
                     // Tell the overlay's hand where it is going before we move
                     // the real pointer, so the animation leads rather than trails.
@@ -2899,7 +3224,17 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
                         && !asked_for_window(&WORK_TASK.lock().1, "minimise"))
                     .then(uia::front_raw)
                     .flatten();
-                    match automation::execute(step, move_ms, settings.magnetic_hand, settings.dry_run)
+                    // Carry the window this step was planned for into the
+                    // executor: a direct shortcut is checked against it
+                    // immediately before the keys are sent, so a window switch
+                    // after a hand-back cannot receive it.
+                    match automation::execute_in(
+                        step,
+                        move_ms,
+                        settings.magnetic_hand,
+                        settings.dry_run,
+                        uia::held_window(),
+                    )
                     {
                         Ok(detail) => {
                             // Opening something has its own result check: it can
@@ -2913,6 +3248,17 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
                                 return false;
                             }
                             executed.set(i + 1);
+                            // Showing a control (point/draw/watch/hover) is
+                            // not an alternating action turn.
+                            if !matches!(step.action, Intent::Point | Intent::Draw | Intent::Watch | Intent::Hover) {
+                                crate::practical::record(crate::practical::Hands::Izuki, "");
+                            }
+                            if step.action == Intent::Do {
+                                let mut said = DIRECT_SAID.lock();
+                                if said.iter().filter(|(t, _)| *t == step_task).count() < 4 {
+                                    said.push((step_task, detail.chars().take(4000).collect()));
+                                }
+                            }
                             final_press_confirmed(final_attempt.as_ref());
                             if let Some(raw) = front_before {
                                 // (The minimise animation takes a moment.)
@@ -3010,6 +3356,7 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
                             && recover_click(&app, step).is_some() =>
                         {
                             executed.set(i + 1);
+                            crate::practical::record(crate::practical::Hands::Izuki, "");
                             final_press_confirmed(final_attempt.as_ref());
                             if let Some(evidence) = evidence {
                                 if evidence.finish(crate::mission_journal::EvidenceOutcome::Returned).is_err() { return false; }
@@ -3046,7 +3393,7 @@ fn run_steps_blocking(app: &AppHandle, store: &Arc<Store>, steps: &[ActionStep],
                 true
             };
 
-            (run(), executed.get())
+            (run(), executed.get(), people.into_inner())
 }
 
 /// The control a click was meant for, pressed another way: 1) inside the
@@ -3218,6 +3565,13 @@ pub fn submit_voice_command(app: &AppHandle, store: &Arc<Store>, prompt: String)
 /// The same, knowing the conversation so far (chat answers included), so
 /// "open Amazon and find that one" knows which one was being talked about.
 pub fn submit_voice_command_in(app: &AppHandle, store: &Arc<Store>, prompt: String, recent: &[crate::chat::Turn]) -> VisionPlan {
+    if let Some(request) = crate::rescue::request(&prompt) {
+        let summary = match request {
+            crate::rescue::Request::Hide => crate::rescue::reset(app),
+            crate::rescue::Request::Restore => crate::rescue::restore(app),
+        };
+        return VisionPlan { summary, provider: "native overlay recovery".into(), ..Default::default() };
+    }
     // A TV request that reached the screen path (a hand-over from the chat
     // lane, a follow-up mid-conversation) still goes to the TV — never "I
     // can't control your TV" while it opens Netflix on the PC instead.
@@ -3482,7 +3836,7 @@ pub fn run_named_click(app: &AppHandle, store: &Arc<Store>, said: &str) -> Optio
     step.grounding = c.identity.clone();
     eprintln!("[named] \"{said}\" → clicking \"{}\" directly", c.name);
     let working = Working::on(said);
-    let (worked, _) = run_steps_blocking(app, store, std::slice::from_ref(&step), &alive);
+    let (worked, _, _) = run_steps_blocking(app, store, std::slice::from_ref(&step), &alive);
     let stop = working.stopped();
     drop(working);
     if let Some(stop) = stop {
@@ -3643,6 +3997,10 @@ pub fn run_instant(app: &AppHandle, store: &Arc<Store>, said: &str) -> Option<Vi
     if uia::screen_locked() {
         return None;
     }
+    // An instant command is Izuki's own action, not the person's next lesson
+    // step. Reset the practical mode first so a scroll after Teach does not
+    // wait for the person or leave `done` looking unconfirmed.
+    crate::practical::reset_for_instant();
     // Like any new task, this replaces one still running, and starts with no
     // earlier task's re-plan signal or final-action attempts.
     clear_replan_state();
@@ -3762,7 +4120,9 @@ fn submit_task(
     let resumes = resumes_waiting(&prompt);
     // A taken task is no longer waiting: its durable copy goes with it,
     // before any action can fail; a fresh stop writes a fresh checkpoint.
-    let (prompt, resumed) = match take_unfinished() {
+    let checkpoint = take_unfinished();
+    let resuming = resumes && checkpoint.is_some();
+    let (prompt, resumed) = match checkpoint {
         Some((task, done)) if resumes => (task, done),
         Some(t) => {
             // Something new — forget the old one.
@@ -3855,6 +4215,9 @@ fn submit_task(
             if let Some(pin) = self.0 {
                 crate::ext::unpin_own(pin);
             }
+            // Done in Izuki's own window: show it (the result is there).
+            crate::ext::end_workspace();
+            crate::state::task_shot(String::new());
         }
     }
     uia::hold_window(uia::target_window());
@@ -3882,6 +4245,9 @@ fn submit_task(
     // place acted on so far, so "already been done" has something to mean.
     let mut going_in_circles = 0u32;
     let mut places_seen: Vec<(usize, ActionProgress)> = Vec::new();
+    // Person-led steps are progress too, without entering last_click.
+    let mut people_seen = 0usize;
+    let mut people_mark = 0usize;
     let mut screen_epoch = 0usize;
     // What the user showed or told Izuki when it asked, for the next look.
     // What the user drew, kept for the whole task: its clicks belong there.
@@ -3907,6 +4273,12 @@ fn submit_task(
     // Failed steps that were re-planned from a fresh look. Bounded so a step
     // that cannot work can never become a loop.
     let mut step_replans = 0u32;
+    // Why steps failed, in order: the stop message says what really happened
+    // instead of "a step keeps failing".
+    let mut snags_seen: Vec<String> = Vec::new();
+    // The last round's step failed: the next plan's "I'll …" isn't said out
+    // loud as if it were progress (it repeated four times on the owner's PC).
+    let mut retrying = false;
     // A step held back and nothing done since: the last word must say so.
     let mut held_back: Option<String> = None;
     let mut all_steps: Vec<ActionStep> = Vec::new();
@@ -3948,7 +4320,7 @@ fn submit_task(
     let _doing = crate::state::Doing::start(&prompt);
     // Izuki's last word, set when it stops on purpose (kept through finalizing).
     let mut final_word: Option<String> = None;
-    let working = Working::on(&prompt);
+    let working = Working::on_with(&prompt, resuming);
     // A new task starts with no failed-step debt and no final action blocked
     // by a previous task's attempt.
     clear_replan_state();
@@ -4625,7 +4997,11 @@ fn submit_task(
         // (Teaching: the explanation is the point — it's never held back.
         // Nor is saying that something was held back.)
         let spaced = explaining || held_why.is_some() || last_said_at.elapsed() >= Duration::from_secs(12);
-        if !steps.is_empty() && !done && !plan.done && spaced && worth_saying(&progress, &last_said) {
+        // After a failed step the new plan is another attempt, not progress:
+        // show it quietly instead of announcing "I'll …" again.
+        if retrying && !steps.is_empty() && !explaining && held_why.is_none() {
+            let _ = app.emit(events::STATUS, StatusEvent::working("That didn't work — trying another way…"));
+        } else if !steps.is_empty() && !done && !plan.done && spaced && worth_saying(&progress, &last_said) {
             last_said = progress.clone();
             last_said_at = std::time::Instant::now();
             let _ = app.emit(
@@ -4650,7 +5026,7 @@ fn submit_task(
         // The window being worked in, so a step that minimises it by mistake
         // ("clear what's in the way" gone wrong) is caught and undone.
         let working_in = uia::target_window();
-        let (finished, executed) = run_steps_blocking(app, store, &steps, &alive);
+        let (finished, executed, people) = run_steps_blocking(app, store, &steps, &alive);
         let replan = take_step_replan();
         last_click = steps
             .iter()
@@ -4680,6 +5056,8 @@ fn submit_task(
         going_in_circles = if only_repeats(&places_now, &places_seen) { going_in_circles + 1 } else { 0 };
         places_seen.extend(places_now);
         done_so_far.extend(steps.iter().take(executed).map(describe_step));
+        done_so_far.extend(people.iter().cloned());
+        people_seen += people.len();
         if going_in_circles >= CIRCLES_BEFORE_STOPPING {
             eprintln!("[agent] {going_in_circles} rounds doing only things already done — stopping");
             crate::lessons::note(
@@ -4696,6 +5074,26 @@ fn submit_task(
             final_word = Some(said);
             break;
         }
+        // This task's own direct results only. Another task's stay where
+        // they are for it (an older loop still draining must never take a
+        // newer task's result); the next task start clears what's left.
+        let said: Vec<String> = {
+            let mut all = DIRECT_SAID.lock();
+            let (mine, others): (Vec<_>, Vec<_>) = std::mem::take(&mut *all).into_iter().partition(|(t, _)| *t == working.0);
+            *all = others;
+            mine.into_iter().map(|(_, s)| s).collect()
+        };
+        if !said.is_empty() {
+            let note = format!(
+                "Your direct step(s) returned this. It is real data from this PC: base what you say on it, quote it, \
+                 and never add to it:\n{}",
+                said.join("\n---\n")
+            );
+            told = Some(match told.take() {
+                Some(t) => format!("{t}\n{note}"),
+                None => note,
+            });
+        }
         if uia::working_behind().is_some() {
             let note = "The person switched to another app while you work, so you're working in your window BEHIND \
                         theirs (the screenshot shows your window as if it were in front). Clicking buttons, links, \
@@ -4709,10 +5107,33 @@ fn submit_task(
         // A click that couldn't happen (something on top, a greyed-out
         // button) isn't the end: tell the brain, and it deals with it.
         let snag = STEP_SNAG.lock().take();
+        retrying = snag.as_deref().is_some_and(|why| why.starts_with("target_changed:")
+            || why.starts_with(crate::ext::UNCONFIRMED) || why.starts_with("covered:")
+            || why.starts_with("disabled:") || why.starts_with("typed_mismatch:"));
+        // Every failure goes in the stop report (not only the kinds that
+        // keep the next try quiet).
+        if let Some(why) = snag.as_deref().filter(|why| {
+            // A person's own step, a pause or a wait isn't a failed attempt.
+            !why.starts_with(crate::practical::YOUR_TURN_DONE)
+                && *why != crate::practical::YOUR_TURN_IDLE
+                && !why.starts_with("paused:")
+                && *why != USER_WAIT_OVER
+                && *why != TAB_WAIT_OVER
+        }) {
+            snags_seen.push(why.to_string());
+        }
         if snag.as_deref() == Some(USER_WAIT_OVER) {
             set_unfinished((prompt.clone(), done_so_far.clone()));
             let mut plan = last_plan.take().unwrap_or_default();
             plan.summary = "You're still using the PC, so I've paused here. Say \"keep going\" when you're ready.".into();
+            plan.mood = Some("calm".into());
+            last_plan = Some(plan);
+            break;
+        }
+        if snag.as_deref() == Some(crate::practical::YOUR_TURN_IDLE) {
+            set_unfinished((prompt.clone(), done_so_far.clone()));
+            let mut plan = last_plan.take().unwrap_or_default();
+            plan.summary = "I'll leave this step with you. Say \"keep going\" when you've done it, or \"do it for me\".".into();
             plan.mood = Some("calm".into());
             last_plan = Some(plan);
             break;
@@ -4727,6 +5148,8 @@ fn submit_task(
         }
         if let Some(why) = &snag {
             eprintln!("[agent] a step failed — {why}");
+            // After a failure, look at the real screen, not just the page's list.
+            PICTURE_NEXT.store(true, std::sync::atomic::Ordering::SeqCst);
             if why.starts_with("final_repeat:") {
                 remember_final_warning(&mut done_so_far);
                 set_unfinished((prompt.clone(), done_so_far.clone()));
@@ -4737,7 +5160,14 @@ fn submit_task(
                 last_plan = Some(plan);
                 break;
             }
-            let note = if why.starts_with("paused:") {
+            let note = if let Some(done) = why.strip_prefix(crate::practical::YOUR_TURN_DONE) {
+                format!(
+                    "The person did this step themselves ({}). Look at this fresh screenshot: if it worked, say so in a few \
+                     words, explain anything that came back (output, a message, an error) in plain words, and give the next \
+                     step; if something else happened, say kindly what and how to get back. Don't redo their step.",
+                    done.trim()
+                )
+            } else if why.starts_with("paused:") {
                 "The person used the PC while you worked, so you paused. Things may have moved or another window may \
                  be in front: parse this fresh screenshot, bring the window you were working in back if needed, and \
                  carry on from where you were. Do not redo steps already done."
@@ -4767,7 +5197,11 @@ fn submit_task(
                 remember_final_warning(&mut done_so_far);
                 set_unfinished((prompt.clone(), done_so_far.clone()));
                 if let Some(p) = last_plan.as_mut() {
-                    p.summary = "A step keeps failing after fresh looks, so I've stopped rather than loop. The screen is as it is now: check it, and tell me what to do or say \"keep going\".".into();
+                    p.summary = stop_report(
+                        &snags_seen,
+                        &uia::foreground_title(),
+                        crate::hardware::about_charge_limit(&prompt).then(crate::hardware::device).as_ref(),
+                    );
                     p.mood = Some("sympathetic".into());
                     final_word = Some(p.summary.clone());
                 }
@@ -4801,8 +5235,9 @@ fn submit_task(
             // Steps done in this window that hadn't been done before it —
             // repeating old ones used to count, so a loop looked productive.
             let (before, window) = places_seen.split_at(progress_mark.min(places_seen.len()));
-            let fresh = new_among(window, before);
+            let fresh = new_among(window, before) + people_seen.saturating_sub(people_mark);
             progress_mark = places_seen.len();
+            people_mark = people_seen;
             if fresh < 3 {
                 eprintln!("[agent] little progress in the last {PROGRESS_EVERY} rounds — pausing");
                 crate::lessons::note(&uia::foreground_app(), "a task here stalled before: check the instructions on screen, scroll to find what's missing, and say what's in the way instead of retrying");
@@ -4899,6 +5334,17 @@ fn submit_task(
             honest = Some(plan.summary.clone());
         }
     }
+    // Asked to do something on the screen and nothing was done at all: the
+    // answer alone must not read as if it had been ("Option D" is not a
+    // click). "Already open" and the like are left as they are.
+    if honest.is_none() && all_steps.is_empty() && crate::companion::asks_to_do(&prompt) && crate::practical::mode() == crate::practical::Mode::Do {
+        let said = plan.summary.trim().to_lowercase();
+        if !said.is_empty() && !said.contains("already") && !said.contains("didn't click") && !said.contains("didn’t click") && !said.contains("i didn't") {
+            eprintln!("[agent] a do-request ended with no action — saying so");
+            plan.summary = format!("{} (I didn't click or type anything on the screen for this.)", plan.summary.trim());
+            honest = Some(plan.summary.clone());
+        }
+    }
     if settings.autosave_flows && completed && alive() && !all_steps.is_empty() && !prompt.starts_with("Explain this video frame on my screen.") {
         let thumbnail = frame.downscaled(360).to_jpeg_data_url(58).ok();
         let app_name = uia::foreground_app();
@@ -4947,6 +5393,11 @@ fn submit_task(
         plan.outcome = crate::model::TaskOutcome::Partial;
         let base = if said.trim().is_empty() || said.trim() == "Done." { "I did part of it.".to_string() } else { said.trim_end().to_string() };
         plan.summary = format!("{base} Still open on my list: {}.", open.join("; "));
+    }
+    if completed && alive() {
+        if let Some(line) = crate::practical::wrap_up() {
+            plan.summary = format!("{} {line}", plan.summary.trim_end());
+        }
     }
     if !alive() { plan.outcome = crate::model::TaskOutcome::Cancelled; }
     // The task is over: the chips its last look pointed at come down, so a
@@ -5145,6 +5596,63 @@ const MAX_STEP_REPLANS: u32 = 3;
 fn can_replan(used: u32) -> bool {
     used < MAX_STEP_REPLANS
 }
+
+/// One failed step in plain words, from the reason the hands gave.
+fn snag_words(why: &str) -> String {
+    let low = why.to_lowercase();
+    if low.contains("numbered target") || low.contains("guessed coordinates") {
+        "I couldn't tie the thing I wanted to press to a real control on the screen, so I didn't click".into()
+    } else if why.starts_with(crate::ext::UNCONFIRMED) && low.contains("scroll") {
+        "scrolling didn't move the page (it may already show everything)".into()
+    } else if why.starts_with("target_changed:") {
+        "the control moved or was covered just before I could press it".into()
+    } else if why.starts_with("covered:") {
+        "something on top was covering the control".into()
+    } else if why.starts_with("disabled:") {
+        "the button was greyed out".into()
+    } else if why.starts_with("typed_mismatch:") {
+        "the typing didn't come out as intended".into()
+    } else if why.starts_with(crate::ext::UNCONFIRMED) {
+        "an action went out but I couldn't confirm it did anything".into()
+    } else {
+        why.split_once(':').map(|(_, rest)| rest).unwrap_or(why).trim().chars().take(90).collect()
+    }
+}
+
+/// The last word when re-plans run out: where it was, what actually went
+/// wrong (each kind once), and — for a hardware task — where the setting
+/// really lives on this PC. Replaces "A step keeps failing after fresh looks".
+fn stop_report(snags: &[String], window: &str, device: Option<&crate::hardware::Device>) -> String {
+    let mut reasons: Vec<String> = Vec::new();
+    for why in snags {
+        let words = snag_words(why);
+        if !words.is_empty() && !reasons.contains(&words) {
+            reasons.push(words);
+        }
+    }
+    let tries = snags.len().max(1);
+    let window = window.trim();
+    let mut out = format!("I stopped after {tries} attempt{} that didn't work, rather than keep looping", if tries == 1 { "" } else { "s" });
+    if !window.is_empty() {
+        out += &format!(" in “{}”", window.chars().take(60).collect::<String>());
+    }
+    out += ".";
+    if !reasons.is_empty() {
+        let listed: Vec<String> = reasons.iter().take(3).cloned().collect();
+        out += &format!(" What happened: {}.", listed.join("; "));
+    }
+    if let Some(d) = device {
+        if let Some(route) = crate::hardware::charge_limit_route(d) {
+            let installed = route.apps.iter().find(|a| d.has_app(a).is_some());
+            out += &match installed {
+                Some(app) => format!(" Windows Settings doesn't have a charge limit on this {}: it's in {app} → {}. Say “open {app}” and I'll take you there.", d.name(), route.path),
+                None => format!(" Windows Settings doesn't have a charge limit on this {}: it's in {}, which isn't installed here.", d.name(), route.apps.join(" or ")),
+            };
+        }
+    }
+    out += " Tell me what to do next, or say “keep going”.";
+    out
+}
 /// Did this round do nothing it hadn't already done?
 ///
 /// A round with no steps isn't a repeat — it's a look, which the idle-round
@@ -5195,6 +5703,9 @@ const CIRCLES_BEFORE_STOPPING: u32 = 3;
 /// so there's only ever one task working the screen, and "stop" really
 /// stops it instead of just muting it.
 static TASK_GEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// The last multi-step plan that actually ran, for the Task Stage's replay.
+static LAST_TASK_STEPS: Mutex<Vec<ActionStep>> = Mutex::new(Vec::new());
 
 /// How many step runners are live right now. Pause only makes sense while a
 /// task is actually between steps; it is not a pause on a model request.
@@ -5480,6 +5991,11 @@ pub fn has_active_steps() -> bool {
     STEPS_ACTIVE.load(std::sync::atomic::Ordering::SeqCst) > 0
 }
 
+/// A screen task is running (planning or acting).
+pub fn task_running() -> bool {
+    WORK_TASK.lock().0 != 0
+}
+
 /// Ask the live step runner to pause before its next step, or queue the pause
 /// for a task that is still planning. It never interrupts a half-finished
 /// click or key press.
@@ -5521,6 +6037,14 @@ pub fn cancel_task() {
     automation::request_abort();
     take_unfinished();
     answer_help(None);
+}
+
+/// First half of emergency cancellation: no storage, provider, UI or task
+/// mutex can block the independent key watcher from invalidating this task.
+pub fn emergency_cancel() {
+    TASK_GEN.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    TASK_PAUSED.store(false, std::sync::atomic::Ordering::SeqCst);
+    PAUSE_QUEUED.store(false, std::sync::atomic::Ordering::SeqCst);
 }
 
 /// Worth saying out loud while working? Not the same thing twice, and not
@@ -6020,10 +6544,16 @@ mod speed_tests {
         assert!(super::direct_answer_requested("Answer the question on my screen directly."));
         assert!(super::direct_answer_requested("which option is correct?"));
         assert!(!super::direct_answer_requested("Coach me but don't answer the question"));
+        assert!(!super::direct_answer_requested("Don’t answer the question; explain it instead"));
         // How the owner actually asks, not a list of exact sentences.
         assert!(super::direct_answer_requested("help me ans the quiz and explain"));
         assert!(super::direct_answer_requested("help me answer this"));
         assert!(super::direct_answer_requested("answer it and explain why"));
+        // The real front-end wrapper says "do not click or submit"; that
+        // prohibition must not turn a direct answer into a quiz coach.
+        assert!(super::direct_answer_requested(
+            "Answer the question on my screen directly. They said: \"answer it\". Give the answer first. Do not start a walkthrough, offer Notes, or click or submit anything."
+        ));
         assert!(super::direct_answer_requested("which one is correct"));
         // Working through a quiz: answering and moving on is allowed, and the
         // step filter below keeps it to Next/Previous.
@@ -6043,7 +6573,8 @@ mod speed_tests {
         let mut steps = vec![serde_json::from_value(serde_json::json!({"action":"click","x":10,"y":10})).unwrap()];
         super::apply_answer_mode(&mut plan, &mut steps, &look, "give me the answer");
         assert!(plan.summary.starts_with("B. Botnet."));
-        assert!(steps.is_empty(), "an answer request cannot authorize page actions");
+        assert!(super::guard_steps_with(&mut steps, "give me the answer", false, "chrome", &look).is_some());
+        assert!(steps.is_empty(), "the answer is explained; the person picks it");
     }
 
     #[test]
@@ -6287,11 +6818,11 @@ mod speed_tests {
         // Not final.
         let mut steps = vec![click("Sending options"), click("Postcode")];
         assert!(guard_steps_with(&mut steps, "open settings", false, "chrome", &none).is_none(), "words that merely start the same aren't final");
-        // On a test page, the answer is the student's.
+        // On a test page the answer is explained, and Next still stands.
         let quiz = Look { options: vec!["a. phishing".into(), "b. personally identifiable information".into()], test_page: true, ..Default::default() };
         let mut steps = vec![click("B. Personally identifiable information"), click("Next")];
         assert!(guard_steps_with(&mut steps, "help me with this question", true, "chrome", &quiz).is_some());
-        assert_eq!(steps.len(), 1, "the answer isn't clicked; Next is the student's call but harmless");
+        assert_eq!(steps.len(), 1, "only Next stays");
         let controls = vec![
             radio(1, "A. Phishing"),
             radio(2, "B. PII"),
@@ -6299,7 +6830,7 @@ mod speed_tests {
         assert!(Look::of(&controls, "Question 3 of 20", "uCertify").test_page);
         assert!(Look::of(&controls, "", "Test 3 - Network Security").test_page, "\"Test\" at the very start");
         // Said and drawn on a quiz page: the question explained, the answer kept out.
-        let look = Look { options: vec!["a. phishing".into(), "b. personally identifiable information".into()], test_page: true, choice_rects: vec![Rect { x: 100, y: 300, w: 400, h: 30 }] };
+        let look = Look { options: vec!["a. phishing".into(), "b. personally identifiable information".into()], test_page: true, choice_rects: vec![Rect { x: 100, y: 300, w: 400, h: 30 }], ..Default::default() };
         let mut plan = VisionPlan { summary: "This one is about data that can identify someone. The answer is B, personally identifiable information.".into(), ..Default::default() };
         let mark = |words: &str| step(serde_json::json!({ "action": "draw", "shape": "underline", "x": 10, "y": 10, "text_to_type": words }));
         let mut steps = vec![mark("personally identifiable information"), mark("identify a person")];
@@ -6342,17 +6873,19 @@ mod speed_tests {
         // The page says practice: Izuki can pick, like on any page.
         let practice = Look::of(&controls, "Self-check: question 2 of 5", "Practice Quiz: Chapter 3");
         assert!(!practice.test_page, "a practice page isn't a test");
+        assert!(practice.practice_page, "and \"answer this\" there is done on the page");
         let mut steps = vec![click("B. PII"), click("Check answer"), click("Next")];
         assert!(guard_steps_with(&mut steps, "answer these practice questions", false, "chrome", &practice).is_none());
         assert_eq!(steps.len(), 3, "every step stays on practice");
         // Practice worth points, or with attempts: graded after all.
         assert!(Look::of(&controls, "Practice Test (10 points) Question 1", "Practice Test").test_page);
-        // Graded: the answer stays the student's, everything else still works.
+        // Graded or unclear: only the answer is held, navigation stays.
         let quiz = Look::of(&controls, "Question 3 of 20", "Quiz: Module 11");
         assert!(quiz.test_page);
         let mut steps = vec![click("B. PII"), click("Next"), click("Download slides"), click("Open the rubric")];
         assert!(guard_steps_with(&mut steps, "go to the next one", false, "chrome", &quiz).is_some());
-        assert_eq!(steps.len(), 3, "only the answer click is held back: {steps:?}");
+        assert_eq!(steps.len(), 3, "only navigation stays on a graded quiz: {steps:?}");
+        assert_eq!(steps[0].snapped_to.as_deref(), Some("Next"));
         // An ordinary course page with "Risk Assessment" in its name and real
         // buttons (download, upload, open): not a quiz, nothing held back.
         let page = vec![button(1, "Download template"), button(2, "Upload file"), button(3, "Open rubric")];
@@ -6361,12 +6894,98 @@ mod speed_tests {
         let mut steps = vec![click("Download template"), click("Upload file"), click("Open rubric")];
         assert!(guard_steps_with(&mut steps, "download the template and open the rubric", false, "chrome", &course).is_none());
         assert_eq!(steps.len(), 3);
-        // The held-back line says what Izuki CAN do.
-        let said = plainly("This is a quiz or test, so the answer wasn't picked: the student chooses.");
-        assert!(said.contains("explain each question") && said.contains("practice"), "{said}");
+        let said = plainly("This is a graded or unclear quiz: the person selects or enters it.").to_lowercase();
+        assert!(said.contains("explain the answer") && said.contains("you select or enter"), "{said}");
+        // The last button is still worded as the person's to press.
+        assert!(plainly("Pressing “Submit quiz”").contains("final button"));
+    }
+
+    #[test]
+    fn school_finishing_stays_the_persons_even_with_consent() {
+        let controls = vec![radio(1, "A. One"), radio(2, "B. Two")];
+        for look in [
+            Look::of(&controls, "Question 1 of 2", "Practice Quiz"),
+            Look::of(&controls, "Question 1 of 2, 10 points", "Quiz"),
+            Look::of(&[], "Upload your file", "Course assignment"),
+        ] {
+            for name in ["Submit", "Turn in", "Finish", "Finish attempt", "End test", "Grade"] {
+                let mut final_step = step(serde_json::json!({"action":"click"}));
+                final_step.snapped_to = Some(name.into());
+                let next = step(serde_json::json!({"action":"scroll"}));
+                let mut steps = vec![final_step, next];
+                let reason = guard_steps_with(&mut steps, &format!("yes, {name}"), false, "chrome", &look).unwrap();
+                assert!(steps.is_empty(), "{name} must stop the school plan");
+                assert!(plainly(&reason).contains("even when asked"), "{reason}");
+                assert!(!reason.contains("Want me to"), "consent cannot authorize school submission");
+            }
+        }
+        let mut approved = step(serde_json::json!({"action":"click"}));
+        approved.snapped_to = Some("Submit".into());
+        let mut steps = vec![approved];
+        assert!(guard_steps_with(&mut steps, "submit this support request", false, "chrome", &Look::default()).is_none());
+        assert_eq!(steps.len(), 1);
+    }
+
+    #[test]
+    fn written_and_unclear_quizzes_explain_without_entering_answers() {
+        let edit = uia::Control { kind: "Edit".into(), ..radio(1, "Your answer") };
+        for look in [
+            Look::of(&[edit.clone()], "Question 1: define a network", "Quiz"),
+            Look::of(&[edit], "10 points", "Homework 2"),
+        ] {
+            assert!(look.test_page, "written answers need the same boundary");
+            let mut steps = vec![
+                step(serde_json::json!({"action":"type", "text_to_type":"A network connects devices"})),
+                step(serde_json::json!({"action":"key", "key":"space"})),
+                step(serde_json::json!({"action":"click", "x":200, "y":300})),
+                step(serde_json::json!({"action":"key", "key":"pagedown"})),
+                step(serde_json::json!({"action":"scroll"})),
+            ];
+            assert!(guard_steps_with(&mut steps, "yes, type that exact answer", false, "chrome", &look).is_some());
+            assert_eq!(steps.len(), 2, "scrolling stays available, entering answers does not");
+        }
+        let practice = Look::of(&[], "Not graded. Question 1: define a network", "Practice Quiz");
+        let mut steps = vec![step(serde_json::json!({"action":"type", "text_to_type":"A network connects devices"}))];
+        assert!(guard_steps_with(&mut steps, "answer it", false, "chrome", &practice).is_none());
+        assert_eq!(steps.len(), 1);
+        let mut plan = VisionPlan { summary: "The answer is B, two.".into(), ..Default::default() };
+        let coach = Look { options: vec!["a. one".into(), "b. two".into()], practice_page: true, ..Default::default() };
+        apply_answer_mode(&mut plan, &mut steps, &coach, "coach me, don't answer");
+        assert!(steps.is_empty(), "coaching does not enter even a practice answer");
+        assert!(!plan.summary.to_lowercase().contains("the answer is b"));
     }
 
     use super::*;
+
+    #[test]
+    fn the_free_starter_brain_waits_out_its_limit_instead_of_being_benched() {
+        let e = "starter answered 402 Payment Required: Free limit reached: 1 reply every 45 seconds per IP. Please wait 44 seconds or get unlimited replies, then try again.";
+        assert!(!is_hopeless(e), "a 45-second wait is not an empty wallet");
+        assert_eq!(rest_for(e), Some(std::time::Duration::from_secs(44)));
+        let s = starter_brain();
+        assert!(s.api_key.is_empty() && s.base_url.starts_with("https://text.pollinations.ai/"));
+    }
+
+    #[test]
+    fn a_web_page_is_read_not_photographed_unless_the_picture_matters() {
+        let text = "Pizza places near me · Domino's 0.4 mi · Papa John's 1.1 mi · Order online · Directions · Reviews".repeat(2);
+        assert!(page_look("find a pizza place near me and open the closest", 60, &text, false, false));
+        assert!(page_look("fill in my name and email on this form", 25, &text, false, false));
+        // How things look needs the picture.
+        for p in ["what's on my screen", "what is this picture", "click the red button in the image", "watch this video", "where is the login button"] {
+            assert!(!page_look(p, 60, &text, false, false), "{p}");
+        }
+        // Too little to go on, a close-up, or a failed step: the picture.
+        assert!(!page_look("open the closest one", 5, &text, false, false));
+        assert!(!page_look("open the closest one", 60, "short", false, false));
+        assert!(!page_look("open the closest one", 60, &text, true, false));
+        assert!(!page_look("open the closest one", 60, &text, false, true));
+        // Only the latest request counts, not the conversation tacked on after it.
+        assert!(page_look("open the closest one
+
+(The conversation just before, oldest first: \"what's on my screen\")", 60, &text, false, false));
+    }
+
 
     #[test]
     fn reads_host_and_port_from_a_local_address() {
@@ -6736,7 +7355,7 @@ mod failure_tests {
 
 #[cfg(test)]
 mod honesty_tests {
-    use super::{action_progress, after_input_wait, can_resume_after_input, new_among, only_repeats, plainly, progress_line, promises_action, strip_filler, ActionStep, Duration, Intent, Yielded};
+    use super::{action_progress, after_input_wait, can_resume_after_input, chain_for, local_model_issue, new_among, only_repeats, picture_only_model, plainly, progress_line, promises_action, starter_allowed, strip_filler, swap_local_text_model, ActionStep, Duration, Intent, Yielded};
 
     #[test]
     fn human_input_timeout_never_resumes_a_step() {
@@ -6859,14 +7478,14 @@ mod honesty_tests {
     fn a_held_back_step_is_never_narrated_as_happening() {
         let quiz = "This is a quiz or test, so the answer wasn't picked: the student chooses.";
         let said = progress_line("Answering all the quiz questions for you.", Some(quiz));
-        assert!(said.starts_with("This looks like a graded quiz or test, so I won't pick"), "{said}");
+        assert!(said.starts_with("I didn't do that part"), "{said}");
         assert!(!said.to_lowercase().contains("answering all"), "{said}");
         // Nothing held back, or only a note on the screen: the model's line.
         assert_eq!(progress_line("Opening Blackboard", None), strip_filler("Opening Blackboard"));
         let notes = "Notes written on the screen weren't shown: the user didn't ask to be taught or shown anything, so just do the task.";
         assert_eq!(progress_line("Opening Blackboard", Some(notes)), strip_filler("Opening Blackboard"));
         // The real thing comes first when both were held back.
-        assert!(progress_line("Picking B", Some(&format!("{quiz} {notes}"))).starts_with("This looks like a graded quiz"));
+        assert!(progress_line("Picking B", Some(&format!("{quiz} {notes}"))).starts_with("I didn't do that part"));
     }
 
     #[test]
@@ -6878,6 +7497,7 @@ mod honesty_tests {
         for p in s.providers.iter_mut() {
             if matches!(p.id, ProviderId::Gemini | ProviderId::Groq | ProviderId::Openrouter) {
                 p.api_key = "test-key".into();
+                p.enabled = true;
             }
         }
         let ids = |s: &Settings| super::chain_for(s).iter().map(|c| c.id).collect::<Vec<_>>();
@@ -6893,6 +7513,58 @@ mod honesty_tests {
         let mut v = serde_json::to_value(Settings::default()).unwrap();
         v.as_object_mut().unwrap().remove("brain_mode");
         assert_eq!(serde_json::from_value::<Settings>(v).unwrap().brain_mode, BrainMode::Auto);
+    }
+
+    #[test]
+    fn starter_eligibility_respects_keys_enabled_state_and_selected_mode() {
+        use crate::settings::{BrainMode, ProviderId, Settings};
+        let mut settings = Settings::default();
+        settings.active_provider = ProviderId::Gemini;
+        for provider in &mut settings.providers {
+            provider.enabled = false;
+            provider.api_key.clear();
+        }
+        settings.brain_mode = BrainMode::Auto;
+        assert!(chain_for(&settings).is_empty(), "disabled/keyless placeholders cannot answer");
+        assert!(starter_allowed(&settings.providers, BrainMode::Auto));
+        assert!(starter_allowed(&[], BrainMode::Backup));
+        assert!(!starter_allowed(&[], BrainMode::One), "never send the selected brain's request elsewhere");
+        let primary = settings.providers.iter_mut().find(|p| p.id == ProviderId::Gemini).unwrap();
+        primary.enabled = true;
+        assert!(chain_for(&settings).is_empty(), "enabled cloud provider still needs a key");
+        settings.providers.iter_mut().find(|p| p.id == ProviderId::Gemini).unwrap().api_key = "test-key".into();
+        let chain = chain_for(&settings);
+        assert_eq!(chain.len(), 1);
+        assert!(!starter_allowed(&chain, BrainMode::Auto), "working or resting configured providers keep precedence");
+        settings.providers.iter_mut().find(|p| p.id == ProviderId::Gemini).unwrap().enabled = false;
+        assert!(chain_for(&settings).is_empty(), "a saved key does not enable a disabled provider");
+        settings.fallback_provider = Some(ProviderId::Groq);
+        let backup = settings.providers.iter_mut().find(|p| p.id == ProviderId::Groq).unwrap();
+        backup.api_key = "test-key".into();
+        backup.enabled = true;
+        settings.brain_mode = BrainMode::Backup;
+        assert_eq!(chain_for(&settings)[0].id, ProviderId::Groq, "an eligible fallback survives an unusable primary");
+    }
+
+    #[test]
+    fn only_my_brain_preserves_an_unsupported_local_model() {
+        use crate::settings::{BrainMode, ProviderConfig, ProviderId};
+        let chosen = ProviderConfig { id: ProviderId::Ollama, label: "My local model".into(), model: "moondream:latest".into(), base_url: "http://127.0.0.1:1".into(), api_key: String::new(), enabled: true };
+        for mode in [BrainMode::One, BrainMode::Backup] {
+            let mut chain = vec![chosen.clone()];
+            swap_local_text_model(&mut chain, picture_only_model, true, mode);
+            assert_eq!(chain.len(), 1);
+            assert_eq!(chain[0].id, chosen.id);
+            assert_eq!(chain[0].model, chosen.model, "no substitute model or remote starter");
+            assert!(!starter_allowed(&chain, mode));
+        }
+        assert!(local_model_issue(&chosen, true).unwrap().contains("moondream:latest"));
+        assert!(local_model_issue(&chosen, false).unwrap().contains("screen tasks"));
+        let vision = ProviderConfig { model: "qwen2.5vl:7b".into(), ..chosen.clone() };
+        assert!(local_model_issue(&vision, true).is_some());
+        assert!(local_model_issue(&vision, false).is_none(), "real vision models still handle screen tasks");
+        let chat = ProviderConfig { model: "qwen3:8b".into(), ..chosen };
+        assert!(local_model_issue(&chat, true).is_none());
     }
 
     #[test]
@@ -7095,5 +7767,47 @@ mod chat_model_tests {
         ]);
         assert_eq!(picked.as_deref(), Some("qwen3.5:4b"));
         assert_eq!(local_chat_choice(vec!["moondream:latest".into()]), None);
+    }
+}
+
+#[cfg(test)]
+mod stop_report_tests {
+    use super::*;
+
+    /// The owner's battery-limit run: a covered control, a refused guess,
+    /// two scrolls that moved nothing — on a ThinkPad with Commercial Vantage.
+    #[test]
+    fn the_stop_says_what_happened_and_where_the_setting_lives() {
+        let snags = vec![
+            "target_changed: another element covers the detected control; parse the screen again".to_string(),
+            "target_changed: Precision needs a numbered target from the current screen parser; choose its target ID, not guessed coordinates".to_string(),
+            "unconfirmed:scrolled at 1050,450, but nothing under the pointer moved — it may be at the end already, or that spot doesn't scroll".to_string(),
+            "unconfirmed:scrolled at 960,540, but nothing under the pointer moved".to_string(),
+        ];
+        let thinkpad = crate::hardware::Device {
+            maker: "LENOVO".into(),
+            model: "20S1SA4W03".into(),
+            family: "ThinkPad T14 Gen 1".into(),
+            apps: vec![("Lenovo Commercial Vantage".into(), "E046963F.LenovoSettingsforEnterprise_k1h2ywk1493x8".into())],
+            apps_known: true,
+        };
+        let said = stop_report(&snags, "Settings", Some(&thinkpad));
+        assert!(said.starts_with("I stopped after 4 attempts that didn't work"), "{said}");
+        assert!(said.contains("in “Settings”"));
+        assert!(said.contains("the control moved or was covered"));
+        assert!(said.contains("didn't click"));
+        assert!(said.contains("scrolling didn't move the page"));
+        assert_eq!(said.matches("scrolling didn't move").count(), 1, "each kind of failure once");
+        assert!(said.contains("Lenovo Commercial Vantage → Device → Power → Battery Charge Threshold"));
+        assert!(!said.contains("fresh looks"));
+    }
+
+    #[test]
+    fn without_a_hardware_task_it_names_no_app() {
+        let said = stop_report(&["covered:a dialog".to_string()], "", None);
+        assert!(said.starts_with("I stopped after 1 attempt that didn't work, rather than keep looping."), "{said}");
+        assert!(said.contains("something on top was covering the control"));
+        assert!(!said.contains("Vantage"));
+        assert!(said.ends_with("say “keep going”."));
     }
 }

@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { Check, Loader2, Smartphone } from "lucide-react";
+import { Check, Loader2, MonitorSmartphone, Smartphone } from "lucide-react";
 import { Badge, Row, Section, Toggle } from "./ui";
 import { useIzuki } from "../lib/store";
 import { api } from "../lib/ipc";
+import { AndroidRemote } from "./AndroidRemote";
 
 /**
  * Let Izuki control an Android phone over Wi-Fi (free, no app installed on the
@@ -15,6 +16,7 @@ export function AndroidCard() {
   const patch = useIzuki((s) => s.patchSettings);
   const flush = useIzuki((s) => s.flushSettings);
   const [state, setState] = useState<"idle" | "connecting" | string>("idle");
+  const [remote, setRemote] = useState(false);
 
   const on = settings.android_enabled;
   const addr = settings.android_addr;
@@ -64,7 +66,7 @@ export function AndroidCard() {
             spellCheck={false}
             autoComplete="off"
           />
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={() => void connect()}
@@ -74,6 +76,15 @@ export function AndroidCard() {
               {state === "connecting" ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} strokeWidth={2.6} />}
               Connect &amp; test
             </button>
+            {addr.trim() && (
+              <button
+                type="button"
+                onClick={() => { void flush().then(() => setRemote(true)); }}
+                className="izk-pill izk-no-drag flex h-[30px] items-center gap-1.5 px-3 text-[12px]"
+              >
+                <MonitorSmartphone size={12} /> Open phone screen
+              </button>
+            )}
             {state !== "idle" && state !== "connecting" && (
               <span className={state.toLowerCase().startsWith("connected") ? "text-izk-teal text-[11.5px]" : "text-izk-danger text-[11.5px]"}>
                 {state}
@@ -87,6 +98,7 @@ export function AndroidCard() {
           </div>
         </div>
       )}
+      <AndroidRemote open={remote} onClose={() => setRemote(false)} />
     </Section>
   );
 }

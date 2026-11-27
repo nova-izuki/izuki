@@ -130,6 +130,21 @@ fn sh_text(args: &[&str]) -> Result<String> {
     Ok(String::from_utf8_lossy(&sh(args)?).into_owned())
 }
 
+/// A JPEG data URL of the phone screen for the PC's live remote panel.
+pub fn screenshot_data_url() -> Result<String> {
+    screenshot()?.to_jpeg_data_url(72)
+}
+
+/// True when Android's lock screen is up. The remote panel must not read or
+/// touch it: notifications and the lock screen are private.
+pub fn locked() -> bool {
+    sh_text(&["dumpsys", "window"]).map(|s| locked_in_dump(&s)).unwrap_or(false)
+}
+
+fn locked_in_dump(dump: &str) -> bool {
+    dump.contains("mDreamingLockscreen=true") || dump.contains("mShowingLockscreen=true")
+}
+
 /// A screenshot of the phone as a Frame (BGRA), same as the PC's capture.
 pub fn screenshot() -> Result<Frame> {
     let png = sh(&["screencap", "-p"])?;
@@ -293,6 +308,14 @@ mod tests {
     fn text_is_escaped_for_the_shell() {
         // (Checked without a device: spaces must become %s.)
         assert_eq!("play some music".replace(' ', "%s"), "play%ssome%smusic");
+    }
+
+    #[test]
+    fn the_remote_panel_stops_at_the_lock_screen() {
+        assert!(locked_in_dump("mDreamingLockscreen=true mShowingLockscreen=false"));
+        assert!(locked_in_dump("mShowingLockscreen=true"));
+        assert!(!locked_in_dump("mDreamingLockscreen=false mShowingLockscreen=false"));
+        assert!(!locked_in_dump(""));
     }
 }
 

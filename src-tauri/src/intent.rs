@@ -32,7 +32,7 @@ const FILLER: &[&str] = &[
 ];
 
 const WHAT_TO_ANSWER: &str = "What should I answer? Paste the question or attach the document, and I'll take it from there.";
-const PRACTICE_OR_GRADED: &str = "What should I answer? Paste the questions or attach the document, and tell me whether they're practice or graded. For graded work I can explain and give hints, but I won't complete or submit it for you.";
+const PRACTICE_OR_GRADED: &str = "What should I answer? Paste the questions or attach the document and I'll answer them — I just won't press Submit or hand anything in for you.";
 
 /// `None` means send it to the brain. `Some(question)` means the request has
 /// no material to work from yet, so ask exactly one useful thing instead.

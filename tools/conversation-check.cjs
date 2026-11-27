@@ -115,6 +115,29 @@ mem.shareHistory(long);
 is("only the recent turns are kept", count() <= 16, true);
 is("and they are the newest", last(), "turn 59");
 
+console.log("a deleted chat leaves the shared conversation:");
+fresh();
+mem.shareHistory([{ role: "user", content: "my bank pin is 1234" }, { role: "assistant", content: "No" }], "chat-a");
+// A reply streaming in is shared again as it grows.
+mem.shareHistory([{ role: "user", content: "my bank pin is 1234" }, { role: "assistant", content: "Noted, I won't" }], "chat-a");
+mem.shareHistory([{ role: "user", content: "play lofi" }], "chat-b");
+mem.remember("user", "spoken to the orb");
+mem.forgetHistory("chat-a");
+is("every line that chat shared goes, partial ones too", shape(), ["user:play lofi", "user:spoken to the orb"]);
+fresh();
+mem.shareHistory([{ role: "user", content: "same words" }], "chat-a");
+mem.shareHistory([{ role: "user", content: "same words" }], "chat-b");
+mem.forgetHistory("chat-a");
+is("the same line in another chat stays", shape(), ["user:same words"]);
+fresh();
+mem.remember("user", "heard at the orb");
+mem.shareHistory([{ role: "user", content: "heard at the orb" }], "chat-c");
+is("a line the chat took from the orb isn't doubled", count(), 1);
+mem.forgetHistory("chat-c");
+is("and goes with that chat", count(), 0);
+mem.forgetHistory(null);
+is("Clear all empties it", count(), 0);
+
 console.log("suggested next replies:");
 
 fresh();
@@ -123,6 +146,35 @@ is("nothing before the first reply", mem.suggestions(), []);
 fresh();
 mem.remember("user", "open a youtube video");
 is("not offered mid-request, before an answer", mem.suggestions(), []);
+
+fresh();
+mem.remember("user", "help me investigate suspicious login activity on my computer");
+mem.remember("assistant", "Happy to. Want me to do it, do it with you, or teach you step by step?");
+is("the three ways are offered as chips", mem.suggestions(), ["Teach me", "Do it with me", "Just do it", "Start over"]);
+is("teach me goes to the screen", mem.needsScreen("Teach me"), true);
+is("so does doing it together", mem.needsScreen("do it with me"), true);
+is("doing an assignment is a screen job, not just a lesson", mem.needsScreen("do my assignment"), true);
+is("the Do it button stays on the screen path", mem.needsScreen("[DO IT] On my screen, do this for me: do my assignment"), true);
+is("the Do it button is one job on this screen", mem.forcedDoIt("[DO IT] On my screen, do this for me: do my assignment"), true);
+is("its steps mentioning the TV don't make it a TV request", mem.forcedDoIt("[DO IT] On my screen, do this for me: open Netflix on my TV"), true);
+is("and a phone in the steps is still this screen", mem.forcedDoIt("[DO IT] On my screen, do this for me: open Chrome on my Android"), true);
+is("leading space before the marker is fine", mem.forcedDoIt("  [DO IT] tidy my desktop"), true);
+is("a plain TV request is not the button", mem.forcedDoIt("open Netflix on the TV"), false);
+is("a plain phone request is not the button", mem.forcedDoIt("open Chrome on my Android"), false);
+is("a guide question about the TV is not the button", mem.forcedDoIt("how do I watch Netflix on my TV?"), false);
+is("but an explicit background lesson stays in the background", mem.needsScreen("Teach me about firewalls in the background"), false);
+is("a plain question doesn't", mem.needsScreen("what is a firewall"), false);
+is("but 'answer this' is about the question on screen", mem.needsScreen("answer this"), true);
+is("and 'what's the answer to number 3' too", mem.needsScreen("what's the answer to number 3"), true);
+is("a general factual question still stays in chat", mem.needsScreen("what is the capital of France"), false);
+is("the answer request is recognised", mem.answersOnScreenQuestion("answer this question"), true);
+is("so is a short 'give ans'", mem.answersOnScreenQuestion("give me the answer"), true);
+is("and bare 'give ans'", mem.answersOnScreenQuestion("give ans"), true);
+is("and 'answer question 5'", mem.answersOnScreenQuestion("answer question 5"), true);
+is("and 'can you answer this'", mem.answersOnScreenQuestion("can you answer this"), true);
+is("and 'answer all of them'", mem.answersOnScreenQuestion("answer all of them"), true);
+is("an email is not a quiz answer", mem.answersOnScreenQuestion("answer my email"), false);
+is("the prompt never submits", /Do not .*submit/i.test(mem.answerOnScreenPrompt("answer this")), true);
 
 fresh();
 mem.remember("user", "what's the weather in Lagos");
@@ -165,6 +217,65 @@ const cases = JSON.parse(fs.readFileSync(path.join(__dirname, "opens-app-cases.j
 for (const t of cases.opens) is(`"${t}" opens the app`, mem.opensAnApp(t) && !mem.needsApps(t), true);
 for (const t of cases.account) is(`"${t}" isn't just opening the app`, mem.opensAnApp(t), false);
 for (const t of ["read my emails", "what's in my inbox", "check my outlook"]) is(`"${t}" is about the account`, mem.needsApps(t), true);
+
+fresh();
+is("a refusal of the answer is not a direct-answer request", mem.wantsDirectAnswer("Don't answer the question; explain it instead"), false);
+is("a curly-apostrophe refusal is respected too", mem.wantsDirectAnswer("Don’t answer the question; explain it instead"), false);
+is("asking to skip the working is still an answer", mem.wantsDirectAnswer("Answer question 5, don't show your work"), true);
+is("an article before the answer still counts as a refusal", mem.wantsDirectAnswer("Explain how to answer the question, but don't give me an answer"), false);
+is("a qualifier before the answer is still a refusal", mem.wantsDirectAnswer("Explain how to answer the question, but don't give me the final answer"), false);
+is("a normal answer request is still direct", mem.wantsDirectAnswer("answer it"), true);
+is("a mission-add stays a mission", mem.MISSION_ADD.test("add to my missions: answer question 5"), true);
+
+for (const request of [
+  "Start tutor mode and explain how to answer question 5",
+  "Turn on teacher mode and answer question 5",
+  "Please teach me this question and answer the question with me",
+  "Walk me through how to answer question 5",
+  "Coach me through how to answer question 5",
+  "Explain how to answer question 5",
+  "Answer question 5 without giving the correct answer",
+  "Answer question 5 but never show the exact answer",
+]) is(`coaching/refusal stays intact: ${request}`, mem.wantsDirectAnswer(request), false);
+is("combined tutor command still reaches teacher mode", mem.TUTOR_START.test("Start tutor mode and explain how to answer question 5"), true);
+is("answer then explanation remains direct", mem.wantsDirectAnswer("Answer question 5 and explain why"), true);
+is("do not explain is not a refusal of the answer", mem.wantsDirectAnswer("Answer question 5, do not explain how to solve it"), true);
+
+// The device routers in the voice engine must never read a device word
+// inside an explicit Do it job as a request for that device.
+{
+  const engine = fs.readFileSync(path.join(__dirname, "..", "src", "components", "VoiceEngine.tsx"), "utf8");
+  is("the TV router is skipped for an explicit do-it", /if \(!forced && \/\\b\(\?:tv\|television\|roku\)/.test(engine), true);
+  is("the phone router is skipped for an explicit do-it", /if \(!forced && \/\\b\(\?:my\|the\|this\|on\|open\) \(\?:phone\|iphone\|android\|mobile\)/.test(engine), true);
+  is("the marker is read once from the request", /const forced = forcedDoIt\(text\)/.test(engine), true);
+}
+
+// "Open Chrome" has to stay a local shortcut in the chat too: typed, it used
+// to become a screen job that waits on a brain (49 s in the owner's log).
+// It is read before the screen agent, and a miss falls through instead of
+// guessing at an app that isn't there.
+{
+  const chat = fs.readFileSync(path.join(__dirname, "..", "src", "components", "tabs", "ChatTab.tsx"), "utf8");
+  const instantAt = chat.indexOf("const instant = parseInstant(t)");
+  const agentAt = chat.indexOf("api.submitVoiceCommand(");
+  is("the chat parses open/launch/go-to itself", instantAt > 0, true);
+  is("the chat reads it before the screen agent", instantAt > 0 && agentAt > instantAt, true);
+  is("the chat opens the installed app at once", chat.includes("await api.openApp(instant.name)"), true);
+  is("the chat still tries a known site when no app matches", chat.includes("if (!opened && instant.url)"), true);
+}
+
+// A brain that is not answering is admitted in 20 s, not 45: the chat's
+// silent spinner and the screen agent share one budget, so a request whose
+// brains were all rate-limited is over in a fraction of the time (the
+// owner's 2026-11-22 log: 49 s for one typed request, 45 of them after the
+// chat had already answered).
+{
+  const chat = fs.readFileSync(path.join(__dirname, "..", "src", "components", "tabs", "ChatTab.tsx"), "utf8");
+  is("the chat admits a silent brain in 20 s", /const FIRST_WORDS_MS = 20_000;/.test(chat), true);
+  const brain = fs.readFileSync(path.join(__dirname, "..", "src-tauri", "src", "brain.rs"), "utf8");
+  is("a screen look stops after 20 s of nothing", brain.includes("const LOOK_BUDGET: std::time::Duration = std::time::Duration::from_secs(20);"), true);
+  is("the 45 s screen budget is gone", /from_secs(45)/.test(brain), false);
+}
 
 console.log("");
 console.log(`${pass} passed, ${fail} failed`);

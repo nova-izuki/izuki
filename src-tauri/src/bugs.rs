@@ -10,7 +10,7 @@
 //! from the code — is also reported to Izuki's error tracker, together with
 //! the log lines just before it, so a bug can be seen and fixed without the
 //! user having to describe it. Reports go where
-//! `https://nova-izuki.github.io/izuki/bugs.json` points (a Sentry project),
+//! `https://izukinova.ai/bugs.json` points (a Sentry project),
 //! only while "Send error reports" is on, and always with API keys, links'
 //! secrets, emails, phone numbers and the Windows user name taken out first.
 //!
@@ -27,7 +27,7 @@ use serde_json::{json, Value};
 
 /// Where the error tracker's address is kept — one place for the PC app, the
 /// phone app and the website, changeable without a new release.
-const CONFIG_URL: &str = "https://nova-izuki.github.io/izuki/bugs.json";
+const CONFIG_URL: &str = "https://izukinova.ai/bugs.json";
 /// The log file is started afresh (the old one kept as `izuki.old.log`) past this.
 const MAX_LOG_BYTES: u64 = 4 * 1024 * 1024;
 /// Lines kept in memory to go with a report.
@@ -291,6 +291,10 @@ pub fn report(kind: &str, message: &str, level: &str) {
     // exists for the machine where sending is not set up (review 2 #8).
     #[cfg(feature = "devvision")]
     crate::observer::record("verification", format!("[bug] {kind}: {message}"));
+    // The local list for whoever fixes Izuki (docs/AGENT-NOTES.md). Written
+    // before the sending gate on purpose: it never leaves this PC, so it is
+    // just as useful with "Send error reports" off.
+    crate::agent_notes::note(kind, message, "");
     if !ENABLED.load(Ordering::SeqCst) || !can_send() {
         return;
     }
@@ -444,10 +448,20 @@ pub fn scrub(s: &str) -> String {
 }
 
 fn scrub_word(w: &str) -> String {
-    const KEY_STARTS: &[&str] = &["AIza", "sk-", "sk_", "rk_", "gsk_", "nvapi-", "xai-", "hf_", "ghp_", "github_pat_", "AKIA", "ak_", "shpat_", "shpca_", "shppa_"];
+    const KEY_STARTS: &[&str] = &["AIza", "AQ.", "sk-", "sk_", "rk_", "gsk_", "nvapi-", "xai-", "hf_", "ghp_", "github_pat_", "AKIA", "ak_", "shpat_", "shpca_", "shppa_"];
     let long = w.chars().count() >= 16;
     if long && KEY_STARTS.iter().any(|p| w.starts_with(p)) {
         return "[key]".into();
+    }
+    // A key glued to a word by ".", "-", "_", "@" or "+" ("gemini.AQ.…",
+    // "key-AIza…"): the part from the key on is hidden too.
+    for p in KEY_STARTS {
+        for (at, _) in w.match_indices(p) {
+            let glued = at > 0 && matches!(w[..at].chars().last(), Some('.' | '-' | '_' | '@' | '+'));
+            if glued && w[at..].chars().count() >= 16 {
+                return format!("{}[key]", &w[..at]);
+            }
+        }
     }
     // An email: something@something.something.
     if let Some((name, domain)) = w.split_once('@') {
@@ -515,6 +529,12 @@ mod tests {
     fn secrets_and_personal_details_never_leave() {
         let s = scrub("gemini key AIzaSyA1b2C3d4E5f6G7h8I9j0KlMnOpQrStUvW failed for sam.jones@gmail.com");
         assert!(!s.contains("AIza") && s.contains("[key]") && s.contains("[email]"), "{s}");
+        // Google's newer key format ("AQ." + ~50 characters) too.
+        let s = scrub("gemini key AQ.Ab8RN6xYz012abcDEF345ghiJKL678mnoPQR901stuVWX234yzAB rejected");
+        assert!(!s.contains("AQ.Ab8") && s.contains("[key]"), "{s}");
+        // …and a key glued to another word.
+        let s = scrub("sent gemini.AQ.Ab8RN6xYz012abcDEF345ghiJKL678 and key-AIzaSyA1b2C3d4E5f6G7h8I9j0KlMnOpQrStUvW");
+        assert!(!s.contains("AQ.Ab8") && !s.contains("AIzaSy") && s.contains("gemini.[key]") && s.contains("key-[key]"), "{s}");
         let s = scrub("Authorization: Bearer gsk_abcdefghijklmnopqrstu12345 rejected");
         assert!(!s.contains("gsk_") && s.contains("Bearer [key]"), "{s}");
         // A Composio key must never ride along in a report either.

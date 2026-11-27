@@ -6,7 +6,27 @@ const path = require("path");
 const vm = require("vm");
 
 const calls = [];
-let prompted = false;
+let tapped = 0, screenMoves = true, launchId = "YouTube";
+let prompted = false, appSettings = 0, lastNavigate = null, lastInstall = null, lastProgress = null;
+let torchOn = false, speechListener = null;
+const stored = {};
+const localStorage = {
+  getItem: (key) => (Object.prototype.hasOwnProperty.call(stored, key) ? stored[key] : null),
+  setItem: (key, value) => { stored[key] = String(value); },
+  removeItem: (key) => { delete stored[key]; },
+};
+const release = {
+  tag_name: "v1.0.211",
+  html_url: "https://github.com/nova-izuki/izuki/releases/tag/v1.0.211",
+  body: "A calmer update.",
+  assets: [{
+    name: "Izuki-Companion-Android-preview.apk",
+    size: 123456,
+    digest: "sha256:" + "a".repeat(64),
+    browser_download_url: "https://github.com/nova-izuki/izuki/releases/download/v1.0.211/Izuki-Companion-Android-preview.apk",
+  }],
+};
+const fetch = async () => ({ ok: true, status: 200, json: async () => release });
 const window = {
   Capacitor: {
     isNativePlatform: () => true,
@@ -14,9 +34,37 @@ const window = {
     Plugins: {
       IzukiControl: {
         haptic: async () => ({ done: true }),
-        status: async () => ({ enabled: true }),
+        status: async () => ({ enabled: true, version: "1.0.210", versionCode: 210, updateAllowed: true }),
         perform: async ({ action }) => calls.push(action),
+        installUpdate: async (args) => { lastInstall = args; return { started: true, version: "1.0.211" }; },
+        addListener: (name, callback) => {
+          if (name === "updateProgress") lastProgress = callback;
+          if (name === "speech") speechListener = callback;
+          return { remove() {} };
+        },
         openAccessibilitySettings: async () => calls.push("settings"),
+        launch: async ({ name }) => {
+          if (String(name).toLowerCase() !== "youtube") throw new Error("not installed");
+          calls.push("launch:YouTube");
+          // The package id lets the bridge confirm the app came to the front.
+          return { name: "YouTube", id: launchId };
+        },
+        navigate: async ({ to, orb }) => { calls.push(`navigate:${to}`); lastNavigate = { to, orb }; return { to }; },
+        orb: async ({ state, text }) => { calls.push(`orb:${state}${text ? `:${text}` : ""}`); return true; },
+        act: async ({ op, text }) => { calls.push(`act:${op}${text ? `:${text}` : ""}`); if (op === "tapText" && screenMoves) tapped++; return { done: true }; },
+        media: async ({ key }) => { calls.push(`media:${key}`); return true; },
+        volume: async ({ dir }) => { calls.push(`volume:${dir}`); return true; },
+        device: async () => ({ battery: 80, charging: false, online: true, wifi: true, control: true }),
+        screen: async () => (tapped ? { app: "YouTube", items: [{ n: 1, text: "Search YouTube", kind: "box", focused: true }] } : { app: "YouTube", items: [{ n: 1, text: "Search" }, { n: 2, text: "Home" }] }),
+        wakeStatus: async () => ({ on: false, running: false, available: true, mic: false, notifications: true }),
+        wake: async ({ on }) => { if (on) throw new Error("mic"); return { on: false }; },
+        wakePause: async () => { throw new Error("busy"); },
+        openAppSettings: async () => { appSettings++; },
+        voicePrefs: async (prefs) => { calls.push(`prefs:${JSON.stringify(prefs)}`); },
+        torch: async ({ on } = {}) => { const next = on === undefined ? !torchOn : !!on; torchOn = next; calls.push(`torch:${next}`); return { on: next }; },
+        openPanel: async ({ name }) => { calls.push(`panel:${name}`); return { opened: name }; },
+        storage: async () => ({ total: 128e9, free: 41.3e9, used: 86.7e9 }),
+        say: async ({ id }) => { calls.push(`say:${id}`); setTimeout(() => speechListener?.({ id, event: "done" }), 5); },
       },
       LocalNotifications: {
         checkPermissions: async () => ({ display: "prompt" }),
@@ -26,23 +74,133 @@ const window = {
     },
   },
 };
-vm.runInNewContext(fs.readFileSync(path.resolve(__dirname, "../../docs/app/native.js"), "utf8"), { window, console });
+vm.runInNewContext(fs.readFileSync(path.resolve(__dirname, "../../docs/app/native.js"), "utf8"), { window, console, fetch, localStorage, setTimeout, clearTimeout });
 
 (async () => {
+  let wake = { phrase: "Hey Nova open maps", audio: "recorded-wake", voice: true };
+  window.Capacitor.Plugins.IzukiControl.takeWake = async () => { const value = wake; wake = {}; return value; };
+  assert.equal(await window.IzukiNative.takeWake(), "Hey Nova open maps");
+  assert.equal(await window.IzukiNative.takeWake(), "");
+  assert.equal(window.IzukiNative.takeWakeAudio().audio, "recorded-wake", "an empty overlapping wake poll preserves the audio");
+  assert.equal(window.IzukiNative.takeWakeAudio().voice, false, "wake metadata is consumed once");
+  wake = { phrase: "Hey Nova", audio: "", voice: true };
+  await window.IzukiNative.takeWake(); await window.IzukiNative.takeWake();
+  assert.equal(window.IzukiNative.takeWakeAudio().voice, true, "an empty poll cannot turn a spoken wake into an unverified wake");
   assert.equal(window.IzukiNative.installed(), true);
   assert.equal(window.IzukiNative.platform(), "android");
   assert.equal(await window.IzukiNative.haptic(), true);
   assert.equal(await window.IzukiNative.takeLaunchPrompt(), "");
   assert.equal(await window.IzukiNative.controlStatus(), true);
+  assert.equal(await window.IzukiNative.phoneAction("home"), true);
+  assert.equal(calls.at(-1), "home");
+  assert.equal(await window.IzukiNative.phoneAction("delete everything"), false, "the dock only invokes known phone actions");
+  calls.length = 0;
+  const update = await window.IzukiNative.checkUpdate({ force: true });
+  assert.equal(update.update, true, "a newer tag is an update");
+  assert.equal(update.current, "1.0.210");
+  assert.equal(update.latest, "1.0.211");
+  assert.equal(update.size, 123456);
+  assert.equal(update.sha256, "a".repeat(64), "GitHub's digest is passed through for native verification");
+  assert.match(update.url, /releases\/download\/v1\.0\.211/);
+  const installed = await window.IzukiNative.installUpdate(update);
+  assert.equal(installed.ok, true);
+  assert.equal(lastInstall.url, update.url);
+  assert.equal(lastInstall.sha256, update.sha256);
+  assert.equal(lastInstall.size, update.size);
+  assert.equal(lastInstall.version, "1.0.211");
+  assert.equal(window.IzukiNative.pendingUpdate(), null);
+  window.IzukiNative.setPendingUpdate("1.0.211");
+  assert.equal(window.IzukiNative.pendingUpdate().version, "1.0.211");
+  window.IzukiNative.clearPendingUpdate();
+  assert.equal(window.IzukiNative.pendingUpdate(), null);
+  assert.ok(window.IzukiNative.onUpdateProgress(() => {}), "a progress listener can subscribe");
+  assert.equal(typeof lastProgress, "function", "progress listeners are wired through the native bridge");
+  window.Capacitor.Plugins.IzukiControl.status = async () => ({ enabled: true, version: "1.0.211" });
+  assert.equal((await window.IzukiNative.checkUpdate({ force: true })).update, false, "the same version is not an update");
+  window.Capacitor.Plugins.IzukiControl.status = async () => ({ enabled: true, version: "1.0.210" });
+  release.assets = [];
+  assert.match((await window.IzukiNative.checkUpdate({ force: true })).error, /APK isn't attached/, "a release without an APK never offers a broken download");
+  release.assets = [{ name: "Izuki-Companion-Android-preview.apk", size: 123456, digest: "sha256:" + "a".repeat(64), browser_download_url: "https://github.com/nova-izuki/izuki/releases/download/v1.0.211/Izuki-Companion-Android-preview.apk" }];
   assert.equal(await window.IzukiNative.quickDeviceCommand("go home"), "Opened Home.");
   assert.deepEqual(calls, ["home"]);
   assert.equal(await window.IzukiNative.quickDeviceCommand("open my banking app"), null);
   assert.deepEqual(calls, ["home"], "unrecognised words must never become device actions");
+  assert.equal(await window.IzukiNative.quickDeviceCommand("open YouTube"), "Opened YouTube. Tap the orb to come back to me.");
+  assert.deepEqual(calls, ["home", "launch:YouTube"]);
+  // Without a package id it can't be checked, so it isn't called opened.
+  launchId = undefined;
+  assert.match(await window.IzukiNative.quickDeviceCommand("open YouTube"), /couldn't check that it opened/);
+  launchId = "YouTube";
+  calls.splice(calls.lastIndexOf("launch:YouTube"), 1);
+  // The resting orb over other apps is opt-in now; working, listening and talking always show.
+  assert.equal(await window.IzukiNative.quickDeviceCommand("take me to Walmart"), "Taking you to Walmart. Google Maps has the turns — tap the orb when you need me.");
+  assert.equal(calls.at(-1), "navigate:Walmart");
+  assert.equal(lastNavigate.orb, false, "no resting orb over Maps unless the person keeps one");
+  window.IzukiNative.setOrbOverApps(true);
+  assert.equal(calls.at(-1), 'prefs:{"keep":true}', "the keep-orb setting reaches Android for voice turns");
+  await window.IzukiNative.quickDeviceCommand("take me to Walmart");
+  assert.equal(lastNavigate.orb, true, "Maps respects the orb preference");
+  assert.equal(await window.IzukiNative.orb("listen", ""), true);
+  assert.equal(calls.at(-1), "orb:listen");
+  window.IzukiNative.setOrbOverApps(false);
+  assert.equal(await window.IzukiNative.orb("rest", ""), false, "the off switch removes the resting orb");
+  assert.equal(await window.IzukiNative.orb("think", "Opening Storage…"), true, "work in progress still shows over other apps");
+  assert.equal(await window.IzukiNative.orb("idle", ""), true, "idle can always take an orb away");
+  window.IzukiNative.setOrbOverApps(true);
+  // Flashlight, quick panels and storage: straight away, no AI.
+  assert.equal(await window.IzukiNative.quickDeviceCommand("turn on the flashlight"), "Flashlight on.");
+  assert.equal(await window.IzukiNative.quickDeviceCommand("flashlight off"), "Flashlight off.");
+  assert.equal(await window.IzukiNative.quickDeviceCommand("open wifi settings"), "Here's Wi-Fi.");
+  assert.equal(calls.at(-1), "panel:wifi");
+  assert.equal(await window.IzukiNative.quickDeviceCommand("bluetooth"), "Here's Bluetooth.");
+  assert.match(await window.IzukiNative.quickDeviceCommand("how much storage do I have left"), /^41 GB free of 128 GB\./, "whole gigabytes above ten, as people say them");
+  // An installed app's exact name opens even with "find" in it; a sentence doesn't pass for a name.
+  window.Capacitor.Plugins.IzukiControl.apps = async () => ({ apps: [{ name: "Find My Mobile", id: "com.samsung.fmm" }, { name: "YouTube", id: "YouTube" }] });
+  window.IzukiNative._resetAppNames?.();
+  window.IzukiNative.isAppName("x");
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(window.IzukiNative.isAppName("find my mobile"), true);
+  assert.equal(window.IzukiNative.isAppName("my files and check what's taking space"), false);
+  calls.length = 0;
+  assert.equal(await window.IzukiNative.quickDeviceCommand("open my files and check what's taking space"), null, "a job for the agent, not an app name");
+  assert.ok(!calls.some((c) => String(c).startsWith("launch:")), "nothing was launched");
+  assert.equal(await window.IzukiNative.quickDeviceCommand("split screen"), "Split screen is on: pick the second app.");
+  assert.equal(calls.at(-1), "split_screen");
+  // Right after startup a plan waits for the app list (a moment at most) instead of guessing.
+  window.IzukiNative._resetAppNames?.();
+  let releaseApps;
+  window.Capacitor.Plugins.IzukiControl.apps = () => new Promise((r) => { releaseApps = () => r({ apps: [{ name: "Learn and Play Music", id: "learn" }] }); });
+  const ready = window.IzukiNative.appNamesReady(2000);
+  setTimeout(() => releaseApps(), 20);
+  await ready;
+  assert.equal(window.IzukiNative.isAppName("learn and play music"), true, "the list read during the wait is used");
+  // Android's own voice: one promise per line, settled by its "done" event.
+  assert.equal(window.IzukiNative.canSpeak(), true);
+  assert.equal(await window.IzukiNative.speak("Your phone has 41 GB free."), "done");
+  assert.match(calls.at(-1), /^say:s/);
+  assert.equal(await window.IzukiNative.quickDeviceCommand("tap Search"), "Tapped search.");
+  tapped = 0; screenMoves = false;
+  assert.match(await window.IzukiNative.quickDeviceCommand("tap Search"), /nothing on the screen changed/, "a press Android accepted but nothing followed is not called done");
+  screenMoves = true;
+  assert.equal(await window.IzukiNative.quickDeviceCommand("volume up"), "Turned the volume up.");
+  assert.equal(await window.IzukiNative.quickDeviceCommand("next song"), "Done.");
+  assert.equal(await window.IzukiNative.quickDeviceCommand("lock"), "Locked your phone.");
+  assert.equal(await window.IzukiNative.quickDeviceCommand("screenshot"), "Took a screenshot.");
+  assert.equal(await window.IzukiNative.quickDeviceCommand("read screen"), "I can see 2 controls in YouTube.");
   assert.equal(await window.IzukiNative.scheduleReminder({ at: Date.now() + 60_000, text: "Study" }), true);
   assert.equal(prompted, true);
-  assert.equal(calls[1].title, "Izuki reminder");
-  assert.equal(calls[1].body, "Study");
-  assert.equal(calls[1].sound, "default", "native reminders should use the device's configured alert/haptic behavior");
+  const wakeStatus = await window.IzukiNative.wakeStatus();
+  assert.equal(wakeStatus.available, true);
+  assert.equal(wakeStatus.mic, false);
+  assert.equal(wakeStatus.notifications, true);
+  assert.equal((await window.IzukiNative.wake(true)).error, "mic");
+  assert.equal(await window.IzukiNative.wakePause(), false, "a failed pause must tell the caller to stop the listener");
+  assert.equal(await window.IzukiNative.openAppSettings(), true);
+  assert.equal(appSettings, 1);
+  const reminder = calls.find((call) => call?.extra?.izukiReminder);
+  assert.equal(reminder.title, "Izuki reminder");
+  assert.equal(reminder.body, "Study");
+  assert.equal(reminder.sound, "default", "native reminders should use the device's configured alert/haptic behavior");
   assert.equal(await window.IzukiNative.quickDeviceCommand("go home on my phone"), "Opened Home.");
   window.Capacitor.Plugins.IzukiControl.perform = async () => { throw new Error("permission denied"); };
   assert.match(await window.IzukiNative.quickDeviceCommand("go back on my Android"), /haven't sent it to your PC/, "failed phone action must not fall through to a PC command");
@@ -58,5 +216,7 @@ vm.runInNewContext(fs.readFileSync(path.resolve(__dirname, "../../docs/app/nativ
   delete window.Capacitor;
   assert.equal(window.IzukiNative.platform(), "web");
   assert.equal(await window.IzukiNative.haptic(), false);
+  assert.equal(await window.IzukiNative.wakePause(), false, "a browser or older APK must not claim the mic was released");
+  assert.equal(await window.IzukiNative.openAppSettings(), false);
   console.log("Native bridge: explicit Android actions and native reminders pass.");
 })().catch((error) => { console.error(error); process.exitCode = 1; });

@@ -345,7 +345,8 @@ left (what isn't handed in yet, and what is) · first (what to do first) · grad
 course · textbook | their question about their textbook · cite | a link, DOI or ISBN (APA reference) · money | what \
 they asked (spending, unusual charges, subscriptions) · shop | orders, sales or stock · study | progress or mistakes · \
 screentime | their question · recall | their question about what was on their screen earlier · storage | \
-what they want (what's taking up space, free up space, empty the Recycle Bin) · fl | what to do in FL Studio, in \
+what they want (what's taking up space, free up space, empty the Recycle Bin) · logins | how far back (today, week or month): who signed in to this PC and who failed to, \
+read from the system's own log (add the word admin only after the person said yes to Windows' administrator prompt) · fl | what to do in FL Studio, in \
 plain words (quantize the hats, line the 808 up with the kick or the sample, tune the 808, match the sample to the metronome, balance the mix, add an 808 / a melody / chords, mix the \
 vocals, add an intro or a fill, tempo 140). E.g. \
 [IZUKI: grades | biology], [IZUKI: due | week]. For these, use it BEFORE [APPS] or [BROWSE]; if it says it has no \
@@ -382,7 +383,8 @@ assistant at their desk. Same rule — reply with only the tag:\n\
 [OPEN: path] — read a file (text, notes, code, CSV, PDF, Word .docx, Excel .xlsx with cell addresses, PowerPoint \
 .pptx, OpenDocument .odt/.ods/.odp).\n\
 [WRITE: path] then, on the next lines, the whole content — save a text file (a new one, or a fixed version). \
-A NEW .docx is made from the text as a real Word document (# heading, ## subheading, - bullet); a NEW .xlsx from comma- or tab-separated rows (=formulas work). Never [WRITE:] over an existing Word, Excel, PowerPoint or PDF file: use [EDIT:].\n\
+A NEW .docx is made from the text as a real Word document (# heading, ## subheading, - bullet); a NEW .xlsx from comma- or tab-separated rows (=formulas work); a NEW .pptx from \
+# slide titles with - bullet lines under each (one slide per # line). Never [WRITE:] over an existing Word, Excel, PowerPoint or PDF file: use [EDIT:].\n\
 [EDIT: path] then, on the next lines, the changes — edit any file, Word .docx, Excel .xlsx, PowerPoint .pptx \
 and PDFs included, into a copy beside it (the original stays): REPLACE: exact words / WITH: new words · ADD AFTER: words \
 in the paragraph before / TEXT: the new paragraph · ADD: a paragraph at the end · CELL B3: value (or \
@@ -609,6 +611,7 @@ pub fn stream(app: AppHandle, id: u64, history: Vec<Turn>, style: Style) {
         // model call, so it still answers when every brain is benched, which
         // is exactly when it gets asked (see diagnosis.rs).
         if let Some(asked) = history.iter().rev().find(|t| t.role == "user") {
+            if let Some(said)=crate::rescue::handle(crate::attachments::typed_only(&asked.content)){return emit(said,true,None);}
             if let Some(said) = crate::diagnosis::why(crate::attachments::typed_only(&asked.content)) {
                 return emit(said, true, None);
             }
@@ -620,6 +623,9 @@ pub fn stream(app: AppHandle, id: u64, history: Vec<Turn>, style: Style) {
             return emit(question.to_string(), true, None);
         }
         let files = style == Style::Text;
+        if let Some(issue) = crate::brain::selected_model_issue(true) {
+            return emit(String::new(), true, Some(issue));
+        }
         let mut chain: Vec<ProviderConfig> = crate::brain::chat_chain().into_iter().filter(streamable).collect();
         // A real question (why, how, explain, compare…) goes to the strongest
         // brain that's working; quick chat stays with the fastest.
@@ -1129,6 +1135,12 @@ fn run_tool(tool: &Tool, last_user: &str) -> String {
             eprintln!("[chat] blocked unrequested study-log change");
             Ok("I didn't change the Study log — that needs an explicit request from you in this chat.".into())
         }
+        // Reading the Security log as administrator brings up Windows' own
+        // prompt: only once the person's own words said yes to it.
+        Tool::Izuki(request) if crate::companion::elevates(request) && !crate::logins::agreed(last_user) => {
+            eprintln!("[chat] held an administrator read the person hadn't agreed to");
+            Ok("That didn't work: not read as administrator. Ask the person first (Windows will show its own prompt), and only after they say yes, ask again with admin.".into())
+        }
         // Deleting (emptying the Recycle Bin, clearing files) can't be undone:
         // only when the person's own words asked for exactly that.
         Tool::Izuki(request) if crate::companion::deletes(request).is_some_and(|ask| crate::storage::parse(last_user) != Some(ask)) => {
@@ -1277,6 +1289,9 @@ fn with_system(history: &[Turn], system: String) -> Vec<Value> {
 /// A whole reply at once (the phone lane), with the same racing of brains
 /// as the streamed one. Reminder tags are left in for the caller.
 pub fn reply(history: &[Turn], style: Style) -> anyhow::Result<String> {
+    if let Some(asked)=history.iter().rev().find(|t|t.role=="user"){
+        if let Some(said)=crate::rescue::handle(crate::attachments::typed_only(&asked.content)){return Ok(said);}
+    }
     // The same self-diagnosis the chat window gets, for the phone lane.
     if let Some(asked) = history.iter().rev().find(|t| t.role == "user") {
         if let Some(said) = crate::diagnosis::why(crate::attachments::typed_only(&asked.content)) {
@@ -1298,6 +1313,9 @@ pub fn reply(history: &[Turn], style: Style) -> anyhow::Result<String> {
 /// A written reply that never hands over to the apps lane — for when it
 /// can't help (no apps linked) and the chat should just answer.
 pub fn reply_here(history: &[Turn], style: Style) -> anyhow::Result<String> {
+    if let Some(asked)=history.iter().rev().find(|t|t.role=="user"){
+        if let Some(said)=crate::rescue::handle(crate::attachments::typed_only(&asked.content)){return Ok(said);}
+    }
     let asked = history.iter().rev().find(|t| t.role == "user").map(|t| crate::attachments::typed_only(&t.content)).unwrap_or("");
     if let Some(question) = clarify(history) {
         return Ok(question.to_string());
@@ -1399,6 +1417,9 @@ pub fn complete_with_web(messages: &[Value], id: u64, deep: bool, on_text: &dyn 
 /// `complete`, handing each piece of the answer to `on_text` as it arrives
 /// (the Island types it out). `cancel(id)` stops it.
 pub fn complete_streaming(messages: &[Value], id: u64, on_text: &dyn Fn(&str)) -> anyhow::Result<String> {
+    if let Some(issue) = crate::brain::selected_model_issue(true) {
+        anyhow::bail!(issue);
+    }
     let chain: Vec<ProviderConfig> = crate::brain::chat_chain().into_iter().filter(streamable).collect();
     if chain.is_empty() {
         if !crate::brain::online() {
@@ -1417,6 +1438,9 @@ pub fn complete_streaming(messages: &[Value], id: u64, on_text: &dyn Fn(&str)) -
 /// For work that needs a capable model (coding): the strongest working brain
 /// first, small models only after all the others, room to think.
 pub fn complete_strong(messages: &[Value], id: u64, on_text: &dyn Fn(&str)) -> anyhow::Result<String> {
+    if let Some(issue) = crate::brain::selected_model_issue(true) {
+        anyhow::bail!(issue);
+    }
     let mut chain: Vec<ProviderConfig> = crate::brain::chat_chain().into_iter().filter(streamable).collect();
     if chain.is_empty() {
         return complete_streaming(messages, id, on_text);
@@ -1811,6 +1835,11 @@ pub(crate) fn stream_one(cfg: &ProviderConfig, messages: &[Value], stop: &dyn Fn
     let mut rq = client.post(chat_url(cfg)).json(&body);
     if !cfg.api_key.trim().is_empty() {
         rq = rq.bearer_auth(cfg.api_key.trim());
+        // Google's own header too: its newer "AQ." keys are auth keys, and this
+        // is where Google always looks for one (it's harmless for "AIza" keys).
+        if cfg.id == ProviderId::Gemini {
+            rq = rq.header("x-goog-api-key", cfg.api_key.trim());
+        }
     }
     if cfg.id == ProviderId::Openrouter {
         rq = rq.header("HTTP-Referer", "https://github.com/nova-izuki/izuki").header("X-Title", "Izuki");

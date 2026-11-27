@@ -1,37 +1,114 @@
 # Izuki search visibility
 
-The public website is https://nova-izuki.github.io/izuki/. Its hostname homepage
-is maintained in the separate `nova-izuki/nova-izuki.github.io` repository.
-Both pages must keep the same Izuki name and `WebSite` identity:
-`https://nova-izuki.github.io/#website`, with `url` set to
-`https://nova-izuki.github.io/`.
+The public website is **https://izukinova.ai/** and is served from `docs/` in
+this repository. There is no separate root-homepage repository any more; the
+custom domain points at this GitHub Pages site, and `/` is `docs/index.html`.
 
-Google chooses a site name and favicon per hostname, not per subdirectory.
-Keep the root homepage crawlable, its Izuki icon links stable, and its `WebSite`
-metadata consistent with the `/izuki/` page. The root currently redirects to
-`/izuki/`; the destination also carries the same site-name metadata.
-The root `robots.txt` advertises the project sitemap. A `robots.txt` inside
-`/izuki/` alone does not govern crawling of this hostname.
+The canonical host is `izukinova.ai`, not `www.izukinova.ai`, the old
+`nova-izuki.github.io/izuki/` URL, or `izukinova.com`. Every page's canonical
+link, Open Graph URL and structured-data `@id` use the `.ai` host. GitHub Pages
+redirects the old `nova-izuki.github.io/izuki/...` URLs to the custom domain;
+those redirects are for old links, not canonical URLs.
+
+## The new domain is live; ranking is not instant
+
+The canonical migration landed on 14 November 2026: `/` now serves
+`https://izukinova.ai/`, `robots.txt` advertises the `.ai` sitemap, the
+sitemap and structured data use `.ai`, and the Google verification file at
+`/google6a04107c76dfd950.html` returns 200. `www.izukinova.ai` redirects to the
+bare host.
+
+That fixes the technical signals, but it does **not** make a brand-new domain
+appear at the top of Google overnight. Google has to recrawl the old
+`nova-izuki.github.io/izuki/` URL, follow its redirect, discover the new
+canonical and sitemap, and then decide where the page ranks against established
+results. The logo/favicon and image previews are also refreshed on Google's own
+schedule. Expect days to weeks for a recrawl, and longer for competitive
+queries.
+
+Only the Search Console owner can submit the sitemap and request indexing.
+After that, the useful checks are:
+
+- Search `site:izukinova.ai` — results mean it is indexed, not that it ranks.
+- Search `site:izukinova.com` — it should consolidate through the 301, not
+  compete as a second site.
+- In Search Console, check **Page indexing → Why pages aren't indexed** for
+  `izukinova.ai`, and **Sitemaps** for the submitted sitemap status.
+- Use **URL Inspection → Request indexing** for `/`, `/app/`, `/help/` and
+  `/screenshots/` after a meaningful change.
+
+Ranking also depends on backlinks, branded searches, useful content and time.
+No repository change or sitemap submission can guarantee a first-place result.
+
+`izukinova.com` is a convenience domain and **301-redirects to the same path on
+`izukinova.ai`** (checked 14 November 2026, including the `/help/` path).
+GitHub Pages only serves one custom domain per site, so that redirect lives at
+the DNS host or registrar, outside this repository. `www.izukinova.ai` also
+301s to the bare `.ai` host. Keep both redirects in place: they are what make
+the `.com` link safe for search engines and shared links. If the `.com`
+redirect ever breaks, fix it at the DNS/registrar level rather than relying on
+the repository's `404.html`; the 404 page only covers unknown `.ai` paths.
+
+Google chooses a site name and favicon per hostname. Keep the root homepage
+crawlable, its Izuki icon links stable, and its `WebSite` identity at
+`https://izukinova.ai/#website` with `url` set to `https://izukinova.ai/`.
+The sitemap and `robots.txt` live at the host root:
+
+- https://izukinova.ai/robots.txt
+- https://izukinova.ai/sitemap.xml
+
+## Metadata audit (14 November 2026)
+
+Every indexable page under `docs/` now has a unique title and description, a
+canonical `.ai` URL, Open Graph metadata and one visible or screen-reader H1.
+The homepage description was shortened for search results, its FAQ schema now
+matches the six visible questions, and its JSON-LD parses without duplicate
+keys. The `/app/` page has a screen-reader H1, the extension privacy page has
+its own description/canonical/OG metadata, and both internal design boards plus
+the 404 page are `noindex`. No public HTML page links to the old
+`nova-izuki.github.io` address.
+
+## Old listings to update
+
+The GitHub repository homepage was updated to `https://izukinova.ai/` on
+14 November 2026. These other listings are outside this repository and cannot
+be changed without the owner's account access:
+
+- **ToolCenter** — the English and Chinese listings still show
+  `nova-izuki.github.io` as the official URL. Use **Suggest an update** or claim
+  the listing at <https://www.toolcenter.ai/en/tools/izuki> and
+  <https://www.toolcenter.ai/zh/tools/izuki>; set the URL to
+  `https://izukinova.ai/`.
+- **LinkedIn company page** — the Website field still points to
+  `nova-izuki.github.io/izuki/`, and the About text still describes an
+  Afro-tech community. An admin should change the website to
+  `https://izukinova.ai/` and rewrite the description around the Windows AI
+  assistant: <https://www.linkedin.com/company/izukiapp>.
+
+Search Console access is still required to submit the sitemap and request
+indexing; nothing in this repository can do that for the owner.
 
 ## After publishing
 
 In the owner's [Google Search Console](https://search.google.com/search-console/):
 
-1. Use a verified URL-prefix property for `https://nova-izuki.github.io/` to
-   inspect the root homepage. A property limited to `/izuki/` does not cover it.
-   If verification is needed, publish the exact verification file or meta tag
-   Google provides in the root repository; do not invent a token.
-2. Inspect the root homepage, the `/izuki/` homepage and
-   `/izuki/screenshots/`. Test their live URLs. Request indexing of the two
-   canonical project pages and refresh the root URL where the tool permits it.
-   The redirecting root itself need not be indexed as a separate result.
-3. Submit `https://nova-izuki.github.io/izuki/sitemap.xml` under Sitemaps.
+1. Add and verify a **Domain property** for `izukinova.ai` if possible, or a
+   URL-prefix property for `https://izukinova.ai/`. Verification is
+   account-specific; use the exact DNS record or file Google provides and do
+   not invent a token.
+2. Inspect the homepage, `/app/`, `/screenshots/` and `/help/`. Test the live
+   URLs, then request indexing for the pages that changed.
+3. Submit `https://izukinova.ai/sitemap.xml` under Sitemaps.
 4. Check Page indexing for crawl or canonical problems. Use Performance with
    Search type set to Image to monitor image impressions. Check Web performance
    for branded queries such as Izuki and Nova Izuki.
+5. If Search Console still lists the old `nova-izuki.github.io` property, keep
+   it long enough to confirm the redirects, but treat `izukinova.ai` as the
+   canonical property.
 
 Search Console access is account-specific. Deploying the website does not
-submit an indexing request or prove that Google has recrawled it.
+submit an indexing request or prove that Google has recrawled it. No one can
+guarantee a first-place ranking.
 
 ## Keeping images discoverable
 
@@ -44,11 +121,51 @@ Only change a sitemap `lastmod` when the corresponding page actually changes.
 The homepage links to the gallery, identifies the application screenshots in
 structured data, and permits large image previews. These are discovery signals;
 they do not guarantee inclusion in Google Images, a favicon, or any ranking.
-Changes can take days to weeks to be recrawled. No one can guarantee a permanent
-first-place search position.
+Changes can take days to weeks to be recrawled.
+
+## Logo and official pictures (20 November 2026)
+
+Google takes the icon for a whole hostname from the homepage, so
+`docs/index.html` now declares the full set its favicon guidance asks for: the
+root `favicon.ico`, a **48×48** `icon-48.png` (Google's minimum, and a multiple
+of the 48 px it recommends), the 96/192/512 PNGs for phones and installed
+shortcuts, and the vector `icon.svg` so any size stays crisp. The ICO already
+carries 16/32/48/64. `Organization.logo` (512×512) and the `WebSite`
+`alternateName` list (Nova Izuki, Izuki Nova, Izuki AI) stay as they were.
+
+For Images, the brand-mark entry in the image sitemap and the `/screenshots/`
+title, description and intro now name the product the way people search for it —
+“Izuki Nova (Nova Izuki)”, “the Izuki AI assistant” — instead of “the Windows AI
+companion” alone. Nothing was added that is not visible on the page or already
+in the pictures. Both changed pages have a fresh `lastmod`.
+
+Every other public page (`/help/`, `/links/`, `/privacy/`, `/security/`,
+`/terms/`, `/screenshots/`, `/extension/`, `/extension/privacy.html`) now declares
+the same set with `../` paths, and `404.html` uses root-absolute ones because it
+answers at any depth. `/app/` keeps its own PWA icons and web app manifest, whose
+files are bundled into the phone app where a `../` path would not exist.
 
 ## References
 
 - [Google: favicons in Search](https://developers.google.com/search/docs/appearance/favicon-in-search)
 - [Google: site names](https://developers.google.com/search/docs/appearance/site-names)
 - [Google: image SEO](https://developers.google.com/search/docs/appearance/google-images)
+- [GitHub Pages: custom domains](https://docs.github.com/en/pages/configuring-a-custom-domain-for-your-github-pages-site)
+
+## Official name and misspellings (20 November 2026)
+
+The product now names itself **IZUKI NOVA** in the places Google reads for a
+site name: `<title>`, `og:site_name`, `application-name`,
+`apple-mobile-web-app-title`, and the `name` of the Organization, WebSite and
+SoftwareApplication nodes. "Izuki", "Nova Izuki" and "Izuki AI" stay as
+`alternateName`s — they are what people already search — and the hero's
+screen-reader label reads the full name. The canonical URL is still
+`https://izukinova.ai/`; the `nova-izuki.github.io/izuki` address serves the
+same files but is not the address search results should use.
+
+A seventh FAQ answers the misspellings people actually type — "Ixzuki",
+"Izuki Novsa", "Nova" — with the real spelling, the official site and the
+GitHub repo, and says plainly that a download asking for money is not this one.
+The same question and answer sit in the FAQPage markup, so the visible text and
+the structured data match. No hidden keywords, no duplicate pages, no invented
+ratings, reviews or download counts.

@@ -284,7 +284,10 @@ export function AskPage({ page, onHold, onClose, onDetach, onDragHandle }: { pag
   const doIt = () => {
     const steps = full.trim().slice(0, 1500);
     close();
-    void emit(EV.runChat, { id: Date.now(), text: `On my screen, do this for me: ${asked}\n\nThe steps you gave me:\n${steps}` });
+    // [DO IT] is the same explicit button marker the main chat uses: the
+    // screen agent acts instead of the local coach turning it into a guide,
+    // and it stops before anything is submitted or sent.
+    void emit(EV.runChat, { id: Date.now(), text: `[DO IT] On my screen, do this for me: actually do it, don't explain the steps. Stop before submitting, sending or deleting anything.\n\nWhat I asked: ${asked}\n\nThe steps you gave me:\n${steps}` });
   };
   // Carry the conversation on in Chat (Chat may open after this event has
   // gone by, so it waits in shared storage too).

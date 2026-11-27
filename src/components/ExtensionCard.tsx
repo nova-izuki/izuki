@@ -90,7 +90,7 @@ export function ExtensionCard() {
           <li>
             <button
               type="button"
-              onClick={() => void api.openUrl("https://nova-izuki.github.io/izuki/extension/izuki-extension.zip")}
+              onClick={() => void api.openUrl("https://izukinova.ai/extension/izuki-extension.zip")}
               className="izk-pill inline-flex items-center gap-1.5 px-2.5 py-1 text-[11.5px]"
             >
               <Globe size={12} /> Download the extension

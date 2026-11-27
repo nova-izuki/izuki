@@ -246,6 +246,8 @@ enum Ability {
     Shop(crate::shop::Ask),
     Study(crate::studytrack::Ask),
     ScreenTime(String),
+    /// Who signed in to this PC, and who failed to (logins.rs).
+    Logins(String),
     Recall(String),
     Storage(crate::storage::Ask),
     /// Something to do in FL Studio, in plain words ("line the 808 up with the kick").
@@ -321,9 +323,16 @@ fn ability_of(arg: &str) -> Ability {
         } else {
             crate::storage::Ask::Report
         }),
+        "logins" | "login" | "signins" | "sign-ins" | "logons" | "security" => Ability::Logins(details.clone()),
         "recall" => Ability::Recall(words()),
         _ => Ability::Words(words()),
     }
+}
+
+/// A model-proposed [IZUKI: …] call that would bring up Windows'
+/// administrator prompt (reading the Security log as administrator).
+pub fn elevates(arg: &str) -> bool {
+    matches!(ability_of(arg), Ability::Logins(ref d) if d.to_lowercase().contains("admin"))
 }
 
 /// What a model-proposed [IZUKI: …] call would delete, if anything: emptying
@@ -354,6 +363,7 @@ pub fn izuki_tool(arg: &str) -> Option<String> {
         Ability::Shop(ask) => crate::shop::handle(ask),
         Ability::Study(ask) => crate::studytrack::handle(ask),
         Ability::ScreenTime(q) => crate::screentime::answer(&q),
+        Ability::Logins(d) => crate::logins::ability(&d),
         Ability::Recall(q) => return crate::recall::answer(&q),
         Ability::Storage(ask) => crate::storage::handle(ask),
         Ability::Fl(what) => match crate::flstudio::handle(&format!("in fl studio, {what}")) {

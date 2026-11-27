@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Copy, ExternalLink, Loader2, PhoneCall, Smartphone } from "lucide-react";
 
 /** The free phone app; `#pc=` links it to this PC in one scan. */
-const PHONE_APP = "https://nova-izuki.github.io/izuki/app/";
+const PHONE_APP = "https://izukinova.ai/app/";
 import { Row, Toggle } from "./ui";
 import { QrCode } from "./QrCode";
 import { useIzuki } from "../lib/store";

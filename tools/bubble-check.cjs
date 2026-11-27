@@ -102,8 +102,42 @@ let browser, profile, ws;
     stayReport: true, stayAtReport: 1, stayLater: 1,
     leaveReport: { deferred: 90 }, leaveAtReport: 0, leaveLater: 1,
   }, 'a click that stays is made before it is reported; one that leaves says how long, and still happens exactly once');
+  // An element is acted on only while it's still what was listed: a quiz
+  // that moves to the next question and reuses the same radio is refused, a
+  // deferred click whose link changed in the gap says "cancelled", and a box
+  // that turns into a password box when focused is never typed into.
+  const snapSrc = background.slice(background.indexOf('function snapshot'), background.indexOf('\nfunction clickEl'));
+  const typeSrc = background.slice(background.indexOf('function typeEl'), background.indexOf('\nfunction skipAd'));
+  const identity = await run(`(async () => {
+    ${snapSrc}
+    ${clickSrc}
+    ${typeSrc}
+    document.body.insertAdjacentHTML('beforeend', '<div role="radiogroup" aria-label="Q1: Which port is HTTPS?" id="q"><label><input type="radio" name="q1" id="r"> 443</label></div><a id="next" href="/q2">Next</a><input id="box" aria-label="Notes">');
+    const radio = document.getElementById('r'); let radioClicks = 0; radio.addEventListener('click', () => { radioClicks += 1; });
+    const link = document.getElementById('next'); let linkClicks = 0; link.addEventListener('click', (e) => { linkClicks += 1; e.preventDefault(); });
+    // (A headless page has no focus events; the page's own code runs from
+    // the focus call itself here.)
+    const box = document.getElementById('box'); box.focus = () => { box.type = 'password'; HTMLElement.prototype.focus.call(box); };
+    const snap = snapshot();
+    const id = (el) => el.getAttribute('data-izuki-id');
+    const named = (el) => snap.elements.find((e) => e.id === id(el)).name;
+    const same = await clickEl(id(radio), location.hostname.replace(/^www\\./, ''), named(radio));
+    document.getElementById('q').setAttribute('aria-label', 'Q2: Which port is SSH?');
+    const reused = await clickEl(id(radio), location.hostname.replace(/^www\\./, ''), named(radio));
+    const report = await clickEl(id(link), '', named(link));
+    link.setAttribute('href', '/elsewhere'); link.textContent = 'Log out';
+    await new Promise((r) => setTimeout(r, 200));
+    const deferred = globalThis.__izukiDeferred;
+    const typed = typeEl(id(box), 'hello', '', named(box));
+    return { same, reused, radioClicks, report, deferred: deferred.state, linkClicks, typed, value: box.value };
+  })()`);
+  assert.deepEqual(identity, {
+    same: true, reused: 'moved', radioClicks: 1,
+    report: { deferred: 90 }, deferred: 'cancelled', linkClicks: 0,
+    typed: 'secret', value: '',
+  }, 'a reused element, a link that changed in the gap and a box that became a password box are never acted on');
   assert.deepEqual(errors, []);
-  console.log('bubble: ok — click-through host, self-dodge, drag; a click that stays is made before its reply, one that leaves replies with its wait, each exactly once');
+  console.log('bubble: ok — click-through host, self-dodge, drag; a click that stays is made before its reply, one that leaves replies with its wait, each exactly once; a reused or changed element is never acted on');
 })().catch((error) => { console.error(error); process.exitCode = 1; }).finally(async () => {
   try { ws?.close(); } catch {}
   await closeTestBrowser(browser, profile);

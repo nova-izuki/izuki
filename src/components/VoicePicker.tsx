@@ -456,7 +456,7 @@ export function VoicePicker() {
               onKeyDown={(e) => {
                 if (e.key === "Enter") saveGeminiKey();
               }}
-              placeholder="Paste your free Gemini key (AIza…), then Enter"
+              placeholder="Paste your free Gemini key (AQ.… or AIza…), then Enter"
               className="izk-field izk-no-drag h-[30px] min-w-0 flex-1 py-0 text-[12px]"
               spellCheck={false}
               autoComplete="off"

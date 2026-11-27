@@ -105,7 +105,7 @@ export function TvCard() {
           <RokuChannel />
           <p className="mt-2 text-izk-muted">
             Then open Izuki on the TV — it follows along whenever you talk to Izuki.{" "}
-            <button type="button" className="underline-offset-2 hover:underline" onClick={() => void api.openUrl("https://nova-izuki.github.io/izuki/tv/izuki-roku.zip")}>
+            <button type="button" className="underline-offset-2 hover:underline" onClick={() => void api.openUrl("https://izukinova.ai/tv/izuki-roku.zip")}>
               Or install it by hand
             </button>{" "}
             at{" "}

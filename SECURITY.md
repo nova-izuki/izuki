@@ -4,7 +4,7 @@ Izuki drives a real mouse and keyboard, so security reports get priority.
 
 ## Reporting a vulnerability
 
-Email **izuki.hq@gmail.com** with **"Security"** in the subject. Please include:
+Email **support@izukinova.ai** with **"Security"** in the subject. Please include:
 
 - the Izuki version (it's shown in Settings);
 - what an attacker could do;
@@ -18,4 +18,4 @@ Only the latest release gets fixes. Izuki updates itself, and every update is si
 
 ## Verifying a download
 
-See [nova-izuki.github.io/izuki/security](https://nova-izuki.github.io/izuki/security/): it explains how to compare your installer's SHA-256 with the one GitHub publishes, and why Windows SmartScreen warns about an installer that isn't code-signed yet.
+See [izukinova.ai/security](https://izukinova.ai/security/): it explains how to compare your installer's SHA-256 with the one GitHub publishes, and why Windows SmartScreen warns about an installer that isn't code-signed yet.

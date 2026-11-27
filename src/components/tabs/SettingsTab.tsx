@@ -32,7 +32,7 @@ import { AndroidCard } from "../AndroidCard";
 import { TvCard } from "../TvCard";
 import { ThemePicker } from "../ThemePicker";
 import { ExtensionCard } from "../ExtensionCard";
-import { AccessCard, ActivityCard, MyDataCard } from "../PrivacyCards";
+import { AccessCard, ActivityCard, MyDataCard, SitesCard } from "../PrivacyCards";
 import { BugCard } from "../BugCard";
 import { DeveloperMode } from "../DeveloperMode";
 import { Badge, CollapsibleSections, Row, Section, SectionControls, Segmented, SettingsSearch, Slider, Toggle, cx } from "../ui";
@@ -98,6 +98,7 @@ export function SettingsTab() {
     quickdraw: settings.hotkey_quickdraw,
     voice: settings.hotkey_voice,
     dictate: settings.hotkey_dictate,
+    ask: settings.hotkey_ask ?? "Alt+Space",
     replay: settings.hotkey_replay,
     panic: settings.hotkey_panic,
   };
@@ -330,7 +331,7 @@ export function SettingsTab() {
                               : p.id === "nvidia"
                                 ? "nvapi-… (free from build.nvidia.com → Settings → API Keys)"
                               : p.id === "9router"
-                                ? "not needed — 9Router holds its own provider keys"
+                                ? "not needed — 9Router or OmniRoute holds its own provider keys (with OmniRoute, set the model to auto)"
                                 : "paste your key"
                           }
                         />
@@ -472,6 +473,13 @@ export function SettingsTab() {
           value={settings.hotkey_voice}
           taken={otherHotkeys(hotkeys, "voice")}
           onChange={(v) => patch({ hotkey_voice: v })}
+        />
+        <div className="izk-divider" />
+        <HotkeyRow
+          label="Ask bar (one box: type, press Enter)"
+          value={settings.hotkey_ask ?? "Alt+Space"}
+          taken={otherHotkeys(hotkeys, "ask")}
+          onChange={(v) => patch({ hotkey_ask: v })}
         />
         <div className="izk-divider" />
         <HotkeyRow
@@ -674,6 +682,7 @@ export function SettingsTab() {
       <div id="settings-browser"><ExtensionCard /></div>
 
       <AccessCard />
+      <SitesCard />
       <ActivityCard />
       <MyDataCard />
 
@@ -758,7 +767,7 @@ function LabelledField({
 /** Every global shortcut but this one, so the Shortcuts list can refuse a
  *  chord that already has a job. One chord, one action. */
 function otherHotkeys(
-  keys: Record<"draw" | "quickdraw" | "voice" | "dictate" | "replay" | "panic", string>,
+  keys: Record<"draw" | "quickdraw" | "voice" | "dictate" | "replay" | "panic" | "ask", string>,
   mine: keyof typeof keys
 ): Array<[string, string]> {
   const named: Array<[keyof typeof keys, string]> = [
@@ -768,6 +777,7 @@ function otherHotkeys(
     ["dictate", "Hold to dictate"],
     ["replay", "Replay last flow"],
     ["panic", "Emergency stop"],
+    ["ask", "Ask bar"],
   ];
   return named
     .filter(([key]) => key !== mine && keys[key].trim())
@@ -883,10 +893,10 @@ function FollowCard() {
       </div>
       <button
         type="button"
-        onClick={() => void openLink("https://nova-izuki.github.io/izuki/links/")}
+        onClick={() => void openLink("https://izukinova.ai/links/")}
         className="izk-pill izk-no-drag mt-2 h-[28px] px-3 text-[11.5px]"
       >
-        All links · nova-izuki.github.io/izuki
+        All links · izukinova.ai
       </button>
       <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-izk-muted">
         {([
@@ -894,7 +904,7 @@ function FollowCard() {
           ["Terms", "terms"],
           ["Security & verify your download", "security"],
         ] as const).map(([label, page]) => (
-          <button key={page} type="button" onClick={() => void openLink(`https://nova-izuki.github.io/izuki/${page}/`)} className="izk-no-drag underline-offset-2 hover:text-izk-ink hover:underline">
+          <button key={page} type="button" onClick={() => void openLink(`https://izukinova.ai/${page}/`)} className="izk-no-drag underline-offset-2 hover:text-izk-ink hover:underline">
             {label}
           </button>
         ))}

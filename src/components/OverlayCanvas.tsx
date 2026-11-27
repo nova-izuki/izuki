@@ -16,8 +16,10 @@ import { CaptionBox } from "./CaptionBox";
 import { FloatingChat } from "./FloatingChat";
 import { ActionHand } from "./ActionHand";
 import { Island, islandPointer } from "./Island";
+import { AskBar, askBarOwnsCaptions } from "./AskBar";
 import { IslandChatWorkspace } from "./IslandChatWorkspace";
 import { Hud } from "./Hud";
+import { TaskStage } from "./TaskStage";
 import { HandGlyph } from "./IzukiMark";
 import { PointOutLayer, type PointOut } from "./PointOutLayer";
 import { PenLayer, PEN_INKS, type PenMark } from "./PenLayer";
@@ -145,6 +147,13 @@ export function OverlayCanvas() {
   const [islandWave, setIslandWave] = useState<string>("auto");
   const [islandStyle, setIslandStyle] = useState<string>("default");
   const [islandSize, setIslandSize] = useState<string>("normal");
+  const [islandOpacity, setIslandOpacity] = useState(94);
+  const [islandBlur, setIslandBlur] = useState(0);
+  const [islandAccent, setIslandAccent] = useState("#22d3ee");
+  const [islandShadow, setIslandShadow] = useState(true);
+  const [islandLightGlass, setIslandLightGlass] = useState(false);
+  const [islandMotion, setIslandMotion] = useState(true);
+  const [islandAutoExpand, setIslandAutoExpand] = useState(false);
   const [keepReply, setKeepReply] = useState(false);
   /** Air control is on (drawn by AirHost at the overlay root) — keeps the overlay from idling shut. */
   const [air, setAir] = useState(false);
@@ -206,6 +215,8 @@ export function OverlayCanvas() {
    * "working" after, so the top pill never claims work that isn't happening.
    */
   const [acting, setActing] = useState(false);
+  /** A real Task Stage is up; keep the overlay alive until it ends. */
+  const [taskActive, setTaskActive] = useState(false);
   // Read inside the long-lived bus listeners without re-subscribing them.
   const modeRef = useRef(mode);
   modeRef.current = mode;
@@ -488,10 +499,17 @@ export function OverlayCanvas() {
           setIslandOn(s.island_enabled);
           setIslandPeeks(s.island_suggestions);
           setIslandWave(s.island_wave || "auto");
-          setIslandAlways(s.island_always ?? true);
+          setIslandAlways(s.island_always ?? false);
           setIslandFree(!!s.island_free);
           setIslandStyle(s.island_style || "default");
           setIslandSize(s.island_size || "normal");
+          setIslandOpacity(s.island_opacity ?? 94);
+          setIslandBlur(s.island_blur ?? 0);
+          setIslandAccent(s.island_accent || "#22d3ee");
+          setIslandShadow(s.island_shadow ?? true);
+          setIslandLightGlass(!!s.island_light_glass);
+          setIslandMotion(s.island_motion ?? true);
+          setIslandAutoExpand(!!s.island_auto_expand);
           setKeepReply(s.keep_reply);
           setEdgeGlow(s.edge_glow);
           setAir(s.air_enabled);
@@ -532,6 +550,8 @@ export function OverlayCanvas() {
         setChatOn(p.follow);
       }),
       on<CaptionPayload>(EV.caption, (p) => {
+        // The ask bar shows its own answer: one place for the words.
+        if (askBarOwnsCaptions()) return;
         const before = captionText.current.trim();
         if (before && before !== p.text.trim() && before.split(/\s+/).length >= 4) {
           setPastReplies((all) => [...all.filter((x) => x !== before), before].slice(-30));
@@ -560,10 +580,17 @@ export function OverlayCanvas() {
           setIslandOn(s.island_enabled);
           setIslandPeeks(s.island_suggestions);
           setIslandWave(s.island_wave || "auto");
-          setIslandAlways(s.island_always ?? true);
+          setIslandAlways(s.island_always ?? false);
           setIslandFree(!!s.island_free);
           setIslandStyle(s.island_style || "default");
           setIslandSize(s.island_size || "normal");
+          setIslandOpacity(s.island_opacity ?? 94);
+          setIslandBlur(s.island_blur ?? 0);
+          setIslandAccent(s.island_accent || "#22d3ee");
+          setIslandShadow(s.island_shadow ?? true);
+          setIslandLightGlass(!!s.island_light_glass);
+          setIslandMotion(s.island_motion ?? true);
+          setIslandAutoExpand(!!s.island_auto_expand);
           setKeepReply(s.keep_reply);
           setEdgeGlow(s.edge_glow);
           setAir(s.air_enabled);
@@ -819,7 +846,7 @@ export function OverlayCanvas() {
     window.addEventListener("izuki:island-chat-visible", changed);
     return () => window.removeEventListener("izuki:island-chat-visible", changed);
   }, []);
-  const idle = open && mode === "follow" && !chatOn && !islandOn && !islandChatVisible && !talkWave && !air && !listening && !caption && orb === "hidden" && !transcript;
+  const idle = open && mode === "follow" && !taskActive && !chatOn && !islandOn && !islandChatVisible && !talkWave && !air && !listening && !caption && orb === "hidden" && !transcript;
   useEffect(() => {
     if (!idle) return;
     const t = setTimeout(() => void api.closeOverlay(), 1500);
@@ -878,7 +905,9 @@ export function OverlayCanvas() {
           </div>
         )}
         <Hud />
+        <TaskStage onActiveChange={setTaskActive} />
         <IslandChatWorkspace />
+        <AskBar />
         {islandOn && <Island
             always={islandAlways}
             free={islandFree}
@@ -889,6 +918,13 @@ export function OverlayCanvas() {
             wave={islandWave}
             look={islandStyle}
             size={islandSize}
+            opacity={islandOpacity}
+            blur={islandBlur}
+            accent={islandAccent}
+            shadow={islandShadow}
+            lightGlass={islandLightGlass}
+            animated={islandMotion}
+            autoExpand={islandAutoExpand}
             visualizing={musicShowing}
             onVisualize={() => {
               setMusicSnoozed(false);

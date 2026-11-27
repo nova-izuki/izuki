@@ -158,6 +158,13 @@
     }
     if(op==="relay")return answer(message.connection,message.prompt,message.id);
     if(op==="cancelRelay"){root.IzukiProviderRelay.cancel(message.id);return {ok:true};}
+    // What each AI tab is busy with, and "Stop that one" for a question the
+    // panel lost track of (it was closed or reloaded while asking).
+    if(op==="relayStatus")return {ok:true,running:root.IzukiProviderRelay.status()};
+    if(op==="cancelRelayTab"){
+      if(!Number.isSafeInteger(message.tabId))throw Error("Which AI tab should stop?");
+      return {ok:true,stopped:await root.IzukiProviderRelay.cancelTab(message.tabId,typeof message.requestId==="string"?message.requestId:"")};
+    }
     if(op==="float")return float(windowId);
     if(op==="dock"){
       // Closing only a popup this worker created never closes the source browser.
@@ -178,7 +185,7 @@
   chrome.runtime.onMessage.addListener((message,sender,respond)=>{
     const request=message?.izukiWorkspace||(message?.izukiQuiz?.op==="stop"?{...message.izukiQuiz,op:"stop"}:null);
     if(!request)return;
-    route(request,sender).then(respond,error=>respond({ok:false,text:error.message||"The workspace could not continue."}));return true;
+    route(request,sender).then(respond,error=>respond({ok:false,text:error.message||"The workspace could not continue.",code:error.code,state:error.state}));return true;
   });
   chrome.commands.onCommand.addListener(command=>{if(command==="stop-workspace"){quiz.stop();lab.stop();}});
   chrome.windows.onRemoved.addListener(id=>{for(const [source,popup] of popups)if(id===popup||id===source){popups.delete(source);if(quiz.current?.windowId===source)quiz.stop("The workspace window closed.");if(lab.current?.windowId===source)lab.stop();}});

@@ -35,7 +35,7 @@ body{margin:0;font:16px system-ui,sans-serif;background:#fff;color:#202124} ${cs
 const SCENES = [
   {
     name: "explore: link far down the page",
-    url: "https://nova-izuki.github.io/izuki/",
+    url: "https://izukinova.ai/",
     controls: ['[1] link "Download"', '[2] link "Features"', '[3] link "Phone app"'],
     say: "open the privacy page",
     must: /^(SCROLL|KEY (ctrl\+f|end|pagedown)|GO .*privacy)/im,
@@ -97,7 +97,7 @@ const SCENES = [
   },
   {
     name: "link listed further down: go straight to it",
-    url: "https://nova-izuki.github.io/izuki/",
+    url: "https://izukinova.ai/",
     controls: ['[1] link "Download"', '[2] link "Features"', '[9] link "Privacy" (further down — Izuki scrolls to it)'],
     say: "open the privacy page",
     must: /^CLICK (9\b|"?Privacy)/im,
@@ -126,7 +126,7 @@ const SCENES = [
   },
   {
     name: "oops: it minimised the window by mistake",
-    url: "https://nova-izuki.github.io/izuki/",
+    url: "https://izukinova.ai/",
     controls: ['[1] link "Download"', '[2] link "Features"'],
     say: "open the features section\nOne of your steps minimised the window you were working in (\"Izuki — Chrome\") — Izuki has put it back. Say so in a few words, like a person would (\"Oops, I minimised that by mistake — it's back\"), and carry on without minimising it again.",
     must: /^SAY .*(oops|sorry|my bad|minimi)/im,

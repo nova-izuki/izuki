@@ -442,12 +442,13 @@ pub fn is_inbox_question(said: &str) -> bool {
     .any(|w| s.contains(w))
         // "Any good emails?", "anything worth reading in my gmail".
         || crate::mail::wants_what_matters(said);
-    mail && dig && !["send", "write", "reply to", "draft", "delete", "archive"].iter().any(|w| s.contains(w))
+    mail && dig && !crate::mail::names_other_mail(said) && !["send", "write", "reply to", "draft", "delete", "archive"].iter().any(|w| s.contains(w))
 }
 
-/// The digest, said out loud.
+/// The digest, said out loud. An explicit request is a fresh look; the
+/// ten-minute cache is for the Inbox card and heads-ups, not for "check again".
 pub fn inbox_spoken() -> String {
-    match inbox_digest(false) {
+    match inbox_digest(true) {
         Ok(d) => {
             let mut s = d.summary.clone();
             let todo: Vec<String> = d.items.iter().filter(|i| !i.action.trim().is_empty()).take(3).map(|i| i.action.trim().trim_end_matches('.').to_string()).collect();
@@ -1047,6 +1048,7 @@ mod tests {
         assert!(is_inbox_question("what's important in my email?"));
         assert!(is_inbox_question("go through my inbox"));
         assert!(is_inbox_question("anything urgent in my gmail"));
+        assert!(!is_inbox_question("check my Outlook inbox for anything important"));
         assert!(!is_inbox_question("send an email to sam"));
         assert!(!is_inbox_question("what is email"));
     }

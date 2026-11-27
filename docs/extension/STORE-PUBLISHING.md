@@ -1,6 +1,6 @@
 # Direct browser-store installation
 
-The public install guide is `https://nova-izuki.github.io/izuki/extension/`.
+The public install guide is `https://izukinova.ai/extension/`.
 There is no published store ID in this repository. Direct store installation
 needs the owner's Chrome Web Store developer account or Edge Partner Center
 account, submission and store approval. Browser confirmation remains required.
@@ -18,8 +18,8 @@ Suggested listing:
 - Name: Izuki — AI beside your page
 - Summary: Ask about the page with Izuki or an AI tab you connect. Keep the
   conversation beside your browser and choose what page context to share.
-- Website: https://nova-izuki.github.io/izuki/
-- Privacy: https://nova-izuki.github.io/izuki/extension/privacy.html
+- Website: https://izukinova.ai/
+- Privacy: https://izukinova.ai/extension/privacy.html
 - Support: https://github.com/nova-izuki/izuki/issues
 - Description: Open Izuki's panel beside a page, ask a question, compare tabs you
   choose, and continue the conversation. Connect Izuki on your Windows PC or an

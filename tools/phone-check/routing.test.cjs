@@ -109,5 +109,61 @@ is("standalone phone reminder stays local", requestLane("remind me to email Sam"
 is("web scraping uses backend without a device-choice question", requestLane("scrape https://example.com", false, true), "pc");
 is("link extraction uses backend even with phone apps configured", requestLane("extract the table from https://example.com", true, true), "pc");
 is("unpaired phone never pretends it read a website", requestLane("summarize https://example.com", true, false), "web-unavailable");
+
+console.log("the Android app does phone jobs itself (the phone agent):");
+// eslint-disable-next-line no-new-func
+const agent = new Function("window", source + "; return { phoneAgentLane, requestLane };")({
+  IzukiNative: { installed: () => true, platform: () => "android" }, IzukiAgent: {},
+});
+const onPhone = (s, apps = false, pc = true) => agent.phoneAgentLane(s, agent.requestLane(s, apps, pc));
+for (const s of [
+  "check what's taking space on my phone", "what's taking up so much storage", "free up space", "how much battery do I have",
+  "turn on dark mode", "turn off wifi", "open YouTube", "play some music", "take a screenshot", "open settings on my phone",
+  "check up what is taking lotta storage on my phone", "connect to my bluetooth speaker",
+]) is(JSON.stringify(s) + " → phone agent", onPhone(s), true);
+for (const s of [
+  "open YouTube on my PC", "free up space on my computer", "hello", "tell me a joke", "what's the weather today",
+  "remind me to call mum at 6", "set an alarm for 7", "read my Gmail", "put my windows side by side",
+  "summarize https://example.com", "who won the game last night",
+]) is(JSON.stringify(s) + " is not a phone job", onPhone(s), false);
+// eslint-disable-next-line no-new-func
+const web = new Function("window", source + "; return { phoneAgentLane, requestLane };")({});
+is("a browser (no Android app) never runs the agent", web.phoneAgentLane("open YouTube", web.requestLane("open YouTube", false, true)), false);
+
+console.log("Google Search only when the question needs it (it slows every answer):");
+const webStart = html.indexOf("  const WEB_WORDS = ");
+const webEnd = html.indexOf("  const usesGemini = ", webStart);
+if (webStart < 0 || webEnd < 0) throw new Error("could not find needsWeb in index.html");
+// eslint-disable-next-line no-new-func
+const searchFor = (lang) => new Function("speechLanguage", html.slice(webStart, webEnd) + "; return needsWeb;")(lang);
+const needsWeb = searchFor("auto");
+const asked = (...lines) => lines.map((text) => ({ role: "user", parts: [{ text }] }));
+for (const q of ["what's the weather today", "Is it raining in London?", "who won the match last night", "news about the election", "¿Va a llover mañana?", "quel temps fait-il demain", "what's the top event in Houston today", "anything happening in Houston this weekend", "top headlines right now", "any concerts in Houston tonight", "what are the pharmacy's opening hours", "is the shop closed today"]) {
+  is(JSON.stringify(q) + " searches", needsWeb(asked(q)), true);
+}
+// Everyday phrasing used to drag Google Search (and its extra seconds) into
+// plain chat: "what's", and any "hours" at all.
+for (const q of ["hi", "tell me a joke", "make that shorter", "write me a poem about the sea", "what's up", "what's your favourite colour", "it took me two hours to get here"]) {
+  is(JSON.stringify(q) + " answers without search", needsWeb(asked(q)), false);
+}
+// Facts and picks a model half-remembers (the owner saw "not offered" on these).
+for (const q of ["what's the best VR game", "who made Minecraft", "how tall is the Eiffel Tower", "tell me about the Quest 3S", "which is better, Quest 3 or 3S?", "top 5 horror movies", "when was the iPhone released", "is the Quest 3 worth it", "what's the fastest car in the world"]) {
+  is(JSON.stringify(q) + " searches", needsWeb(asked(q)), true);
+}
+is("a follow-up keeps the search (“and in Paris?”)", needsWeb(asked("what's the weather in London", "and in Paris?")), true);
+is("a language the lists don't cover leaves it to Gemini", searchFor("yoruba")(asked("bawo ni")), true);
+
+console.log("the screen assistant: what's on the screen, explained:");
+const screenStart = html.indexOf("  const SCREEN_HELP = ");
+const screenEnd = html.indexOf("  const SCREEN_SYSTEM = ", screenStart);
+if (screenStart < 0 || screenEnd < 0) throw new Error("could not find SCREEN_HELP in index.html");
+// eslint-disable-next-line no-new-func
+const wantsScreenHelp = new Function(html.slice(screenStart, screenEnd) + "; return wantsScreenHelp;")();
+for (const q of ["explain this", "what does this mean", "what's this?", "what is this error", "help me with this page", "summarize this article", "translate this", "what's on my screen", "what am I looking at", "read this for me", "check this message"]) {
+  is(JSON.stringify(q) + " is about the screen", wantsScreenHelp(q), true);
+}
+for (const q of ["what's the weather", "open YouTube", "tell me a joke", "what is love", "explain quantum physics", "what's this week's news"]) {
+  is(JSON.stringify(q) + " is not", wantsScreenHelp(q), false);
+}
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);

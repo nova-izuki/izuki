@@ -177,6 +177,10 @@ pub struct Settings {
     /// and it goes in, tidied. Nothing is sent or submitted.
     #[serde(default = "default_hotkey_dictate")]
     pub hotkey_dictate: String,
+    /// Press anywhere: the ask bar opens near the top of the screen (one box,
+    /// type and Enter) — like the ChatGPT/Gemini/Claude desktop apps.
+    #[serde(default = "default_hotkey_ask")]
+    pub hotkey_ask: String,
     /// Tidy dictation before it's typed: fillers ("um", "you know"), false
     /// starts and repeated words taken out, grammar and punctuation fixed.
     /// Off: exactly the words heard.
@@ -278,8 +282,14 @@ pub struct Settings {
     pub island_enabled: bool,
     /// The Island stays at the top like an iPhone's Dynamic Island — a black
     /// pill that grows with what's happening — not only when the mouse goes up.
-    #[serde(default = "default_true")]
+    /// Off by default (2026-11-15): nothing at all until the mouse reaches the
+    /// top of the screen, then it slides down.
+    #[serde(default)]
     pub island_always: bool,
+    /// The always-on sliver was switched off once for everyone (1.0.217): the
+    /// owner wanted the Island fully hidden until the mouse reaches the top.
+    #[serde(default)]
+    pub island_hidden_v1: bool,
     /// The Island can be dragged anywhere on screen (off: a strip along the top).
     #[serde(default)]
     pub island_free: bool,
@@ -298,6 +308,28 @@ pub struct Settings {
     /// How big the Island is: "small", "normal" or "large".
     #[serde(default = "default_island_size")]
     pub island_size: String,
+    /// Glass opacity, percent (50–100).
+    #[serde(default = "default_island_opacity")]
+    pub island_opacity: u8,
+    /// Glass blur in px (0–24; 0 is the low-power default).
+    #[serde(default = "default_island_blur")]
+    pub island_blur: u8,
+    /// Accent colour for the rim and glow (#rrggbb).
+    #[serde(default = "default_island_accent")]
+    pub island_accent: String,
+    /// Draw the Island's soft shadow (off for a flatter, cheaper look).
+    #[serde(default = "default_true")]
+    pub island_shadow: bool,
+    /// A brighter, frostier glass for the Screen notch and Float.
+    #[serde(default)]
+    pub island_light_glass: bool,
+    /// Springy transitions; off for a calm/low-power Island.
+    #[serde(default = "default_true")]
+    pub island_motion: bool,
+    /// Open the Island into the live task panel when a task starts. Off keeps
+    /// the compact progress notch, so gaming or music is not interrupted.
+    #[serde(default)]
+    pub island_auto_expand: bool,
     /// Press "Skip ad" on YouTube by itself (off until turned on).
     #[serde(default)]
     pub auto_skip_ads: bool,
@@ -685,6 +717,13 @@ pub struct Settings {
     /// and brings it back when the session ends. Off until turned on.
     #[serde(default)]
     pub focus_dims: bool,
+    /// Sites Izuki may act in even though they look like a bank, payment,
+    /// health, government or sign-in page (siteaccess.rs). Hosts, lower case.
+    #[serde(default)]
+    pub sites_allowed: Vec<String>,
+    /// Sites Izuki never clicks or types in, whatever is asked (siteaccess.rs).
+    #[serde(default)]
+    pub sites_blocked: Vec<String>,
     /// The user's town or city, for the weather glance ("" = from memory).
     #[serde(default)]
     pub home_city: String,
@@ -840,6 +879,18 @@ fn default_island_size() -> String {
     "normal".into()
 }
 
+fn default_island_opacity() -> u8 {
+    94
+}
+
+fn default_island_blur() -> u8 {
+    0
+}
+
+fn default_island_accent() -> String {
+    "#22d3ee".into()
+}
+
 fn default_island_wave() -> String {
     "auto".into()
 }
@@ -881,6 +932,12 @@ fn default_hotkey_voice() -> String {
     "Ctrl+Super+Space".into()
 }
 
+fn default_hotkey_ask() -> String {
+    // What the ChatGPT, Gemini and Claude desktop apps use. If another app
+    // already holds it (PowerToys Run), the Shortcuts list says so.
+    "Alt+Space".into()
+}
+
 fn default_hotkey_dictate() -> String {
     // Nothing else on Windows uses this, and it's reachable one-handed.
     // NOT Ctrl+Shift+Space: that is the draw key, and two features on one
@@ -900,11 +957,22 @@ impl Settings {
     /// Fill in any provider the config file predates, so upgrades never drop
     /// a newly supported brain.
     pub fn heal(&mut self) {
+        // Sites: plain hosts, no repeats, and a block wins over a yes.
+        crate::siteaccess::tidy(&mut self.sites_allowed);
+        crate::siteaccess::tidy(&mut self.sites_blocked);
+        let blocked = self.sites_blocked.clone();
+        self.sites_allowed.retain(|h| !blocked.contains(h));
         if !["mouse", "precision"].contains(&self.control_style.as_str()) { self.control_style = "mouse".into(); }
         // The always-on desktop mate is retired (it slowed PCs down; the
         // moving characters replace it): it stays off.
         self.mate_enabled = false;
         self.mate_reset_v2 = true;
+        // The Island hides until the mouse reaches the top: once for
+        // everyone; turning "Always show" back on afterwards is kept.
+        if !self.island_hidden_v1 {
+            self.island_always = false;
+            self.island_hidden_v1 = true;
+        }
         // The old drawn 3D faces became real 3D models: the nearest one, by voice.
         let male = crate::tv::voice_is_male(self);
         if self.orb_style == "holo3d" { self.orb_style = if male { "model:holo-male" } else { "model:holo-female" }.into(); }
@@ -929,8 +997,12 @@ impl Settings {
         if !self.edge_glow { self.glow_only = false; }
         if !["liquid", "ferrofluid", "dew", "ripple", "constellation", "particles", "face", "ferro"].contains(&self.orb_style.as_str()) && !face_ok(&self.orb_style) && !toon_ok(&self.orb_style) { self.orb_style = "liquid".into(); }
         if !["auto", "silk", "bars", "mirror", "neon", "dots"].contains(&self.island_wave.as_str()) { self.island_wave = default_island_wave(); }
-        if !["default", "glass", "bubble", "squircle", "outline", "aero", "nova", "windows", "dot", "strip"].contains(&self.island_style.as_str()) { self.island_style = default_island_style(); }
+        if !["default", "glass", "bubble", "squircle", "outline", "aero", "nova", "windows", "dot", "strip", "notch", "float"].contains(&self.island_style.as_str()) { self.island_style = default_island_style(); }
         if !["small", "normal", "large"].contains(&self.island_size.as_str()) { self.island_size = default_island_size(); }
+        self.island_opacity = self.island_opacity.clamp(50, 100);
+        self.island_blur = self.island_blur.min(24);
+        let accent = self.island_accent.trim().to_ascii_lowercase();
+        self.island_accent = if accent.len() == 7 && accent.starts_with('#') && accent[1..].chars().all(|c| c.is_ascii_hexdigit()) { accent } else { default_island_accent() };
         self.orb_response = if self.orb_response.is_finite() { self.orb_response.clamp(0.5, 1.5) } else { 1.0 };
         let defaults = Self::default();
         for d in defaults.providers {
@@ -1023,13 +1095,14 @@ impl Settings {
     fn unclash_hotkeys(&mut self) {
         let defaults = Settings::default();
         // Most important first: whoever is earlier keeps the chord.
-        let mine: [(fn(&mut Settings) -> &mut String, fn(&Settings) -> &String); 6] = [
+        let mine: [(fn(&mut Settings) -> &mut String, fn(&Settings) -> &String); 7] = [
             (|s| &mut s.hotkey_draw, |d| &d.hotkey_draw),
             (|s| &mut s.hotkey_voice, |d| &d.hotkey_voice),
             (|s| &mut s.hotkey_panic, |d| &d.hotkey_panic),
             (|s| &mut s.hotkey_quickdraw, |d| &d.hotkey_quickdraw),
             (|s| &mut s.hotkey_dictate, |d| &d.hotkey_dictate),
             (|s| &mut s.hotkey_replay, |d| &d.hotkey_replay),
+            (|s| &mut s.hotkey_ask, |d| &d.hotkey_ask),
         ];
         let same = |a: &str, b: &str| a.trim().eq_ignore_ascii_case(b.trim());
         let mut taken: Vec<String> = Vec::new();
@@ -1114,7 +1187,11 @@ impl Default for Settings {
                 },
                 ProviderConfig {
                     id: ProviderId::NineRouter,
-                    label: "9Router (local, free providers)".into(),
+                    // OmniRoute (github.com/diegosouzapw/OmniRoute) grew out of
+                    // 9Router and listens on the same address, so this brain
+                    // reaches either one; with OmniRoute, model "auto" lets it
+                    // pick a free model you've connected.
+                    label: "9Router or OmniRoute (local, free providers)".into(),
                     base_url: "http://localhost:20128/v1".into(),
                     // Kiro AI's `kr/` models, routed through 9Router — Claude
                     // reads images natively, and it's one of the few free
@@ -1177,6 +1254,7 @@ impl Default for Settings {
             wake_sensitivity: default_wake_sensitivity(),
             hotkey_quickdraw: default_hotkey_quickdraw(),
             hotkey_dictate: default_hotkey_dictate(),
+            hotkey_ask: default_hotkey_ask(),
             dictate_tidy: true,
             freeze_screen: true,
             magnetic_hand: true,
@@ -1212,11 +1290,19 @@ impl Default for Settings {
             app_theme_color: String::new(),
             flows_keep_days: default_flows_keep_days(),
             island_suggestions: true,
-            island_always: true,
+            island_always: false,
+            island_hidden_v1: true,
             island_free: false,
             island_wave: default_island_wave(),
             island_style: default_island_style(),
             island_size: default_island_size(),
+            island_opacity: default_island_opacity(),
+            island_blur: default_island_blur(),
+            island_accent: default_island_accent(),
+            island_shadow: true,
+            island_light_glass: false,
+            island_motion: true,
+            island_auto_expand: false,
             auto_skip_ads: false,
             auto_reject_cookies: false,
             follow_hand_size: default_follow_hand_size(),
@@ -1324,6 +1410,8 @@ impl Default for Settings {
             screen_time_enabled: true,
             keep_activity: true,
             focus_dims: false,
+            sites_allowed: Vec::new(),
+            sites_blocked: Vec::new(),
             home_city: String::new(),
             learn_city: false,
             n8n_hooks: Vec::new(),
@@ -1388,6 +1476,7 @@ mod tests {
             ("talk", &s.hotkey_voice),
             ("quickdraw", &s.hotkey_quickdraw),
             ("dictate", &s.hotkey_dictate),
+            ("ask", &s.hotkey_ask),
         ];
         for (i, (name, combo)) in all.iter().enumerate() {
             assert!(!combo.trim().is_empty(), "{name} has no default shortcut");
@@ -1427,6 +1516,31 @@ mod tests {
     }
 
     #[test]
+    fn island_shape_studio_values_are_sane() {
+        let mut s = Settings::default();
+        assert_eq!(s.island_style, "default", "Classic stays the default look");
+        assert_eq!(s.island_opacity, 94);
+        assert_eq!(s.island_blur, 0);
+        assert_eq!(s.island_accent, "#22d3ee");
+        assert!(!s.island_light_glass, "smoked glass stays the default");
+        assert!(!s.island_auto_expand, "a task must not open the panel unless asked");
+
+        s.island_style = "notch".into();
+        s.island_opacity = 5;
+        s.island_blur = 255;
+        s.island_accent = "not-a-colour".into();
+        s.heal();
+        assert_eq!(s.island_style, "notch", "the new shape survives a heal");
+        assert_eq!(s.island_opacity, 50);
+        assert_eq!(s.island_blur, 24);
+        assert_eq!(s.island_accent, "#22d3ee");
+
+        s.island_style = "ushape".into();
+        s.heal();
+        assert_eq!(s.island_style, "default", "a stale shape falls back to Classic");
+    }
+
+    #[test]
     fn devtools_draw_hotkey_is_migrated() {
         let mut s = Settings::default();
         s.hotkey_draw = "Ctrl+Shift+I".into();
@@ -1460,6 +1574,11 @@ mod tests {
         assert_eq!(s.orb_response, 1.0);
         // The always-on desktop mate is retired: it stays off.
         assert!(!s.mate_enabled && s.mate_reset_v2);
+        // The Island hides until the mouse goes up, once; a later "Always show" is kept.
+        assert!(!s.island_always && s.island_hidden_v1);
+        s.island_always = true;
+        s.heal();
+        assert!(s.island_always, "a choice made after the switch stays");
         s.mate_enabled = true;
         s.heal();
         assert!(!s.mate_enabled);

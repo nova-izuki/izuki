@@ -28,6 +28,7 @@ Last updated: 2026-11-08 (Claude): PRs #33, #35 and #36 merged; 1.0.198 prepared
 
 | Item | Agent | Where | State | Verified by | In 1.0.198 |
 | --- | --- | --- | --- | --- | --- |
+| Native overlay rescue and independent emergency escape (owner resumed Codex, 2026-11-15) | Codex continuing Claude | `codex/overlay-rescue`, issue #109 | local native probe passed; CI/review pending | `docs/VALIDATION-2026-11-15-overlay-rescue.md`; no installed-app claim | next release |
 | Eye Control safety: native emergency stop (Ctrl+Alt+Shift+X, Stop button, voice), physical mouse/keyboard takeover, watchdog, held-input release | Claude | `milestone-196` (PR #31) | merged | 619 Rust tests (8 `airsafe`); real-Windows `eye_stop_probe` 6/6, owner away | yes |
 | Eye accuracy check: 5 fresh dots measure real error and wobble; the mouse moves only at ≤8% error and ≤3.5% wobble, to a steady look | Claude | `milestone-196` (PR #31) | merged | `test:eye` (accuracy cases) | yes, preview only (next row) |
 | Eye release gate: installed builds draw the eye cursor only; the eye lane never moves the mouse until the supervised session passes | Claude | `milestone-196` (PR #36) | merged | `tsc`, `test:eye`, `airsafe` tests; CI | yes |

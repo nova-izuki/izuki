@@ -127,11 +127,18 @@ impl Store {
     }
 
     pub fn set_settings(&self, mut next: Settings) -> Settings {
+        // One lock for the read and the write: nothing lands in between.
+        let mut guard = self.settings.write();
         {
             // The panel saves its whole copy of the settings, and it may not
             // have heard yet that a phone paired in the background — don't
             // let that stale copy unpair it. (Unpairing makes a new code.)
-            let current = self.settings.read();
+            let current = &*guard;
+            // The site rules change only through change_sites, one site at a
+            // time: a whole-settings save, however stale, never brings back
+            // a site that was just blocked (siteaccess.rs).
+            next.sites_allowed = current.sites_allowed.clone();
+            next.sites_blocked = current.sites_blocked.clone();
             // FL Studio's link key lives in the script written into FL: a
             // panel that never heard of it mustn't wipe it.
             if next.fl_key.is_empty() && !current.fl_key.is_empty() {
@@ -153,9 +160,24 @@ impl Store {
             }
         }
         next.heal();
-        *self.settings.write() = next.clone();
+        *guard = next.clone();
+        drop(guard);
         let _ = write_json(&self.dir.join("settings.json"), &next);
         next
+    }
+
+    /// The only way the site rules change: `f` edits the stored settings
+    /// under the lock, so a change said by voice and one pressed in the panel
+    /// at the same moment both stay.
+    pub fn change_sites<R>(&self, f: impl FnOnce(&mut Settings) -> R) -> (Settings, R) {
+        let mut guard = self.settings.write();
+        let mut next = guard.clone();
+        let out = f(&mut next);
+        next.heal();
+        *guard = next.clone();
+        drop(guard);
+        let _ = write_json(&self.dir.join("settings.json"), &next);
+        (next, out)
     }
 
     // ------------------------------------------------------------------- flows

@@ -1115,6 +1115,158 @@ pub fn read_xlsx(path: &Path) -> Result<String> {
 
 // ---- new files ------------------------------------------------------------------------
 
+/// A new PowerPoint deck from plain text: "# " starts a slide with that
+/// title, "- " lines are its bullets, other lines plain text on it (a deck
+/// with no "# " gets its first line as the title). Every part PowerPoint
+/// needs is there (presentation, master, layout, theme, slides, properties),
+/// so it opens as a real deck, never text saved under a .pptx name.
+pub fn new_pptx(text: &str) -> Result<Vec<u8>> {
+    // (title, lines) per slide; lines keep their "bullet or not".
+    let mut slides: Vec<(String, Vec<(bool, String)>)> = Vec::new();
+    for line in text.lines() {
+        let line = line.trim_end();
+        if let Some(t) = line.strip_prefix("# ").or_else(|| line.strip_prefix("## ")) {
+            slides.push((t.trim().to_string(), Vec::new()));
+            continue;
+        }
+        if line.trim().is_empty() {
+            continue;
+        }
+        if slides.is_empty() {
+            slides.push((line.trim().to_string(), Vec::new()));
+            continue;
+        }
+        let item = match line.trim_start().strip_prefix("- ").or_else(|| line.trim_start().strip_prefix("* ")) {
+            Some(b) => (true, b.trim().to_string()),
+            None => (false, line.trim().to_string()),
+        };
+        if let Some(last) = slides.last_mut() {
+            last.1.push(item);
+        }
+    }
+    if slides.is_empty() {
+        slides.push((String::new(), Vec::new()));
+    }
+    // Never quietly cut short: a deck that big is refused, said so.
+    if slides.len() > 500 {
+        bail!("that's {} slides; a new deck can have up to 500 — split it into smaller decks", slides.len());
+    }
+
+    const NS: &str = "xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\" xmlns:p=\"http://schemas.openxmlformats.org/presentationml/2006/main\"";
+    const REL: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+    const CT: &str = "application/vnd.openxmlformats-officedocument.presentationml";
+    let group = "<p:nvGrpSpPr><p:cNvPr id=\"1\" name=\"\"/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x=\"0\" y=\"0\"/><a:ext cx=\"0\" cy=\"0\"/><a:chOff x=\"0\" y=\"0\"/><a:chExt cx=\"0\" cy=\"0\"/></a:xfrm></p:grpSpPr>";
+    // A placeholder shape: the title, or the body (idx 1), at its place.
+    let shape = |id: u32, name: &str, ph: &str, (x, y, cx, cy): (u32, u32, u32, u32), paras: &str| {
+        format!(
+            "<p:sp><p:nvSpPr><p:cNvPr id=\"{id}\" name=\"{name}\"/><p:cNvSpPr><a:spLocks noGrp=\"1\"/></p:cNvSpPr><p:nvPr>{ph}</p:nvPr></p:nvSpPr>\
+<p:spPr><a:xfrm><a:off x=\"{x}\" y=\"{y}\"/><a:ext cx=\"{cx}\" cy=\"{cy}\"/></a:xfrm></p:spPr><p:txBody><a:bodyPr><a:normAutofit/></a:bodyPr><a:lstStyle/>{paras}</p:txBody></p:sp>"
+        )
+    };
+    let title_box = (838_200, 365_125, 10_515_600, 1_325_563);
+    let body_box = (838_200, 1_825_625, 10_515_600, 4_351_338);
+    let empty = "<a:p><a:endParaRPr lang=\"en-US\"/></a:p>";
+
+    let master = format!(
+        "{XML_HEAD}<p:sldMaster {NS}><p:cSld><p:bg><p:bgRef idx=\"1001\"><a:schemeClr val=\"bg1\"/></p:bgRef></p:bg><p:spTree>{group}{}{}</p:spTree></p:cSld>\
+<p:clrMap bg1=\"lt1\" tx1=\"dk1\" bg2=\"lt2\" tx2=\"dk2\" accent1=\"accent1\" accent2=\"accent2\" accent3=\"accent3\" accent4=\"accent4\" accent5=\"accent5\" accent6=\"accent6\" hlink=\"hlink\" folHlink=\"folHlink\"/>\
+<p:sldLayoutIdLst><p:sldLayoutId id=\"2147483649\" r:id=\"rId1\"/></p:sldLayoutIdLst>\
+<p:txStyles><p:titleStyle><a:lvl1pPr><a:defRPr sz=\"4400\"><a:solidFill><a:schemeClr val=\"tx1\"/></a:solidFill><a:latin typeface=\"+mj-lt\"/></a:defRPr></a:lvl1pPr></p:titleStyle>\
+<p:bodyStyle><a:lvl1pPr marL=\"228600\" indent=\"-228600\"><a:buFont typeface=\"Arial\"/><a:buChar char=\"&#8226;\"/><a:defRPr sz=\"2800\"><a:solidFill><a:schemeClr val=\"tx1\"/></a:solidFill><a:latin typeface=\"+mn-lt\"/></a:defRPr></a:lvl1pPr></p:bodyStyle>\
+<p:otherStyle><a:lvl1pPr><a:defRPr sz=\"1800\"><a:solidFill><a:schemeClr val=\"tx1\"/></a:solidFill><a:latin typeface=\"+mn-lt\"/></a:defRPr></a:lvl1pPr></p:otherStyle></p:txStyles></p:sldMaster>",
+        shape(2, "Title Placeholder 1", "<p:ph type=\"title\"/>", title_box, empty),
+        shape(3, "Text Placeholder 2", "<p:ph type=\"body\" idx=\"1\"/>", body_box, empty),
+    );
+    let layout = format!(
+        "{XML_HEAD}<p:sldLayout {NS} type=\"obj\" preserve=\"1\"><p:cSld name=\"Title and Content\"><p:spTree>{group}{}{}</p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sldLayout>",
+        shape(2, "Title 1", "<p:ph type=\"title\"/>", title_box, empty),
+        shape(3, "Content Placeholder 2", "<p:ph idx=\"1\"/>", body_box, empty),
+    );
+    let theme = format!(
+        "{XML_HEAD}<a:theme xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" name=\"Izuki\"><a:themeElements>\
+<a:clrScheme name=\"Izuki\"><a:dk1><a:sysClr val=\"windowText\" lastClr=\"000000\"/></a:dk1><a:lt1><a:sysClr val=\"window\" lastClr=\"FFFFFF\"/></a:lt1>\
+<a:dk2><a:srgbClr val=\"17142A\"/></a:dk2><a:lt2><a:srgbClr val=\"F0EEF9\"/></a:lt2><a:accent1><a:srgbClr val=\"7C5CFF\"/></a:accent1><a:accent2><a:srgbClr val=\"4ECDC4\"/></a:accent2>\
+<a:accent3><a:srgbClr val=\"F59E0B\"/></a:accent3><a:accent4><a:srgbClr val=\"10B981\"/></a:accent4><a:accent5><a:srgbClr val=\"EF4444\"/></a:accent5><a:accent6><a:srgbClr val=\"3B82F6\"/></a:accent6>\
+<a:hlink><a:srgbClr val=\"2563EB\"/></a:hlink><a:folHlink><a:srgbClr val=\"7C3AED\"/></a:folHlink></a:clrScheme>\
+<a:fontScheme name=\"Izuki\"><a:majorFont><a:latin typeface=\"Segoe UI Semibold\"/><a:ea typeface=\"\"/><a:cs typeface=\"\"/></a:majorFont><a:minorFont><a:latin typeface=\"Segoe UI\"/><a:ea typeface=\"\"/><a:cs typeface=\"\"/></a:minorFont></a:fontScheme>\
+<a:fmtScheme name=\"Izuki\"><a:fillStyleLst><a:solidFill><a:schemeClr val=\"phClr\"/></a:solidFill><a:solidFill><a:schemeClr val=\"phClr\"/></a:solidFill><a:solidFill><a:schemeClr val=\"phClr\"/></a:solidFill></a:fillStyleLst>\
+<a:lnStyleLst><a:ln w=\"6350\"><a:solidFill><a:schemeClr val=\"phClr\"/></a:solidFill></a:ln><a:ln w=\"12700\"><a:solidFill><a:schemeClr val=\"phClr\"/></a:solidFill></a:ln><a:ln w=\"19050\"><a:solidFill><a:schemeClr val=\"phClr\"/></a:solidFill></a:ln></a:lnStyleLst>\
+<a:effectStyleLst><a:effectStyle><a:effectLst/></a:effectStyle><a:effectStyle><a:effectLst/></a:effectStyle><a:effectStyle><a:effectLst/></a:effectStyle></a:effectStyleLst>\
+<a:bgFillStyleLst><a:solidFill><a:schemeClr val=\"phClr\"/></a:solidFill><a:solidFill><a:schemeClr val=\"phClr\"/></a:solidFill><a:solidFill><a:schemeClr val=\"phClr\"/></a:solidFill></a:bgFillStyleLst></a:fmtScheme>\
+</a:themeElements><a:objectDefaults/><a:extraClrSchemeLst/></a:theme>"
+    );
+
+    let mut parts: Vec<(String, String)> = Vec::new();
+    let mut overrides = String::new();
+    let mut pres_rels = format!("<Relationship Id=\"rId1\" Type=\"{REL}/slideMaster\" Target=\"slideMasters/slideMaster1.xml\"/><Relationship Id=\"rId2\" Type=\"{REL}/theme\" Target=\"theme/theme1.xml\"/>");
+    let mut ids = String::new();
+    for (i, (title, lines)) in slides.iter().enumerate() {
+        let n = i + 1;
+        let para = |bullet: bool, words: &str| {
+            let ppr = if bullet { "" } else { "<a:pPr marL=\"0\" indent=\"0\"><a:buNone/></a:pPr>" };
+            format!("<a:p>{ppr}<a:r><a:rPr lang=\"en-US\" dirty=\"0\"/><a:t>{}</a:t></a:r></a:p>", escape(words))
+        };
+        let title_paras = if title.is_empty() { empty.to_string() } else { para(true, title) };
+        let body: String = if lines.is_empty() { empty.to_string() } else { lines.iter().map(|(b, w)| para(*b, w)).collect() };
+        let slide = format!(
+            "{XML_HEAD}<p:sld {NS}><p:cSld><p:spTree>{group}{}{}</p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sld>",
+            shape(2, "Title 1", "<p:ph type=\"title\"/>", title_box, &title_paras),
+            shape(3, "Content Placeholder 2", "<p:ph idx=\"1\"/>", body_box, &body),
+        );
+        parts.push((format!("ppt/slides/slide{n}.xml"), slide));
+        parts.push((
+            format!("ppt/slides/_rels/slide{n}.xml.rels"),
+            format!("{XML_HEAD}<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"{REL}/slideLayout\" Target=\"../slideLayouts/slideLayout1.xml\"/></Relationships>"),
+        ));
+        overrides.push_str(&format!("<Override PartName=\"/ppt/slides/slide{n}.xml\" ContentType=\"{CT}.slide+xml\"/>"));
+        pres_rels.push_str(&format!("<Relationship Id=\"rId{}\" Type=\"{REL}/slide\" Target=\"slides/slide{n}.xml\"/>", n + 2));
+        ids.push_str(&format!("<p:sldId id=\"{}\" r:id=\"rId{}\"/>", 255 + n, n + 2));
+    }
+
+    let mut all: Vec<(String, String)> = vec![
+        (
+            "[Content_Types].xml".into(),
+            format!(
+                "{XML_HEAD}<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\"><Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/><Default Extension=\"xml\" ContentType=\"application/xml\"/>\
+<Override PartName=\"/ppt/presentation.xml\" ContentType=\"{CT}.presentation.main+xml\"/><Override PartName=\"/ppt/slideMasters/slideMaster1.xml\" ContentType=\"{CT}.slideMaster+xml\"/>\
+<Override PartName=\"/ppt/slideLayouts/slideLayout1.xml\" ContentType=\"{CT}.slideLayout+xml\"/><Override PartName=\"/ppt/theme/theme1.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.theme+xml\"/>\
+{overrides}<Override PartName=\"/docProps/core.xml\" ContentType=\"application/vnd.openxmlformats-package.core-properties+xml\"/><Override PartName=\"/docProps/app.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.extended-properties+xml\"/></Types>"
+            ),
+        ),
+        (
+            "_rels/.rels".into(),
+            format!("{XML_HEAD}<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"{REL}/officeDocument\" Target=\"ppt/presentation.xml\"/><Relationship Id=\"rId2\" Type=\"http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties\" Target=\"docProps/core.xml\"/><Relationship Id=\"rId3\" Type=\"{REL}/extended-properties\" Target=\"docProps/app.xml\"/></Relationships>"),
+        ),
+        (
+            "docProps/core.xml".into(),
+            format!("{XML_HEAD}<cp:coreProperties xmlns:cp=\"http://schemas.openxmlformats.org/package/2006/metadata/core-properties\" xmlns:dc=\"http://purl.org/dc/elements/1.1/\"><dc:title>{}</dc:title><dc:creator>Izuki</dc:creator></cp:coreProperties>", escape(&slides[0].0)),
+        ),
+        (
+            "docProps/app.xml".into(),
+            format!("{XML_HEAD}<Properties xmlns=\"http://schemas.openxmlformats.org/officeDocument/2006/extended-properties\"><Application>Izuki</Application><Slides>{}</Slides></Properties>", slides.len()),
+        ),
+        (
+            "ppt/presentation.xml".into(),
+            format!("{XML_HEAD}<p:presentation {NS} saveSubsetFonts=\"1\"><p:sldMasterIdLst><p:sldMasterId id=\"2147483648\" r:id=\"rId1\"/></p:sldMasterIdLst><p:sldIdLst>{ids}</p:sldIdLst><p:sldSz cx=\"12192000\" cy=\"6858000\"/><p:notesSz cx=\"6858000\" cy=\"9144000\"/></p:presentation>"),
+        ),
+        ("ppt/_rels/presentation.xml.rels".into(), format!("{XML_HEAD}<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">{pres_rels}</Relationships>")),
+        ("ppt/slideMasters/slideMaster1.xml".into(), master),
+        (
+            "ppt/slideMasters/_rels/slideMaster1.xml.rels".into(),
+            format!("{XML_HEAD}<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"{REL}/slideLayout\" Target=\"../slideLayouts/slideLayout1.xml\"/><Relationship Id=\"rId2\" Type=\"{REL}/theme\" Target=\"../theme/theme1.xml\"/></Relationships>"),
+        ),
+        ("ppt/slideLayouts/slideLayout1.xml".into(), layout),
+        (
+            "ppt/slideLayouts/_rels/slideLayout1.xml.rels".into(),
+            format!("{XML_HEAD}<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"{REL}/slideMaster\" Target=\"../slideMasters/slideMaster1.xml\"/></Relationships>"),
+        ),
+        ("ppt/theme/theme1.xml".into(), theme),
+    ];
+    all.extend(parts);
+    let refs: Vec<(&str, String)> = all.iter().map(|(n, b)| (n.as_str(), b.clone())).collect();
+    zip_parts(&refs)
+}
+
 fn zip_parts(parts: &[(&str, String)]) -> Result<Vec<u8>> {
     let mut out = std::io::Cursor::new(Vec::new());
     {
@@ -1220,7 +1372,16 @@ pub fn new_xlsx(text: &str) -> Result<Vec<u8>> {
 // ---- small helpers ------------------------------------------------------------------
 
 fn escape(s: &str) -> String {
-    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
+    // Characters XML 1.0 can't hold at all (stray control codes pasted from a
+    // terminal) are left out: one of them makes Word, Excel or PowerPoint
+    // refuse the whole file.
+    s.chars()
+        .filter(|c| matches!(c, '\t' | '\n' | '\r') || (*c >= ' ' && !matches!(c, '\u{FFFE}' | '\u{FFFF}')))
+        .collect::<String>()
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
 }
 
 fn unescape(s: &str) -> String {
@@ -1438,6 +1599,33 @@ mod tests {
         assert!(text.contains("--- Sheet: Budget ---\nA1: Rent | B1: 900\nA2: Food | B2: =B1/3 → 300\n"), "{text}");
         assert!(text.contains("--- Sheet: Notes & more ---"), "{text}");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn makes_a_real_slide_deck_from_text() {
+        let deck = new_pptx("# Investigating sign-ins\nWhat Windows records\n- 4624: a sign-in\n- 4625: a failed try & why\n# What stands out\n- Bursts of failures <5 min>").unwrap();
+        validate_new("pptx", &deck).unwrap();
+        let pres = part(&deck, "ppt/presentation.xml");
+        assert_eq!(pres.matches("<p:sldId ").count(), 2, "one slide per # title");
+        let one = part(&deck, "ppt/slides/slide1.xml");
+        assert!(one.contains("<a:t>Investigating sign-ins</a:t>") && one.contains("<a:t>4625: a failed try &amp; why</a:t>"), "{one}");
+        assert!(one.contains("<a:buNone/></a:pPr><a:r><a:rPr lang=\"en-US\" dirty=\"0\"/><a:t>What Windows records"), "a plain line has no bullet");
+        assert!(part(&deck, "ppt/slides/slide2.xml").contains("Bursts of failures &lt;5 min&gt;"));
+        for needed in ["ppt/slideMasters/slideMaster1.xml", "ppt/slideLayouts/slideLayout1.xml", "ppt/theme/theme1.xml", "ppt/slides/_rels/slide2.xml.rels"] {
+            assert!(!part(&deck, needed).is_empty(), "{needed} is part of a real deck");
+        }
+        // …and it can be edited like any other deck.
+        let (edited, _) = edit_office(&deck, "pptx", &parse_edits("REPLACE: What stands out\nWITH: Patterns")).unwrap();
+        assert!(part(&edited, "ppt/slides/slide2.xml").contains("<a:t>Patterns</a:t>"));
+        // No "# ": the first line is the title. Nothing at all: one empty slide.
+        assert!(part(&new_pptx("Just a title\nand a line").unwrap(), "ppt/slides/slide1.xml").contains("<a:t>Just a title</a:t>"));
+        assert_eq!(part(&new_pptx("").unwrap(), "ppt/presentation.xml").matches("<p:sldId ").count(), 1);
+        // A stray control code (pasted from a terminal) is left out, never
+        // written into XML that PowerPoint would then refuse.
+        assert!(part(&new_pptx("# Bell\u{7} here").unwrap(), "ppt/slides/slide1.xml").contains("<a:t>Bell here</a:t>"));
+        // Too many slides is refused, never quietly cut short.
+        let huge: String = (0..501).map(|i| format!("# Slide {i}\n")).collect();
+        assert!(new_pptx(&huge).unwrap_err().to_string().contains("501 slides"));
     }
 
     #[test]

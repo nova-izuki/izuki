@@ -1,0 +1,13 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.novaizuki.vr",
+      "sha256_cert_fingerprints": [
+        "B9:FC:1E:3D:FB:AF:B9:39:92:69:B8:A7:A8:BA:01:36:4A:4E:51:B6:95:E7:0A:6D:99:B0:79:F3:C4:DD:9F:3E",
+        "40:FC:75:31:17:2A:DA:FF:E8:BF:94:B6:68:FD:7C:1D:B3:C4:DD:6C:56:EA:7B:26:B5:26:C5:F7:62:24:24:74"
+      ]
+    }
+  }
+]

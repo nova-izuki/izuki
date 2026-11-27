@@ -1,7 +1,7 @@
 # Safe Hands 🖐️
 
 **Accurate, checked mouse and keyboard actions for AI agents on Windows.**
-The hands behind [Izuki](https://nova-izuki.github.io/izuki/), as a small
+The hands behind [Izuki](https://izukinova.ai/), as a small
 Rust library you can use in your own agent. MIT licensed.
 
 An AI that drives a PC fails in predictable ways: it guesses pixels, the page
@@ -77,4 +77,4 @@ cargo run --example list_and_click -- "Sign in"
 ## License
 
 MIT — use it in anything, including commercial products. A mention of
-[Izuki](https://nova-izuki.github.io/izuki/) is appreciated.
+[Izuki](https://izukinova.ai/) is appreciated.

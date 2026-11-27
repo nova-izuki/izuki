@@ -21,9 +21,9 @@ assert.match(clarificationFor('answer all for me', false), /what should i answer
 assert.match(clarificationFor('answer this', false), /what should i answer/i);
 assert.match(clarificationFor('help me', false), /help with/i);
 assert.match(clarificationFor('continue', false), /help with/i);
-assert.match(clarificationFor('answer all these practice questions.', false), /practice or graded/i);
-assert.match(clarificationFor('answer all my questions about this document.', false), /practice or graded/i);
-assert.match(clarificationFor('explain all these graded questions', false), /practice or graded/i);
+assert.match(clarificationFor('answer all these practice questions.', false), /paste the questions/i);
+assert.match(clarificationFor('answer all my questions about this document.', false), /paste the questions/i);
+assert.match(clarificationFor('explain all these graded questions', false), /paste the questions/i);
 
 // A real follow-up is not interrupted with a question.
 assert.equal(clarificationFor('answer', true), null);
@@ -45,7 +45,7 @@ for (const said of [
   'answer the email from mom',
   'solve x^2 = 4',
 ]) assert.equal(clarificationFor(said, false), null, said);
-assert.match(clarificationFor('do the quiz', false), /practice or graded/i);
+assert.match(clarificationFor('do the quiz', false), /paste the questions/i);
 
 assert.equal(providerRefusal("I'm sorry, but I can't help with that."), true);
 assert.equal(providerRefusal("As an AI, I can't help with that."), true);
@@ -57,7 +57,7 @@ assert.doesNotMatch(friendlyProviderError('Used 4290 tokens of 6000 this minute;
 assert.equal(providerRefusal("I can't help with that."), true);
 assert.equal(providerRefusal("That answer is correct."), false);
 assert.equal(providerRefusal("I can help with that once you paste the question."), false);
-assert.match(PROVIDER_REFUSAL_NOTE, /won't complete or submit/i);
+assert.match(PROVIDER_REFUSAL_NOTE, /hand-in stays yours/i);
 
 // Raw fallback dumps must never become a wall of chat text.
 assert.equal(friendlyProviderError("Stopped."), "Stopped.");

@@ -578,6 +578,10 @@ fn handle(app: &AppHandle, mut req: tiny_http::Request) {
                 return json_reply(req, json!({ "text": "", "links": [] }));
             }
             eprintln!("[call] heard: {}", said.chars().take(80).collect::<String>());
+            // The phone may only call this a look if this PC really captured its
+            // screen while answering. Read before and after, so the receipt is a
+            // capture (or none), never the words of a reply.
+            let looks_before = crate::capture::looks_here();
             let reply = if matches!(said.to_lowercase().trim_matches(|c: char| !c.is_alphanumeric()), "stop" | "stop it" | "cancel") {
                 crate::brain::cancel_task();
                 let _ = app.emit(crate::events::STOP_SPEAKING, ());
@@ -604,7 +608,19 @@ fn handle(app: &AppHandle, mut req: tiny_http::Request) {
                 Some((a, t)) => (Some(a), Some(t)),
                 None => (None, None),
             };
-            json_reply(req, json!({ "text": reply.text, "links": reply.links, "audio": audio, "audio_type": audio_type }))
+            let captured = crate::capture::looks_here() > looks_before;
+            json_reply(
+                req,
+                json!({
+                    "text": reply.text,
+                    "links": reply.links,
+                    "audio": audio,
+                    "audio_type": audio_type,
+                    // Older phones ignore it; a phone that reads it never has to
+                    // guess whether the PC could see anything.
+                    "screen": { "device": "pc", "captured": captured },
+                }),
+            )
         }
         // Anything that can send a web request — an n8n workflow, Zapier,
         // IFTTT, a script — can hand Izuki a heads-up:

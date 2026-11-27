@@ -6,7 +6,7 @@ import { useDictation } from "../hooks/useDictation";
 import { isNoteStudyPrompt } from "../lib/notes";
 import { AIR_SLOTS, actionLabel, airBindings, parseAirVoice, slotLabel } from "../lib/airActions";
 import { autoFacts, matchLocalCommand, type LocalCommand } from "../lib/voiceCommands";
-import { answersInBackground, cancelChat, chatLane, directionsTask, looksLikeDirections, needsApps, needsScreen, recentHistory, remember, wantsBackground, wantsToWatch, type LaneResult } from "../lib/conversation";
+import { answerOnScreenPrompt, answersInBackground, cancelChat, chatLane, directionsTask, forcedDoIt, looksLikeDirections, MISSION_ADD, needsApps, needsScreen, recentHistory, remember, TUTOR_START, wantsBackground, wantsDirectAnswer, wantsToWatch, type LaneResult } from "../lib/conversation";
 import { speakable } from "../lib/speakable";
 import { parseInstant, type Instant } from "../lib/instant";
 import { isEcho, noteSaid, noteStillSaying } from "../lib/echo";
@@ -30,7 +30,7 @@ import {
   prefetchCloud,
 } from "../lib/naturalVoice";
 import { voiceFor } from "../lib/personas";
-import { holdMicForVoice, micIsHeadset, pickMicAhead, preloadSpeechInput, releaseMicForVoice, setKeepMicWhileTalking } from "../lib/speechInput";
+import { holdMicForVoice, micIsHeadset, onMicAdvice, pickMicAhead, preloadSpeechInput, releaseMicForVoice, setKeepMicWhileTalking } from "../lib/speechInput";
 import { api, EV, emit, IS_TAURI, on, type ResearchSource, type ResearchUpdate } from "../lib/ipc";
 import { useIzuki } from "../lib/store";
 import type { CaptionPayload, DrawSession, OrbState, SayPayload, Settings, TranscriptPayload } from "../lib/types";
@@ -603,18 +603,15 @@ function chime(up = true) {
 /** "ans", "answer?", "what's the answer", "answer pls" — on its own, that's
  * the question on the screen. */
 function answerOnScreen(t: string): string {
-  const bare = t.trim().replace(/[?.!]+$/, "").toLowerCase();
-  return /^(?:(?:the|what'?s the|whats the|give me the|tell me the|say the)\s+)?answers?(?:\s+(?:it|this|that|please|pls|now|quick|fast))?$/.test(bare)
-    ? "Answer the question on my screen directly. Give the answer first (including the option label if clearly visible), then explain why in one or two sentences. If the question or options are unreadable, say what you need to see. Do not start a walkthrough, offer Notes, or click or submit anything."
-    : t;
+  // Bare "answer" and the many ways people point at the question in front of
+  // them ("answer this", "what's the answer to number 3", "give ans").
+  return wantsDirectAnswer(t) ? answerOnScreenPrompt(t) : t;
 }
 
 // ---- teacher mode -----------------------------------------------------------
 // A lesson, not an answer key: Izuki explains each question with the pen,
 // lets the student answer, says whether they're right and why, and moves on
 // when they're ready. It never picks answers by itself.
-const TUTOR_START =
-  /^(?:(?:hey |ok |okay )?(?:nova|izuki|atlas)[,. ]*)?(?:please )?(?:(?:start|turn on|use|go into|switch to) )?(?:teacher|tutor|teaching) mode\b|^(?:please )?teach me (?:this|the|my) (?:questions?|worksheet)\b|^(?:be|act as|act like) my (?:teacher|tutor)\b|^help me (?:through|with) (?:this|the|my) worksheet\b/i;
 /** Asked for it to be kept: "…and save it to my notes", "put it in my notes", "take notes". */
 const SAVE_TO_NOTES = /\b(?:save|put|keep|add|store|write)\b.*\b(?:my|izuki|the|study)\s+notes?\b|\btake\s+(?:some\s+)?notes\b/i;
 /** "Don't save it to my notes", "no notes": the opposite (as notes.rs reads it). */
@@ -622,6 +619,10 @@ const NO_SAVE = /\b(?:don['’]?t|do\s+not|never|not)\s+(?:save|put|keep|add|sto
 const asksToSave = (t: string) => SAVE_TO_NOTES.test(t) && !NO_SAVE.test(t);
 const TUTOR_STOP = /^(?:please )?(?:stop|end|exit|quit|turn off|leave|close) (?:the )?(?:teacher|tutor|teaching) mode\b|^stop (?:teaching|tutoring)( me)?\b|^(?:that's|thats) enough (?:teaching|for today)\b/i;
 const TUTOR_FOR_MS = 20 * 60_000;
+
+/** Practical mode (practical.rs): the words that move a step between hands. */
+const PRACTICAL_TURN =
+  /^(?:ok(?:ay)?[,\s]+)?(?:i\s+did\s+it|i(?:'ve|\s+have)\s+done\s+it|did\s+it|done|finished|i\s+finished|you\s+do\s+(?:it|this\s+one|that\s+one|the\s+rest)|do\s+(?:it|this\s+one)\s+for\s+me|can\s+you\s+do\s+it|your\s+turn|let\s+me\s+(?:do\s+(?:it|this\s+one|the\s+rest)|try)|i'?ll\s+do\s+(?:it|this\s+one|the\s+rest)|my\s+turn|(?:just\s+)?do\s+the\s+rest|you\s+finish\s+it|finish\s+it\s+for\s+me|teach\s+me\s+instead|i\s+want\s+to\s+do\s+it\s+myself|(?:let'?s\s+)?take\s+turns|do\s+it\s+with\s+me)[.!]*$/i;
 
 function tutorPrompt(said: string, first: boolean): string {
   if (first) {
@@ -645,6 +646,8 @@ function tutorPrompt(said: string, first: boolean): string {
 }
 
 export function VoiceEngine() {
+  // A microphone Windows has muted or turned right down: said once, with the fix.
+  useEffect(() => onMicAdvice((advice) => void say(advice, useIzuki.getState().settings, "calm")), []);
   useEffect(() => {
     try {
       if (localStorage.getItem("izuki.island-chat-detached.v1") === "1") void api.showCaptionOverlay().catch(() => undefined);
@@ -945,7 +948,19 @@ export function VoiceEngine() {
     // Chat shorthand ("wats the ans", "pls open yt") read as plain words —
     // and a bare "answer" / "what's the answer" means the question on screen,
     // not "answer what?".
-    const t = answerOnScreen(expandShortWords(text.trim()));
+    // `own`: the person's own words — the only thing local commands ever see.
+    // `t`: what the AI is asked, which may be a longer instruction built from
+    // them. Matching commands against `t` once turned the Study log off when
+    // someone asked "what's the answer" (the built instruction says "Notes").
+    const own = expandShortWords(text.trim());
+    // "Do it for me" / "Do it on my PC" is one job for the screen agent.
+    // The steps inside it can mention a TV or a phone; those words must not
+    // hand the job to that device (forcedDoIt in conversation.ts).
+    const forced = forcedDoIt(text);
+    // While dictating, every word is content for the focused box — never a
+    // request to look at the screen. Expanding "answer question 5" here would
+    // type the whole instruction into their document.
+    const t = dictating || isNoteStudyPrompt(own) || MISSION_ADD.test(own) ? own : answerOnScreen(own);
     if (!t) return;
     // "What are you doing?" — the real answer, from the task actually
     // running (never made up). Asked mid-task, it doesn't stop the task.
@@ -961,6 +976,21 @@ export function VoiceEngine() {
       // the conversation and finishes it itself.
       if (idle) void afterReply(at, false);
       return;
+    }
+    // Practical mode's turns, said mid-task ("I did it", "do it for me", "let
+    // me do this one"): handed to the task, which keeps going. Nothing
+    // running: they go on as a normal request.
+    if (PRACTICAL_TURN.test(own.trim())) {
+      const asked = requestSeq;
+      const reply = await api.practicalSay(own).catch(() => null);
+      // Stopped, or something newer came in while it answered: say nothing,
+      // and never treat the words as a new request either.
+      if (requestSeq !== asked) return;
+      if (reply) {
+        if (!session.current.on) startSession(from === "voice", "speaking");
+        await respond(reply, "calm", true, true);
+        return;
+      }
     }
     // Classroom requests deliberately keep the pen overlay open until the
     // spoken explanation has finished. That also makes the caller wait, so
@@ -1071,7 +1101,7 @@ export function VoiceEngine() {
 
     // Missions (Rest mode): "add to my missions: check my assignments",
     // "start my missions" / "rest mode", "what's on my missions".
-    const missionAdd = t.match(/^(?:please\s+)?(?:add|put)\s+(?:this\s+)?(?:to|on)\s+(?:my\s+)?(?:missions?|mission list|rest mode)[:,\s-]+(.{3,})$/i);
+    const missionAdd = t.match(MISSION_ADD);
     // Only a clear "start my missions" / "start rest mode" — never a passing "do the mission".
     const missionGo = /^(?:please\s+)?(?:start|run|begin|do)\s+(?:my\s+missions?|the\s+missions|missions)\b|^(?:please\s+)?(?:start|turn\s+on|go\s+into|switch\s+to)\s+rest\s+mode\b/i.test(t);
     if (missionAdd || missionGo) {
@@ -1153,8 +1183,9 @@ export function VoiceEngine() {
 
     // The TV: "open Netflix on the TV", "turn the TV up" — straight to it,
     // no AI. (Questions about TV — "what's on TV tonight" — go on as usual.)
-    // Any request that mentions the TV is for the TV — never the PC.
-    if (/\b(?:tv|television|roku)\b/i.test(t) && !/^(?:what|what's|whats|who|when|why|how|is|are|do|does|which|can you see)\b/i.test(t)) {
+    // Any request that mentions the TV is for the TV — never the PC. The
+    // exception is the explicit Do it button: its steps often mention the TV.
+    if (!forced && /\b(?:tv|television|roku)\b/i.test(t) && !/^(?:what|what's|whats|who|when|why|how|is|are|do|does|which|can you see)\b/i.test(t)) {
       startSession(from === "voice", "thinking");
       const said = await api.tvDo(t).catch(failure);
       if (requestSeq !== at) return;
@@ -1166,7 +1197,7 @@ export function VoiceEngine() {
     }
 
     // Choose the device BEFORE any Windows shortcuts or local app commands.
-    if (/\b(?:my|the|this|on|open) (?:phone|iphone|android|mobile)\b/i.test(t)) {
+    if (!forced && /\b(?:my|the|this|on|open) (?:phone|iphone|android|mobile)\b/i.test(t)) {
       startSession(from === "voice", "thinking");
       const paired = useIzuki.getState().settings.android_enabled;
       const explicitAndroid = /\bon (?:my|the) android\b/i.test(t) && !/\biphone\b/i.test(t);
@@ -1183,7 +1214,7 @@ export function VoiceEngine() {
       return;
     }
 
-    const local = matchLocalCommand(t);
+    const local = matchLocalCommand(own);
     if (local) {
       switch (local.kind) {
         case "stop":
@@ -1224,7 +1255,7 @@ export function VoiceEngine() {
     // "what time is it" — done at once, no AI to wait for or get wrong.
     // Only a coach start from THIS request counts (coach.rs's event).
     coachStarted = false;
-    const quick = await api.instantCommand(t).catch(() => null);
+    const quick = await api.instantCommand(own).catch(() => null);
     if (requestSeq !== at) return;
     if (quick) {
       // Part of the conversation too, so "and again" / "now the next one" follows on.

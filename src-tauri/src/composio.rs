@@ -403,6 +403,25 @@ fn offline_reply(raw: &str) -> String {
     plain(raw)
 }
 
+/// Which mail lane a request belongs in, if any. Pure, so the route can be
+/// tested without a Composio key, network or model.
+enum MailLane {
+    Inbox,
+    Search(crate::mail::Ask),
+}
+
+fn mail_lane(latest: &str) -> Option<MailLane> {
+    // A named topic or filter stays a real search; only a request with
+    // nothing to search for ("any good emails?") takes the inbox check.
+    if let Some(ask) = crate::mail::parse_ask(latest) {
+        Some(MailLane::Search(ask))
+    } else if crate::headsup::is_inbox_question(latest) {
+        Some(MailLane::Inbox)
+    } else {
+        None
+    }
+}
+
 /// Handle a request that needs the user's apps. `history` ends with it.
 pub fn ask(history: &[Turn]) -> Result<Answer> {
     let asked = history.iter().rev().find(|t| t.role == "user").map(|t| t.content.clone()).unwrap_or_default();
@@ -419,10 +438,15 @@ pub fn ask(history: &[Turn]) -> Result<Answer> {
 
     // Always read afresh for the current question.
     let latest = history.iter().rev().find(|t| t.role != "assistant").map(|t| t.content.clone()).unwrap_or_default();
-    // Looking for email: searched directly in every linked Gmail account
-    // (mail.rs) — no model choosing one account and guessing.
-    if let Some(m) = crate::mail::parse_ask(&latest) {
-        return Ok(Answer { text: crate::mail::answer(&m), links: Vec::new() });
+    // Looking for email: a named sender or topic is searched directly in
+    // every linked Gmail account; "any good emails?" takes the inbox check.
+    // Neither goes through the model, which otherwise invents a keyword
+    // search (the owner's "on chrome for any good message" became
+    // "chrome good").
+    match mail_lane(&latest) {
+        Some(MailLane::Inbox) => return Ok(Answer { text: crate::headsup::inbox_spoken(), links: Vec::new() }),
+        Some(MailLane::Search(m)) => return Ok(Answer { text: crate::mail::answer(&m), links: Vec::new() }),
+        None => {}
     }
     // An app-wide snapshot can answer a different question with the wrong
     // result (e.g. inbox count versus a particular sender). Read afresh.
@@ -1176,6 +1200,17 @@ pub fn test_key(key: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_owner_sentence_takes_the_inbox_lane() {
+        assert!(matches!(mail_lane("check my gmail on chrome for any good message"), Some(MailLane::Inbox)));
+        assert!(matches!(mail_lane("find my Home Depot email"), Some(MailLane::Search(_))));
+        // A filter is still a search, not the inbox digest.
+        assert!(matches!(mail_lane("any good unread emails from today"), Some(MailLane::Search(_))));
+        // The Gmail-only inbox check must not answer an Outlook question.
+        assert!(mail_lane("check my Outlook inbox for anything important").is_none());
+        assert!(mail_lane("what time is it").is_none());
+    }
 
     #[test]
     fn tool_journal_keeps_provider_failures_distinct_from_network_uncertainty() {

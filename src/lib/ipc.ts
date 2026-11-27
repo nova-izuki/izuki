@@ -23,7 +23,7 @@ import type {
   NoteLinks,
   VoiceCatalog,
   FoundKey,
-  N8nImport, AirSafety, FreeSearch} from "./types";
+  N8nImport, AirSafety, FreeSearch, StatusEvent} from "./types";
 
 export const IS_TAURI =
   typeof window !== "undefined" &&
@@ -136,7 +136,7 @@ export const MOCK_SETTINGS: Settings = {
     },
     {
       id: "9router",
-      label: "9Router (local, free providers)",
+      label: "9Router or OmniRoute (local, free providers)",
       base_url: "http://localhost:20128/v1",
       model: "kr/claude-haiku-4.5",
       api_key: "",
@@ -189,6 +189,7 @@ export const MOCK_SETTINGS: Settings = {
   hotkey_voice: "Ctrl+Super+Space",
   hotkey_quickdraw: "Ctrl+D",
   hotkey_dictate: "Ctrl+Alt+Space",
+  hotkey_ask: "Alt+Space",
   dictate_tidy: true,
   freeze_screen: true,
   magnetic_hand: true,
@@ -224,6 +225,8 @@ export const MOCK_SETTINGS: Settings = {
   screen_time_enabled: true,
   keep_activity: true,
   focus_dims: false,
+  sites_allowed: [],
+  sites_blocked: [],
   home_city: "",
   learn_city: false,
   app_theme: "nova",
@@ -235,10 +238,18 @@ export const MOCK_SETTINGS: Settings = {
   glow_only: false,
   island_suggestions: true,
   island_wave: "auto",
-  island_always: true,
+  island_always: false,
+  island_hidden_v1: true,
   island_free: false,
   island_style: "default",
   island_size: "normal",
+  island_opacity: 94,
+  island_blur: 0,
+  island_accent: "#22d3ee",
+  island_shadow: true,
+  island_light_glass: false,
+  island_motion: true,
+  island_auto_expand: false,
   tidy_dupes_auto: false,
   tidy_recycle_auto: false,
   close_orphans_auto: false,
@@ -844,7 +855,16 @@ export const api = {
   setOverlayInteractive: (interactive: boolean) =>
     call<void>("set_overlay_interactive", { interactive }, () => undefined),
   /** Clickable only while the cursor is over a floating widget — no focus steal. */
-  setOverlayHit: (hit: boolean) => call<void>("set_overlay_hit", { hit }, () => undefined),
+  setOverlayHit: (hit: boolean, task = false) => call<void>("set_overlay_hit", { hit, task }, () => undefined),
+  /** The latest Task Stage line, if the overlay mounted after it was sent. */
+  taskStatus: async (): Promise<StatusEvent | null> => {
+    const raw = await call<StatusEvent | string | null>("task_status", undefined, () => null);
+    if (!raw) return null;
+    if (typeof raw !== "string") return raw;
+    // The native command caches the event payload as JSON; hand the stage a
+    // real object, never a string it will call `.message` on.
+    try { return JSON.parse(raw) as StatusEvent; } catch { return null; }
+  },
   setOverlayWheel: (on: boolean) => call<void>("set_overlay_wheel", { on }, () => undefined),
   /** Bring the overlay up (click-through) if a caption needs somewhere to render. */
   showCaptionOverlay: () => call<void>("show_caption_overlay", undefined, () => undefined),
@@ -1039,6 +1059,15 @@ export const api = {
   airDraw: () => call<void>("air_draw", undefined, () => undefined),
   /** Air control: the box around what's under a normalized spot (normalized). */
   airTarget: (nx: number, ny: number) => call<{ nx: number; ny: number; nw: number; nh: number; kind: string; field: boolean } | null>("air_target", { nx, ny }, () => null),
+  /** Eye Control: the control a steady look settles on — under it, or the nearest within reach (normalized). */
+  /** Practical mode: words said while a task runs ("I did it", "do it for me"); null when they're not about turns. */
+  practicalSay: (said: string) => call<string | null>("practical_say", { said }, () => null),
+  /** Practical mode: the Task Stage's "I did it" (true) / "Do it for me" (false). */
+  practicalTurn: (done: boolean) => call<boolean>("practical_turn", { done }, () => false),
+  /** Settings → Privacy: one change to the site rules, on the stored lists (their only way to change). */
+  sitesChange: (op: "allow" | "block" | "forget", host: string) =>
+    call<{ allowed: string[]; blocked: string[]; note: string }>("sites_change", { op, host }, () => ({ allowed: [], blocked: [], note: "" })),
+  eyeTarget: (nx: number, ny: number) => call<{ nx: number; ny: number; nw: number; nh: number; kind: string; field: boolean } | null>("eye_target", { nx, ny }, () => null),
   /** 24/7 PC fast, live: when it last looked and what it last did by itself. */
   /** Dictated text with its grammar and punctuation fixed (unchanged if no brain answers). */
   /** Hold a key down / let it go (Air control's game controls). */
@@ -1237,6 +1266,12 @@ export const api = {
   androidConnect: () => call<string>("android_connect", undefined, () => { throw new Error("not in Izuki"); }),
   /** Do something on the phone from the PC ("… on my phone"). */
   androidDo: (prompt: string) => call<string>("android_do", { prompt }, () => { throw new Error("not in Izuki"); }),
+  /** Live phone screen for the PC remote panel (a JPEG data URL). */
+  androidScreen: () => call<string>("android_screen", undefined, () => { throw new Error("not in Izuki"); }),
+  androidTap: (x: number, y: number) => call<void>("android_tap", { x, y }, () => { throw new Error("not in Izuki"); }),
+  androidSwipe: (x1: number, y1: number, x2: number, y2: number, ms: number) => call<void>("android_swipe", { x1, y1, x2, y2, ms }, () => { throw new Error("not in Izuki"); }),
+  androidKey: (name: string) => call<void>("android_key", { name }, () => { throw new Error("not in Izuki"); }),
+  androidType: (text: string) => call<void>("android_type", { text }, () => { throw new Error("not in Izuki"); }),
   /** The wake-word models installed (file names) — the user's own. */
   listWakewords: () => call<string[]>("list_wakewords", {}, () => []),
   openWakewordsFolder: () => call<void>("open_wakewords_folder", {}, () => undefined),
@@ -1316,6 +1351,8 @@ export const api = {
   /** "Scroll down", "louder", "next song"…: done at once in Rust with no AI;
    *  the few words to say back, or null when it isn't one (instant.rs). */
   instantCommand: (said: string) => call<string | null>("instant_command", { said }, () => null),
+  /** A mic that only sent silence: Windows' own reason (muted, turned down), or null. */
+  micWindowsAdvice: () => call<string | null>("mic_windows_advice", {}, () => null),
   submitVoiceCommand: (prompt: string, recent?: Array<{ role: "user" | "assistant"; content: string }>) =>
     call<VisionPlan>("submit_voice_command", { prompt, recent: recent?.slice(-8) ?? null }, () => ({
       steps: [],
@@ -1360,6 +1397,8 @@ export const api = {
   pauseTask: () => call<boolean>("pause_task", undefined, () => false),
   /** Resume a paused task; false when nothing was paused. */
   resumeTask: () => call<boolean>("resume_task", undefined, () => false),
+  /** Replay the last completed multi-step plan from the Task Stage. */
+  rerunTask: () => call<boolean>("rerun_task", undefined, () => false),
   /** Developer self-test mode (IZUKI_SELFTEST=1). */
   selftestEnabled: () => call<string>("selftest_enabled", undefined, () => ""),
   /** Open a file Izuki made (the "Open" button on a result card). */
@@ -1402,6 +1441,10 @@ export const EV = {
   pushToTalk: "izuki://push-to-talk",
   pushToTalkRelease: "izuki://push-to-talk-release",
   dictate: "izuki://dictate",
+  /** Rust → overlay: a live picture of Izuki's own window while a task works there ("" clears it). */
+  taskShot: "izuki://task-shot",
+  /** Rust → overlay: Alt+Space, open or close the ask bar. */
+  askBar: "izuki://ask-bar",
   dictateRelease: "izuki://dictate-release",
   /** Fired when the quickdraw hotkey is released — the overlay submits
    * whatever's been sketched, or just quietly closes if nothing was. */

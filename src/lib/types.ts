@@ -265,6 +265,7 @@ export interface Settings {
   hotkey_quickdraw: string;
   /** Hold to dictate into whatever box you're already in. */
   hotkey_dictate: string;
+  hotkey_ask?: string;
   /** Tidy dictation (fillers, false starts, grammar) before typing it. */
   dictate_tidy: boolean;
 
@@ -339,6 +340,9 @@ export interface Settings {
   keep_activity: boolean;
   /** Focus mode also dims everything but the window in front (haze.rs). */
   focus_dims: boolean;
+  /** Sites Izuki may act in though they look careful (bank, health…); and sites it never touches. */
+  sites_allowed: string[];
+  sites_blocked: string[];
   home_city: string;
   learn_city: boolean;
   /** Saved flows clear after this many days unused (0 = keep). */
@@ -351,12 +355,28 @@ export interface Settings {
   island_wave: "auto" | "silk" | "bars" | "mirror" | "neon" | "dots";
   /** Always at the top like an iPhone's Dynamic Island (not only on hover). */
   island_always: boolean;
+  /** The one-time switch to "hidden until the mouse reaches the top" happened. */
+  island_hidden_v1: boolean;
   /** Drag it anywhere on screen (off: along the top). */
   island_free: boolean;
   /** The Island's look (Windhawk-style themes). */
-  island_style: "default" | "glass" | "bubble" | "squircle" | "outline" | "aero" | "nova" | "windows" | "dot" | "strip";
+  island_style: "default" | "glass" | "bubble" | "squircle" | "outline" | "aero" | "nova" | "windows" | "dot" | "strip" | "notch" | "float";
   /** How big the Island is. */
   island_size?: "small" | "normal" | "large";
+  /** Glass opacity, percent (50–100). */
+  island_opacity?: number;
+  /** Glass blur in px (0–24). */
+  island_blur?: number;
+  /** Accent colour for the rim and glow. */
+  island_accent?: string;
+  /** Draw the soft shadow (off is flatter and cheaper). */
+  island_shadow?: boolean;
+  /** A brighter, frostier glass for the Screen notch and Float. */
+  island_light_glass?: boolean;
+  /** Springy transitions; off is calm/low-power. */
+  island_motion?: boolean;
+  /** Open the task panel automatically when a task starts. */
+  island_auto_expand?: boolean;
   /** A click picked by eye gets a second look from a pointing model (Gemini) first. */
   sharp_eye: boolean;
   /** Use UI-TARS (OpenRouter, paid) for that second look. */

@@ -171,7 +171,7 @@ pub fn kind(title: &str, url: &str, text: &str) -> Kind {
 /// what it won't).
 pub fn what_i_can_do(kind: Kind) -> &'static str {
     match kind {
-        Kind::Graded => "This looks like a graded quiz or test, so I won't pick or submit answers. I can explain each question and the idea behind it, check the answer you're thinking of, and in the browser panel's “Go through each question” I suggest an answer with the reason — you click it. If it's really practice and the page says so (practice, self-check, ungraded), I can do it with you.",
+        Kind::Graded => "This page is a graded or unclear quiz or test. I explain the answer and why it fits; you select or enter it. I never press Submit, Turn in or Finish — handing it in stays yours.",
         Kind::Practice => "This page is practice, so I can answer, pick choices, go to the next question and check results with you.",
         Kind::NotAQuiz => "",
     }
@@ -217,7 +217,9 @@ mod tests {
 
     #[test]
     fn says_what_it_can_do() {
-        assert!(what_i_can_do(Kind::Graded).contains("explain each question") && what_i_can_do(Kind::Graded).contains("you click it"));
+        let graded = what_i_can_do(Kind::Graded);
+        assert!(graded.contains("explain the answer") && graded.contains("you select or enter it") && graded.contains("never press Submit"));
+        assert!(!graded.contains("I pick") && !graded.contains("I type"));
         assert!(what_i_can_do(Kind::Practice).contains("pick choices"));
         assert!(what_i_can_do(Kind::NotAQuiz).is_empty());
     }

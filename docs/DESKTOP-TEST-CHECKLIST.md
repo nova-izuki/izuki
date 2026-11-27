@@ -1,0 +1,157 @@
+# Desktop checklist: what only your real PC can prove
+
+## 1.0.225 — still requires device checks
+
+1. On a clean profile with no provider keys, ask a short text question. The free starter brain should answer or explain its current wait; it must not claim it can see a screenshot.
+2. On a clearly labelled practice page, ask for an answer: filling in is allowed. On a graded page or an unclear page, the answer should be said without selecting or typing it. Submit, Turn in and Finish should remain untouched. Ask for coaching to check that the answer stays back.
+3. Check the field of light in the desktop app and VR room. Hide the window or enable reduced motion and check that the effect pauses or holds still.
+4. If you use 9Router or OmniRoute, check its Settings label and a real request through your local router. Automatic model discovery is future work.
+5. The real Quest 3S voice, hologram and browser checks and a live extension-own-window task remain unverified. Do not mark them passed from CI alone.
+
+CI builds Izuki and runs its tests, but it has no screen, no signed-in browser
+and no administrator prompt. These checks are for the installed app on your
+PC after an update. Each one says what should happen. If something doesn't,
+tell Izuki's developers what you saw; the app's own log is
+`%APPDATA%\Izuki\logs\izuki.log` (it never holds your keys or passwords).
+
+## 1.0.215
+
+### Practical Mode
+
+1. Say or type **"teach me how to turn on dark mode"**.
+   - Izuki points at the next control, says what to do and why, and waits.
+   - The Task Stage shows **Your turn · step 1 of N** with **I did it** and **Do it for me**.
+   - Do the step yourself: within a couple of seconds Izuki notices, checks it on the next look and gives the next step.
+   - Nothing is clicked for you while it's your turn. Esc closes a menu in the app instead of stopping Izuki.
+2. On one of your turns, press **Do it for me**: Izuki does that step, then hands the next one back.
+3. Say **"do it with me: open Windows Settings and go to Bluetooth"**: you and Izuki take turns.
+4. Mid-lesson, say **"do the rest"**: Izuki finishes the job itself.
+5. Say **"help me set up a Python virtual environment"**: Izuki asks once whether to do it, do it with you, or teach you, and offers those as chips.
+
+### Sign-in investigation
+
+1. Say **"who signed in to my PC this week?"**
+   - Izuki says Windows keeps that log for administrators and asks before Windows' prompt. Nothing pops up yet.
+2. Answer **"yes"**.
+   - Windows' administrator prompt appears. Approve it.
+   - Izuki answers from the real log: counts, who signed in and how, anything that stands out with the events behind it. If nothing stands out, it says so.
+3. Ask again and **decline** the prompt: Izuki says the log wasn't read and describes no sign-ins.
+
+### Sites you're signed into (browser extension)
+
+1. Say **"let Izuki use example.com"**, then **"which sites can you use?"**: it's listed. Settings → Privacy → **Sites Izuki can use** shows the same list.
+2. Say **"never let Izuki use example.com"**, then ask Izuki to click something on example.com: it refuses and says why. It doesn't try with the mouse instead.
+3. Ask Izuki to fill in a login form: it never types into the password box.
+
+### Browser extension 1.6.3
+
+Update the extension first (the app says when it's out of date).
+
+1. Open the side panel: the status says **ready** only when the Izuki app is running. Close the app: it says so, and **Connect** appears.
+2. Start **Go through each question** on a practice page, then start it again: Izuki asks **Stop it, start this one** / **Keep it**. The run bar above the message box always shows **Stop**.
+3. Click through to another page on the same site and ask a question: it answers about the page that's open now and says so in the chat.
+4. Choose Gemini or ChatGPT, open its tab, press **Side by side**: your page goes left, the AI right. **Back to one window** puts them back.
+5. If the AI tab stops answering, the run stops with the reason after its time limit (no endless "Asking…").
+
+## For developers on this PC
+
+- `npm run trim:cache` reports old Izuki build outputs in `src-tauri/target`; add `-- --apply` to remove them. Only build output is touched.
+- Dev builds now keep line numbers for Izuki and no debug info for dependencies, which keeps the cache much smaller.
+
+## 1.0.216: Android phone (the owner's Samsung)
+
+Install the 1.0.216 APK (Settings → Phone → App updates, or the download page). Then:
+
+1. **Phone readiness** (Settings → Phone): every row matches what Android shows. Android control reads "Ready" only after it's on; if Android said "App was denied access", the card shows the Samsung steps; after App info → ⋮ → Allow restricted settings and turning it on, come back: the row turns Ready within ~3 s without tapping Check again, and "Enable Android controls" is gone.
+2. **Floating orb → Show it**: the orb appears for ~5 s; leave Izuki: it rests ("Tap to talk"), never "Listening…". Drag it to the other side; long-press hides it. Open Android Settings: no orb over it.
+3. **"Hey Nova" → Turn on**, then leave Izuki: no repeating connect/disconnect sound in a quiet room. Say "Hey Nova": the screen wakes and Izuki opens. Settings → Phone → Diagnostics shows ARMED / PAUSED / HEARING with the times. Try your own phrase (e.g. "hey jarvis").
+4. **Voice match** (optional): Settings → Phone → “Hey Nova” → Teach my voice, then do the three recordings (the first time downloads about 95 MB). Then say "Hey Nova": it starts. Have someone else (or a video) say it: "That didn't sound like you". Turn it off again if you don't want it.
+5. **Test phone control** (Autopilot sheet): tap, tap-by-label and swipe pass; any failure line names Android's reason.
+6. **Autopilot: "open YouTube and search lofi"**: YouTube opens, the search box opens (not voice search), the results appear, and the log says "results are on screen".
+7. **Stop**: ask something long; Send turns into Stop with "Asking Gemini… N s"; Stop ends it with "Stopped."; no late answer appears.
+8. Diagnostics → **Copy report** and paste it into the chat with Claude if anything above failed.
+
+## 1.0.216: browser extension 1.6.4 and Windows
+
+1. **Emergency escape**: press Esc three times quickly: Izuki's overlay disappears and its work stops; tray → Restore overlay brings it back. Type "remove the black screen": the same, with a plain result. Ctrl+Shift+Q does it too. No other app closes.
+2. **Do it / Type it**: on a reply, Do it acts on the screen; the composer's keyboard button types the draft into the app behind without sending.
+3. Extension: ask a question in Gemini, close the side panel mid-answer, reopen it: it shows "Gemini is still answering …" with Stop and Show. Ask again: "Stop that one and ask this" works; "Show Gemini" brings the tab forward.
+4. Windows: "help me set my battery charge limit to 80%": Izuki goes to Lenovo Commercial Vantage (not Windows Settings), asks before changing, and only says it's set when Vantage shows the saved value. If it stops, the message says what happened.
+
+## 1.0.217: Android phone (the owner's Samsung)
+
+Install the 1.0.217 APK (Settings → Phone → App updates). Android control and "Hey Nova" on (Settings → Phone).
+
+1. **"Hey Nova" from another app**: open Chrome, say "Hey Nova". The orb pops up, says "Yes?" and listens. Ask "what's the weather today": it answers out loud over Chrome without opening Izuki. Then "Hey Nova, what time is it" in one breath: no "Yes?", just the answer.
+2. **"Hey Nova" inside Izuki**: with Izuki open, say it. The orb answers the same way (it no longer ignores you there).
+3. **Tap the orb** (turn "Keep a small orb resting" on first): it listens; tap again while it talks: it stops. Tap its words: Izuki opens.
+4. **Lock screen**: lock the phone, say "Hey Nova, how far is the moon?": it answers. "Hey Nova, open WhatsApp": "Unlock your phone first…". The notification's **Ask Izuki** works there too.
+5. **Speaking**: type a question in the app with Read aloud on: the reply is spoken. In a Call, speak quietly: it still hears you.
+6. **Phone agent**: "what's taking space on my phone" → Storage opens and Izuki reads the sizes. "turn on dark mode" → done or explained. "delete my trash" → it tells you which button to press and doesn't press it.
+7. **Settings → Phone**: no "Hey Siri" or iPhone alarm sections. One-tap controls: every label inside its tile; More controls shows flashlight, Wi-Fi, Bluetooth, volume…; the flashlight turns on and off.
+8. **Teach my voice**: the guided screen shows each sentence big, the meter moves while you speak, all three get a ✓, then "Done". Say "Hey Nova": it starts. A video saying "Hey Nova": "That didn't sound like you".
+9. If anything fails: Settings → Phone → Diagnostics → **Copy report**, paste it to Claude.
+
+## 1.0.217: Windows
+
+1. **Island**: at rest nothing shows at the top. Move the mouse to the top edge: it slides down and opens. Move away: it slides back up.
+2. **Screen notch** (Shape Studio → Screen notch): its top corners curve out into the screen edge; it only comes down from the top middle (the top-left corner does nothing).
+3. "what's taking up space on my PC": short lines, a split archive counted once, no "want me to find what's taking space?" right after it.
+
+## 1.0.218: Android screen assistant
+
+1. Open a web page in Chrome, say "Hey Nova, explain this": the orb answers about that page, out loud, without opening Izuki. Try "what does this mean" on a message and "summarize this" on an article.
+2. "Hey Nova, open the second link" on that page: the phone agent does it (a doing request), not an explanation.
+3. In Izuki, send "summarize https://izukinova.ai" with no PC linked: it reads the page and summarizes it.
+4. On a practice quiz page, "Hey Nova, answer this" with the phone agent: it explains (and says the answer if asked) but doesn't tap an option.
+
+## 1.0.219: Android Run, orb sides, glowing edges, Hey Nova
+
+1. Autopilot → type "open my files and check what's taking space" → Run: the log shows AI steps (opening Files, reading the storage screen) and ends with an answer, never "I don't know that routine". "open YouTube" still opens straight away.
+2. Drag the orb to the left edge, tap it and speak: the words grow to the right and stay on screen. Drag it to the right: they grow to the left.
+3. While speaking to the orb it swells with your voice; while Izuki answers it pulses with the words.
+4. "Hey Nova" or an orb tap: a rainbow light runs around the screen edges over any app and grows with the voice. Settings → Phone → glowing edges off: no light on the next turn (and none in the app).
+5. "Hey Nova" ten times from across a room, with a TV on for some: count how many open. Settings → Phone → Diagnostics shows "heard someone but didn't check: …" or a "near miss" for the ones that didn't.
+6. Ask a long question by voice: Izuki starts speaking before the whole answer is written.
+
+## 1.0.220: Android listening, Stop, one light, natural voice, agent with eyes, home guides
+
+1. Tap the orb, wait three seconds, then speak: it still hears you (no "I didn't catch that"). Tap it and say nothing: after about ten seconds it says it didn't hear anything.
+2. Autopilot → Run "open my files and check what's taking space"; while it works, leave Izuki and tap the orb: "Stopped.", the steps stop, the orb goes away. After a task that finished on its own, the orb doesn't say "Working…".
+3. The rainbow light shows inside Izuki and over other apps while Izuki works or talks, never twice, and goes out when it's done. Settings → Phone → Rainbow light off: no light at all.
+4. "Hey Nova, what's the weather?" over another app: the answer is in Gemini's voice (or the phone's voice after a few seconds); the orb moves with it. Settings → Izuki's voice → pick a voice → Hear it.
+5. "Swipe to the next photo in my gallery", "long-press the first photo", "double-tap to zoom": the agent does them. On a screen with a Delete button it asks you to tap it yourself.
+6. Home → On your phone: each row shows On, Off or Set up; each opens its guide; "Try" runs a real example. Settings: long explanations show two lines and "How it works".
+
+## 1.0.221: one icon everywhere, Drive mode rides along
+
+1. After updating, the taskbar, Start menu, tray and installer show the glass orb (not the hand). Pin it to the taskbar: still sharp.
+2. Android: the launcher icon is the orb on navy (round and square launchers); izukinova.ai in Chrome shows the orb in the tab.
+3. Drive mode → "take me to <a nearby place>": the trip line shows distance and minutes left; "how long is left?" answers with them; parked for a while near the place, it notices you've arrived. "Take me home" with no saved home: it says it doesn't know where home is.
+4. Phone agent: "move the first app icon next to the second" (drag) and "scroll to Battery" in Settings.
+5. Settings → Your orb → Orb colour: the floating orb over other apps takes the colour in every state.
+
+## 1.0.222
+
+- [ ] Type "open Chrome" in the chat: Chrome opens within a couple of seconds, with no screen-agent "thinking" steps.
+- [ ] With every AI brain unreachable (Wi-Fi off), ask something: Izuki says it couldn't reach a brain within about 20 s, and the app isn't left "busy".
+- [ ] Copy a Gemini key that starts with "AQ." and open Izuki: it offers to save it as a Google Gemini key; Settings shows it saved; a chat answer comes back.
+- [ ] Settings → Something wrong? → copy: no key (AIza… or AQ.…) appears in the copied text.
+- [ ] What's New shows the 1.0.222 line.
+
+## 1.0.223
+
+- [ ] Alt+Space opens the ask bar over any app; typing works at once; Enter answers under the question; Esc and a click outside close it. If Alt+Space is taken (PowerToys Run), Settings → Shortcuts says so; another key works.
+- [ ] Ask bar: "open Spotify" (instant), "explain what's on my screen" (sees the screen), "search for pizza near me" (instant results). The mouse is free while it works.
+- [ ] Typed "find a pizza place near me": Google's results open in one step, the reply says "Here's Google for …", and no AI is asked (log: no `[brain]` lines).
+- [ ] A task in the browser (extension connected): the log says "reading the page itself — N elements, no screenshot this look"; the step happens; "what's this picture?" still takes a screenshot.
+- [ ] Mute the mic in Windows Sound settings, then say "Hey Nova" or press the talk key: Izuki says Windows has it muted; typed "unmute my mic" turns it on (Sound settings show it unmuted, level 80%).
+- [ ] Change the dictate shortcut in Settings: the new one works without a restart.
+
+## 1.0.224
+
+- [ ] Update the browser extension to 1.6.5 when Izuki offers it (or reload it in edge://extensions).
+- [ ] "Find the cheapest flight from Lagos to Abuja next Friday" (a screen task): a separate browser window opens without taking focus; the task panel shows its live picture; your mouse and keyboard are never moved; the window comes forward at the end. Log: "working in Izuki's own window".
+- [ ] A plain "search for pizza near me" (no task) still opens Google in front of you.
+- [ ] A task that types into a search box: the log shows type + enter in the same round (no extra "press Enter" round).
+- [ ] Open Paint (or a game) and ask Izuki to draw a circle in the middle: the log says "drew a grid on the picture".

@@ -32,6 +32,19 @@ let server,browser,profile,ws;
   const wait=async(expression)=>{for(let n=0;n<120;n++){if(await run(`Boolean(${expression})`))return;await pause(100);}throw Error('Not ready: '+expression);};
   await call('Runtime.enable');await call('Page.enable');await call('Page.navigate',{url:`http://127.0.0.1:${server.address().port}/extension/sidepanel.html`});
   await wait('document.querySelectorAll("#provider option").length===10');
+  // The four views are real tabs: Page/Tasks/Settings show their own pane
+  // and the composer stays put; Ask brings the conversation back.
+  await run('document.querySelector("#views [data-view=page]").click()');
+  assert.equal(await run('document.body.dataset.view'),'page');
+  assert.equal(await run('getComputedStyle(document.getElementById("view-page")).display'),'block');
+  assert.equal(await run('document.getElementById("q").getBoundingClientRect().height>0'),true,'the composer stays visible');
+  await run('document.querySelector("#views [data-view=tasks]").click()');
+  assert.equal(await run('getComputedStyle(document.getElementById("view-tasks")).display'),'block');
+  await run('document.querySelector("#views [data-view=settings]").click()');
+  assert.equal(await run('getComputedStyle(document.getElementById("view-settings")).display'),'block');
+  await run('document.querySelector("#views [data-view=ask]").click()');
+  assert.equal(await run('document.body.dataset.view'),'ask');
+  assert.equal(await run('getComputedStyle(document.getElementById("log")).display'),'flex');
   const ask=async(text)=>run(`document.getElementById('q').value=${JSON.stringify(text)};document.getElementById('ask').requestSubmit();`);
   await ask('what is a botnet?');await wait('panelTest.asks.length===1');
   const first=await run('panelTest.asks[0].body.requestId');
@@ -72,25 +85,29 @@ let server,browser,profile,ws;
   await run('panelTest.reply("About this part.")');
   await wait('document.getElementById("log").textContent.includes("About this part")');
   assert.equal(await run('document.getElementById("log").textContent.includes("page changed")'),false,'no "the page changed" refusal');
-  // A different page under the same tab: its words don't go out for a
-  // question about the old one, and asking again works (it used to fail
-  // the same way every time).
+  // Another page on the same site is the page the person is looking at: it
+  // is read and answered, not refused. A different site is not silently
+  // swapped: it says where the tab is, then Try again asks about it.
   await run('panelTest.pages[0].url="https://course.example/grades"');
   const sentBefore=await run('panelTest.asks.length');
-  await ask('and this one');
-  await wait('document.getElementById("log").textContent.includes("moved to another page")');
-  assert.equal(await run('panelTest.asks.length'),sentBefore,'the other page was not sent');
   await ask('and this one');await wait(`panelTest.asks.length===${sentBefore+1}`);
   await run('panelTest.reply("About the grades page.")');await wait('document.getElementById("log").textContent.includes("grades page")');
+  await run('panelTest.pages[0].url="https://other.example/grades"');
+  const otherBefore=await run('panelTest.asks.length');
+  await ask('and this one');
+  await wait('document.getElementById("log").textContent.includes("not the site you shared")');
+  assert.equal(await run('panelTest.asks.length'),otherBefore,'the other site was not sent');
+  await ask('and this one');await wait(`panelTest.asks.length===${otherBefore+1}`);
+  await run('panelTest.reply("About the other site.")');await wait('document.getElementById("log").textContent.includes("other site")');
   // A follow-up chip asks its follow-up.
-  await run('document.querySelector(".follow-ups button").click()');await wait('panelTest.asks.length===8');
-  assert.match(await run('panelTest.asks[7].body.question'),/shorter/i);
+  await run('document.querySelector(".follow-ups button").click()');await wait('panelTest.asks.length===9');
+  assert.match(await run('panelTest.asks[8].body.question'),/shorter/i);
   await run('panelTest.reply("Short.")');await wait('!document.getElementById("send").disabled');
   // ↑ brings the last question back; "clear" clears and isn't asked.
   await run('document.getElementById("q").dispatchEvent(new KeyboardEvent("keydown",{key:"ArrowUp",bubbles:true,cancelable:true}))');
   assert.match(await run('document.getElementById("q").value'),/shorter/i,'↑ recalls the last question');
   await ask('clear');await wait('document.querySelector(".hello")');
-  assert.equal(await run('panelTest.asks.length'),8,'"clear" is a command, not a question');
+  assert.equal(await run('panelTest.asks.length'),9,'"clear" is a command, not a question');
   assert.equal(await run('document.querySelectorAll(".msg").length'),0,'the chat is cleared');
   await run('const p=document.getElementById("provider");p.value="any";p.dispatchEvent(new Event("change"));');
   await wait('document.querySelectorAll("#provider-tabs option").length===2');
@@ -185,6 +202,76 @@ let server,browser,profile,ws;
   assert.equal(drafts.afterOwn, 'A new question');
   assert.deepEqual(drafts.kept, { ok: false, why: 'draft' }, "the person's own draft is left alone");
   assert.equal(drafts.afterTheirs, 'my own words, not sent yet');
+  // Exercise the real composer while its asynchronous paste is in flight,
+  // then retry. Stop must prevent the old Send and preserve draft ownership.
+  const pasteRaces = await run(`(async () => {
+    const { typeIntoComposer } = await import('/extension/providers.js');
+    const host=document.createElement('div');host.style.cssText='position:fixed;top:0;left:0;width:300px;height:100px;z-index:9999';
+    const box=document.createElement('div');box.contentEditable='true';box.style.cssText='width:280px;height:40px';
+    const send=document.createElement('button');send.textContent='Send';send.setAttribute('data-race-send','');
+    let sent=[],mode='stop';send.onclick=()=>{sent.push(box.textContent);box.textContent='';};
+    box.addEventListener('paste',e=>{
+      e.preventDefault();
+      if(mode==='stop'||mode==='retry')box.textContent=e.clipboardData.getData('text/plain');
+      if(mode==='stop')setTimeout(()=>globalThis.__izukiStoppedRelay.add('old'),10);
+      if(mode==='edit')setTimeout(()=>{box.textContent='my private draft';},10);
+      if(mode==='append') { box.textContent=e.clipboardData.getData('text/plain');setTimeout(()=>{box.textContent+=' my addition';},10); }
+      if(mode==='replace')setTimeout(()=>box.remove(),10);
+    });
+    host.append(box,send);document.body.append(host);
+    globalThis.__izukiTyped='';globalThis.__izukiStoppedRelay=new Set();
+    const type=(text,id)=>typeIntoComposer(text,['div[contenteditable="true"]'],['button[data-race-send]'],true,location.origin,id);
+    const stopped=await type('Old question','old'),owned=globalThis.__izukiTyped;
+    mode='retry';const retried=await type('New question','new');
+    mode='edit';box.textContent='';const edited=await type('Overwrite attempt','edit'),draft=box.textContent;
+    mode='append';box.textContent='';const appended=await type('Original question','append'),appendDraft=box.textContent;
+    mode='replace';box.textContent='';const replaced=await type('Detached composer','replace');
+    host.remove();return {stopped,owned,retried,sent,edited,draft,appended,appendDraft,replaced};
+  })()`);
+  assert.deepEqual(pasteRaces.stopped,{ok:false,why:'stopped'});
+  assert.equal(pasteRaces.owned,'Old question','Stop retains ownership of text already pasted');
+  assert.deepEqual(pasteRaces.retried,{ok:true,sent:true});
+  assert.deepEqual(pasteRaces.sent,['New question'],'only the new request can be sent after Stop and retry');
+  assert.deepEqual(pasteRaces.edited,{ok:false,why:'draft'});
+  assert.equal(pasteRaces.draft,'my private draft','a draft typed during paste wait is preserved');
+  assert.deepEqual(pasteRaces.appended,{ok:false,why:'draft'});
+  assert.equal(pasteRaces.appendDraft,'Original question my addition','a matching prefix does not authorize sending user edits');
+  assert.deepEqual(pasteRaces.replaced,{ok:false,why:'changed-page'},'a replaced composer cannot be written or sent');
+  // Same-origin navigation can keep the composer mounted. The question must
+  // not be pasted or sent into the new conversation.
+  const urlChange = await run(`(async () => {
+    const { typeIntoComposer } = await import('/extension/providers.js');
+    const host=document.createElement('div');host.style.cssText='position:fixed;top:0;left:0;width:300px;height:100px;z-index:9999';
+    const box=document.createElement('div');box.contentEditable='true';box.style.cssText='width:280px;height:40px';
+    const send=document.createElement('button');send.textContent='Send';send.setAttribute('data-url-send','');
+    let sent=0;send.onclick=()=>sent++;
+    const before=location.href;
+    box.addEventListener('paste',e=>{e.preventDefault();box.textContent=e.clipboardData.getData('text/plain');setTimeout(()=>history.pushState({},'',before+'?other-chat'),10);});
+    host.append(box,send);document.body.append(host);globalThis.__izukiTyped='';
+    const out=await typeIntoComposer('Private question',['div[contenteditable="true"]'],['button[data-url-send]'],true,location.origin);
+    const after=location.href;host.remove();history.replaceState({},'',before);
+    return {out,sent,after,before};
+  })()`);
+  assert.deepEqual(urlChange.out,{ok:false,why:'changed-page'},'a same-origin conversation change invalidates the send');
+  assert.equal(urlChange.sent,0,'no Send in the new conversation');
+  const paragraphs = await run(`(async () => {
+    const { typeIntoComposer } = await import('/extension/providers.js');
+    const host=document.createElement('div');host.style.cssText='position:fixed;top:0;left:0;width:300px;height:200px;z-index:9999';
+    const box=document.createElement('div');box.contentEditable='true';box.style.cssText='width:280px;min-height:40px';
+    const send=document.createElement('button');send.setAttribute('data-paragraph-send','');send.textContent='Send';let clicks=0;
+    send.onclick=()=>clicks++;
+    box.addEventListener('paste',e=>{e.preventDefault();box.replaceChildren();
+      for(const line of e.clipboardData.getData('text/plain').split('\\n')) {const p=document.createElement('p');p.textContent=line;box.append(p);}
+    });
+    host.append(box,send);document.body.append(host);globalThis.__izukiTyped='';
+    const first=await typeIntoComposer('First line\\nSecond line',['div[contenteditable="true"]'],[],false,location.origin);
+    const second=await typeIntoComposer('New first line\\nNew second line',['div[contenteditable="true"]'],['button[data-paragraph-send]'],true,location.origin);
+    const visible=box.innerText;host.remove();return {first,second,clicks,visible};
+  })()`);
+  assert.deepEqual(paragraphs.first,{ok:true,sent:false},'paragraph boundaries count as whitespace in exact text checks');
+  assert.deepEqual(paragraphs.second,{ok:true,sent:true},'the same plain-text representation recognizes and replaces an owned multiline draft');
+  assert.equal(paragraphs.clicks,1,'the complete multiline question reaches Send');
+  assert.equal(paragraphs.visible.replace(/\s+/g,' ').trim(),'New first line New second line');
   // Esc has to end a desktop task from anywhere in the panel, as it promises.
   await run('document.getElementById("q").value="Summarise the page into my notes";document.getElementById("task-open").click();document.getElementById("task-run").click();');
   await wait('panelTest.tasks.filter((t)=>t.route==="run").length===2');

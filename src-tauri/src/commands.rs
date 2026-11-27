@@ -108,6 +108,9 @@ pub fn save_settings(app: AppHandle, mut settings: Settings) -> Settings {
         || saved.hotkey_panic != previous.hotkey_panic
         || saved.hotkey_voice != previous.hotkey_voice
         || saved.hotkey_quickdraw != previous.hotkey_quickdraw
+        // These two were missing: a new dictate (or ask) key did nothing until a restart.
+        || saved.hotkey_dictate != previous.hotkey_dictate
+        || saved.hotkey_ask != previous.hotkey_ask
     {
         crate::hotkey::rebind(&app, &saved);
     }
@@ -221,6 +224,15 @@ pub fn close_overlay(app: AppHandle) -> R<()> {
     overlay::hide_overlay(&app).map_err(err)
 }
 
+/// A microphone that only sent silence: what Windows says about it, in
+/// words to show (muted, or turned right down), or `None` when it's on.
+#[tauri::command]
+pub fn mic_windows_advice() -> Option<String> {
+    let state = crate::instant::mic_state();
+    eprintln!("[mic] Windows says the default microphone is {:?} (muted, level)", state);
+    crate::instant::mic_advice(state)
+}
+
 #[tauri::command]
 pub fn set_overlay_interactive(app: AppHandle, interactive: bool) -> R<()> {
     overlay::set_overlay_interactive(&app, interactive).map_err(err)
@@ -234,8 +246,14 @@ pub fn frontend_log(message: String) {
 }
 
 #[tauri::command]
-pub fn set_overlay_hit(app: AppHandle, hit: bool) -> R<()> {
-    overlay::set_overlay_hit(&app, hit).map_err(err)
+pub fn set_overlay_hit(app: AppHandle, hit: bool, task: bool) -> R<()> {
+    overlay::set_overlay_hit(&app, hit, task).map_err(err)
+}
+
+/// The latest Task Stage status, replayed to an overlay that mounted late.
+#[tauri::command]
+pub fn task_status() -> Option<String> {
+    overlay::last_task_status()
 }
 
 /// The overlay says whether the pointer is over something that can scroll, so
@@ -392,14 +410,65 @@ pub fn open_log_folder() -> R<()> {
     std::process::Command::new("explorer").arg(&dir).spawn().map(|_| ()).map_err(|e| e.to_string())
 }
 
+/// The chat's "Do it on my PC" button puts this marker first. It is the
+/// person's explicit "act now" click, so the local shortcuts (including the
+/// assignment coach) must leave the words alone and let the screen agent do
+/// them. It is never consent to submit, send or delete anything.
+fn forced_do(said: &str) -> bool {
+    said.trim_start().starts_with("[DO IT]")
+}
+
 /// "Scroll down", "louder", "next song"…: done at once with no AI, and the
 /// few words to say back — or `None` when it isn't one of those plain
 /// everyday commands (instant.rs).
 #[tauri::command]
 pub async fn instant_command(app: AppHandle, said: String) -> Option<String> {
+    if let Some(request) = crate::rescue::request(&said) {
+        // Capture the epoch now, before this request waits in the blocking
+        // pool. Capturing it in restore() there would adopt a newer stop.
+        let epoch = overlay::rescue_epoch();
+        return Some(blocking(move || match request {
+            crate::rescue::Request::Hide => crate::rescue::reset(&app),
+            crate::rescue::Request::Restore => crate::rescue::restore_at(&app, epoch),
+        }).await.unwrap_or_else(|error| format!("The overlay recovery could not finish: {error}. Press Esc three times for native emergency hiding.")));
+    }
     // Eye control's voice stop, pause and resume come first (airsafe.rs).
     if let Some(reply) = crate::airsafe::voice(&said) {
         return Some(reply);
+    }
+    // The button in the chat says do it; never turn the same words into a
+    // study guide or another local answer before the screen agent sees them.
+    if forced_do(&said) {
+        return None;
+    }
+    // Commands are short. A long text is a prompt or a pasted page, never a
+    // command — and must never flip a setting by containing the right words.
+    if !crate::studylog::command_sized(&said) {
+        return None;
+    }
+    // "Let Izuki use chase.com", "never let Izuki use reddit.com" (siteaccess.rs).
+    if let Some(ask) = crate::siteaccess::parse(&said) {
+        return Some(crate::siteaccess::handle(ask));
+    }
+    // "Help me investigate suspicious login activity": asked once which way
+    // (do it, together, or teach me) before anything is touched. Never from
+    // inside the agent's own direct step (practical.rs).
+    if !crate::direct::in_step() {
+        if let Some(offer) = crate::practical::offer(&said) {
+            return Some(offer);
+        }
+    }
+    // "Who signed in to my PC this week?", "any failed logins?": read from
+    // the system's own log, never guessed (logins.rs). Asking for an
+    // administrator read is not itself consent to Windows' prompt: the
+    // person's latest words have to say yes.
+    if let Some(details) = crate::logins::asked(&said) {
+        if details.to_lowercase().contains("admin") && !crate::logins::agreed(&said) {
+            return Some(crate::logins::ask_admin());
+        }
+        // Reading the log (and an administrator read waiting on Windows'
+        // prompt) runs on the blocking pool, never an async worker.
+        return Some(blocking(move || crate::logins::ability(&details)).await.unwrap_or_else(|e| format!("The sign-in log couldn't be read: {e}. Nothing was read, so I won't describe any sign-ins.")));
     }
     if crate::notes::is_study_prompt(&said) { return None; }
     if crate::brain::direct_answer_requested(&said) {
@@ -431,12 +500,16 @@ pub async fn instant_command(app: AppHandle, said: String) -> Option<String> {
             return Some(text);
         }
     }
-    if let Some(ask) = crate::study::parse(&said) {
-        // "Open my lab assignment and teach me…" needs the screen agent first —
-        // that goes on to submit_task, which opens it and then coaches.
-        if ask.open_first.is_none() {
-            let s2 = said.clone();
-            return blocking(move || crate::study::coach(&s2).unwrap_or_else(|e| e.to_string())).await.ok();
+    // A plain "do my assignment" / "finish my homework" is a job for the
+    // screen agent, not a request for a guide. Only teaching words (or saving
+    // the guide to Notes) start the coach here; "open it and teach me" still
+    // goes on to the screen agent, which opens it and then coaches.
+    if crate::study::wants_guide(&said) {
+        if let Some(ask) = crate::study::parse(&said) {
+            if ask.open_first.is_none() {
+                let s2 = said.clone();
+                return blocking(move || crate::study::coach(&s2).unwrap_or_else(|e| e.to_string())).await.ok();
+            }
         }
     }
     // "What do I keep getting wrong?", "what have I studied this week?" (studytrack.rs).
@@ -660,6 +733,23 @@ pub async fn instant_command(app: AppHandle, said: String) -> Option<String> {
                     Ok(_) => format!("Here are the YouTube results for {q}."),
                     Err(e) => format!("I couldn't open YouTube: {e}"),
                 },
+            }
+        })
+        .await
+        .ok();
+    }
+    // "Search for pizza places near me", "google how tall is Everest": the
+    // results at once, no AI (apps::web_search_request has the story).
+    if let Some(q) = crate::apps::web_search_request(&said) {
+        return blocking(move || {
+            crate::automation::clear_abort();
+            match crate::patience::search(&q) {
+                Ok(done) if done.starts_with("already") => format!("That search is already open: “{q}”."),
+                Ok(_) => {
+                    crate::actlog::record("web", &format!("Searched the web for {q}"));
+                    format!("Here's Google for “{q}”.")
+                }
+                Err(e) => format!("I couldn't open the search: {e}"),
             }
         })
         .await
@@ -913,6 +1003,14 @@ pub fn resume_task(app: AppHandle) -> bool {
     }
     let _ = app.emit(events::STATUS, StatusEvent::working("Continuing…"));
     true
+}
+
+/// Run the last completed multi-step plan again from the Task Stage's finish
+/// card. False when there is no safe plan to replay.
+#[tauri::command]
+pub fn rerun_task(app: AppHandle) -> bool {
+    let store = state::store();
+    brain::rerun_last_task(&app, &store)
 }
 
 /// Self-test mode (developer only): launched with IZUKI_SELFTEST=1, the
@@ -2275,6 +2373,47 @@ pub async fn air_target(app: AppHandle, nx: f64, ny: f64) -> Option<crate::air::
     blocking(move || crate::air::target_norm(nx, ny, overlay)).await.ok().flatten()
 }
 
+/// Practical mode's turn words, said while a task runs ("I did it", "do it
+/// for me", "let me do this one", "do the rest"). `None`: not about turns,
+/// or no task running (the words then go on as a normal request).
+#[tauri::command]
+pub fn practical_say(said: String) -> Option<String> {
+    crate::practical::heard(&said, crate::brain::task_running())
+}
+
+/// The Task Stage's "I did it" (true) / "Do it for me" (false) on a step
+/// that's the person's. False when no step is waiting on them.
+#[tauri::command]
+pub fn practical_turn(done: bool) -> bool {
+    crate::practical::press(done)
+}
+
+/// Settings → Privacy: one change to the site rules ("allow", "block" or
+/// "forget" one site), made on the stored lists so nothing said or pressed
+/// meanwhile is undone (full settings saves never touch them). Both lists as
+/// they now are, and what changed.
+#[tauri::command]
+pub fn sites_change(op: String, host: String) -> Result<serde_json::Value, String> {
+    use crate::siteaccess::Ask;
+    let host = crate::siteaccess::site_name(&host).ok_or("That doesn't look like a site name (like chase.com).")?;
+    let ask = match op.as_str() {
+        "allow" => Ask::Allow(host),
+        "block" => Ask::Block(host),
+        "forget" => Ask::Forget(host),
+        _ => return Err("Unknown change.".into()),
+    };
+    let (s, note) = crate::siteaccess::change(ask).ok_or("Izuki is still starting. Try again in a moment.")?;
+    Ok(serde_json::json!({ "allowed": s.sites_allowed, "blocked": s.sites_blocked, "note": note }))
+}
+
+/// Eye Control: where a steady look settles — the control under it, or the
+/// nearest one within 6% of the screen's width. It aims the drawn eye
+/// cursor; the mouse still only follows under the eye safety rules.
+#[tauri::command]
+pub async fn eye_target(nx: f64, ny: f64) -> Option<crate::air::Seen> {
+    blocking(move || crate::air::eye_target(nx, ny, 0.06)).await.ok().flatten()
+}
+
 /// Where the desktop mate's character is in its window, so only clicks on it are caught.
 #[tauri::command]
 pub fn mate_hot(x: f64, y: f64, w: f64, h: f64) {
@@ -2842,4 +2981,69 @@ pub async fn android_do(prompt: String) -> Result<String, String> {
     Ok(blocking(move || crate::android::run_on_phone(&prompt))
         .await
         .map_err(|e| e.to_string())?)
+}
+
+fn android_on() -> Result<(), String> {
+    if state::store().settings().android_enabled {
+        Ok(())
+    } else {
+        Err("Turn on “Control my Android” in Settings → Phone first.".into())
+    }
+}
+
+/// A live JPEG of the paired phone for the PC's remote panel.
+#[tauri::command]
+pub async fn android_screen() -> Result<String, String> {
+    android_on()?;
+    blocking(|| {
+        if crate::android::locked() {
+            return Err("Your phone is locked. Unlock it, then try again.".to_string());
+        }
+        crate::android::screenshot_data_url().map_err(|e| e.to_string())
+    })
+    .await?
+}
+
+/// Tap a point in the phone screenshot's own pixels.
+#[tauri::command]
+pub async fn android_tap(x: i32, y: i32) -> Result<(), String> {
+    android_on()?;
+    blocking(move || {
+        if crate::android::locked() { return Err("Your phone is locked.".to_string()); }
+        crate::android::tap(x, y).map_err(|e| e.to_string())
+    })
+    .await?
+}
+
+/// Swipe between two points in the phone screenshot's own pixels.
+#[tauri::command]
+pub async fn android_swipe(x1: i32, y1: i32, x2: i32, y2: i32, ms: u32) -> Result<(), String> {
+    android_on()?;
+    blocking(move || {
+        if crate::android::locked() { return Err("Your phone is locked.".to_string()); }
+        crate::android::swipe(x1, y1, x2, y2, ms.clamp(80, 2500)).map_err(|e| e.to_string())
+    })
+    .await?
+}
+
+/// A named Android key: back, home, recents, enter, power, volume_up/down.
+#[tauri::command]
+pub async fn android_key(name: String) -> Result<(), String> {
+    android_on()?;
+    blocking(move || {
+        if crate::android::locked() { return Err("Your phone is locked.".to_string()); }
+        crate::android::key(&name).map_err(|e| e.to_string())
+    })
+    .await?
+}
+
+/// Type into the phone's focused field from the PC remote panel.
+#[tauri::command]
+pub async fn android_type(text: String) -> Result<(), String> {
+    android_on()?;
+    blocking(move || {
+        if crate::android::locked() { return Err("Your phone is locked.".to_string()); }
+        crate::android::type_text(&text).map_err(|e| e.to_string())
+    })
+    .await?
 }

@@ -23,9 +23,14 @@
   let sentThisVisit = 0;
   const sentKinds = new Set();
   const waiting = [];
+  // What this phone can say about itself right now — "location: denied",
+  // "route: http 503". Filled in by the page as things happen, shown in the
+  // copy, and never sent anywhere on its own.
+  const facts = new Map();
 
   const scrub = (s) => String(s)
     .replace(/AIza[0-9A-Za-z_-]{20,}/g, "[key]")
+    .replace(/\bAQ\.[0-9A-Za-z_-]{20,}/g, "[key]")
     .replace(/\b(sk-or-v1|sk-ant|sk|gsk|nvapi|xai|hf|ghp)[-_][0-9A-Za-z_-]{12,}/g, "[key]")
     // Composio app keys (ak_…) — the phone keeps one, so it must never ride
     // along in a report.
@@ -40,6 +45,19 @@
   function crumb(message, category) {
     crumbs.push({ timestamp: Date.now() / 1000, category: category || "app", message: scrub(message).slice(0, 400) });
     if (crumbs.length > 50) crumbs.shift();
+  }
+
+  /** A standing fact about the device or the last attempt, for the copy. */
+  function fact(name, value) {
+    try {
+      const key = scrub(String(name)).slice(0, 40);
+      if (!key) return;
+      const val = value === undefined || value === null ? "" : scrub(String(value)).slice(0, 120);
+      // Newest last, so the copy reads in the order things happened.
+      facts.delete(key);
+      facts.set(key, val);
+      while (facts.size > 20) facts.delete(facts.keys().next().value);
+    } catch {}
   }
 
   function keep(entry) {
@@ -133,13 +151,21 @@
   window.izukiBugs = {
     report,
     crumb,
+    fact,
     /** Problems kept on this device (newest last). */
     recent() {
       try { return JSON.parse(localStorage.getItem(STORE) || "[]"); } catch { return []; }
     },
     /** A report to copy and send by hand: recent problems + what happened before. */
     text() {
-      const lines = [`Izuki ${APP} ${VERSION} · ${navigator.userAgent}`, "", "Problems:"];
+      const lines = [`Izuki ${APP} ${VERSION} · ${navigator.userAgent}`, ""];
+      const now = [];
+      try { now.push(`online: ${navigator.onLine}`); } catch {}
+      try { now.push(`page: ${document.visibilityState}`); } catch {}
+      try { now.push(`screen: ${screen.width}x${screen.height}@${devicePixelRatio || 1}x`); } catch {}
+      for (const [k, v] of facts) now.push(`${k}: ${v}`);
+      if (now.length) lines.push("Now:", ...now, "");
+      lines.push("Problems:");
       for (const p of this.recent()) lines.push(`${p.at} ${p.message}`);
       lines.push("", "Before that:");
       for (const c of crumbs) lines.push(`${new Date(c.timestamp * 1000).toISOString().slice(11, 19)} ${c.message}`);

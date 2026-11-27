@@ -9,37 +9,62 @@
 use anyhow::{anyhow, Result};
 use enigo::{Axis, Button, Coordinate, Direction, Enigo, Key, Keyboard, Mouse, Settings};
 use rand::Rng;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 use crate::model::{ActionStep, Intent};
 use crate::uia;
 
-/// Flipped by the panic hotkey; every loop checks it between steps.
-static ABORT: AtomicBool = AtomicBool::new(false);
-/// When the last stop was asked for.
-static ABORT_AT: parking_lot::Mutex<Option<Instant>> = parking_lot::Mutex::new(None);
+/// The stop flag and when it was last pressed, in one word. The high bit is
+/// the flag; the remaining bits are milliseconds from process start. Keeping
+/// them together means a stale-clear cannot read the old stop and then erase
+/// a newer one between two atomics.
+static ABORT_STATE: AtomicU64 = AtomicU64::new(0);
+const ABORT_ACTIVE: u64 = 1 << 63;
+static ABORT_CLOCK: OnceLock<Instant> = OnceLock::new();
+
+fn stop_clock_ms() -> u64 {
+    let start = ABORT_CLOCK.get_or_init(Instant::now);
+    u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX - 1) + 1
+}
+
+fn mark_aborted() {
+    let at = stop_clock_ms() & !ABORT_ACTIVE;
+    ABORT_STATE.store(ABORT_ACTIVE | at, Ordering::SeqCst);
+}
 
 pub fn request_abort() {
-    *ABORT_AT.lock() = Some(Instant::now());
-    ABORT.store(true, Ordering::SeqCst);
+    mark_aborted();
+}
+
+/// Emergency escape cannot wait behind an input worker's bookkeeping lock.
+pub fn emergency_abort() {
+    mark_aborted();
 }
 
 /// Forget a stop that's older than `age` — for work nobody is watching
 /// start (a watcher firing), which shouldn't fail forever because the
 /// user once pressed stop, but must still honour a stop pressed just now.
 pub fn clear_stale_abort(age: Duration) {
-    if ABORT_AT.lock().is_none_or(|at| at.elapsed() > age) {
-        clear_abort();
+    let state = ABORT_STATE.load(Ordering::SeqCst);
+    if state & ABORT_ACTIVE == 0 {
+        return;
+    }
+    let at = state & !ABORT_ACTIVE;
+    if at == 0 || stop_clock_ms().saturating_sub(at) > age.as_millis() as u64 {
+        // Only clear the exact stop we judged stale. A newer press changes
+        // the word first, so this fails and that stop survives.
+        let _ = ABORT_STATE.compare_exchange(state, 0, Ordering::SeqCst, Ordering::SeqCst);
     }
 }
 
 pub fn clear_abort() {
-    ABORT.store(false, Ordering::SeqCst);
+    ABORT_STATE.store(0, Ordering::SeqCst);
 }
 
 pub fn aborted() -> bool {
-    ABORT.load(Ordering::SeqCst)
+    ABORT_STATE.load(Ordering::SeqCst) & ABORT_ACTIVE != 0
 }
 
 fn enigo() -> Result<Enigo> {
@@ -275,6 +300,9 @@ fn hover_then_click(
 }
 
 fn click_at_here(button: Button, times: u8) -> Result<()> {
+    // The Task Stage is clickable while a task runs so the person can pause
+    // or stop it. Shield it for the instant Izuki's own click is injected.
+    let _shield = crate::overlay::shield_pointer();
     tiny_pause();
     let mut e = enigo()?;
     for i in 0..times.max(1) {
@@ -297,6 +325,8 @@ pub fn drag(from: (i32, i32), to: (i32, i32), duration_ms: u64) -> Result<()> {
             return Err(anyhow!("{}", off_screen_message(b, x, y)));
         }
     }
+    // Keep the whole press-travel-release sequence away from the Task Stage.
+    let _shield = crate::overlay::shield_pointer();
     glide_to(from.0, from.1, duration_ms / 2)?;
     tiny_pause();
     {
@@ -325,6 +355,8 @@ pub fn stroke(points: &[[i32; 2]], move_ms: u64) -> Result<()> {
     if let Some(p) = points.iter().find(|p| !on_screen(b, p[0], p[1])) {
         return Err(anyhow!("{}", off_screen_message(b, p[0], p[1])));
     }
+    // The pen is a held drag too: shield the Task Stage until the pen lifts.
+    let _shield = crate::overlay::shield_pointer();
     glide_to(first[0], first[1], move_ms / 2)?;
     tiny_pause();
     let mut e = enigo()?;
@@ -690,7 +722,14 @@ fn done_line(step: &ActionStep) -> Option<String> {
 /// first; `dry_run` animates nothing at the OS level. Every step that really
 /// ran goes on "What Izuki did".
 pub fn execute(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) -> Result<String> {
-    let done = execute_step(step, move_ms, magnetic, dry_run);
+    execute_in(step, move_ms, magnetic, dry_run, None)
+}
+
+/// Like [`execute`], but a direct keyboard shortcut is only sent if the
+/// window in front is still `planned_window` (the one the step was planned
+/// for), checked immediately before the keys go out.
+pub fn execute_in(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool, planned_window: Option<isize>) -> Result<String> {
+    let done = execute_step(step, move_ms, magnetic, dry_run, planned_window);
     if !dry_run && done.is_ok() {
         if let Some(line) = done_line(step) {
             crate::actlog::record("screen", &line);
@@ -699,7 +738,7 @@ pub fn execute(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) -
     done
 }
 
-fn execute_step(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) -> Result<String> {
+fn execute_step(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool, planned_window: Option<isize>) -> Result<String> {
     // Never act on the lock screen: a keystroke there goes into the PIN or
     // password box.
     if crate::uia::screen_locked() {
@@ -753,6 +792,18 @@ fn execute_step(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) 
     // these have no Windows control id, so Precision's check below refused
     // them, and Windows names a link "Next" where the list says
     // "Next → https://…", so the safety check could never match either.
+    // The same site rule for the screen: a click or typing in the browser
+    // window whose page Izuki last read (only while that window is in front).
+    // Keys that only leave (close the tab, go back, Esc…) stay free; keys
+    // that act on the page (Enter, Space, paste…) follow the same rule.
+    let acting_key = step.action == Intent::Key && !crate::siteaccess::leaving_key(step.key.as_deref().unwrap_or_default());
+    // Every step that presses the mouse counts: a copy triple-clicks, a pen
+    // stroke holds the button down.
+    if !dry_run && (clicking || acting_key || matches!(step.action, Intent::Type | Intent::Drag | Intent::Copy | Intent::Stroke)) {
+        if let Some(url) = crate::ext::live_url()? {
+            crate::siteaccess::gate(&url)?;
+        }
+    }
     if !dry_run && (matches!(step.action, Intent::Click | Intent::Auto) || targeted_type) {
         if let Some(dom) = step.target.and_then(crate::ext::dom_id_for) {
             let done = if targeted_type {
@@ -764,6 +815,8 @@ fn execute_step(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) 
                 Ok(what) => return Ok(format!("{what} page element {} directly (browser extension)", step.target.unwrap_or(0))),
                 // It may have gone through: never do it a second time with the mouse.
                 Err(e) if e.to_string().starts_with(crate::ext::UNCONFIRMED) => return Err(e),
+                // A site you've kept Izuki out of: the mouse isn't a way around it.
+                Err(e) if crate::siteaccess::refused(&e) => return Err(e),
                 Err(e) => eprintln!("[ext] couldn't act inside the page ({e}) — using the screen instead"),
             }
         }
@@ -1169,11 +1222,32 @@ fn execute_step(step: &ActionStep, move_ms: u64, magnetic: bool, dry_run: bool) 
         }
         Intent::Key => {
             if let Some(k) = &step.key {
+                // A direct shortcut goes to whatever is in front right now.
+                // The step was planned for a particular window: if the person
+                // switched (or one of Izuki's own overlays took focus), stop
+                // instead of pressing it into an unrelated app.
+                if let Some(planned) = planned_window {
+                    if crate::uia::foreground_hwnd() != Some(planned) {
+                        return Err(anyhow!(
+                            "target_changed: the window in front is not the one this shortcut was planned for — taking a fresh look"
+                        ));
+                    }
+                }
                 // Look at the app in front before the keys, so the shortcut's
                 // effect can be told from nothing happening. Only for keys that
                 // will be judged: Enter, Tab or the arrows cost no capture.
                 let judged = shortcut_worth_checking(k);
                 let before = judged.then(|| (front_look(), crate::uia::open_windows(40)));
+                // Looking can take a moment; check once more immediately
+                // before the keys, so a switch during that look cannot send
+                // the shortcut into another app.
+                if let Some(planned) = planned_window {
+                    if crate::uia::foreground_hwnd() != Some(planned) {
+                        return Err(anyhow!(
+                            "target_changed: the window in front is not the one this shortcut was planned for — taking a fresh look"
+                        ));
+                    }
+                }
                 press_key(k)?;
                 if let Some((look, windows)) = before {
                     // Unconfirmed, not failed: the batch stops for a fresh
@@ -1271,6 +1345,8 @@ fn execute_behind(step: &ActionStep, win: isize) -> Result<String> {
             Some(Ok(done)) => return Ok(done),
             // It may have gone through: never do it again through Windows.
             Some(Err(e)) if e.to_string().starts_with(crate::ext::UNCONFIRMED) => return Err(e),
+            // A site you've kept Izuki out of: not through Windows either.
+            Some(Err(e)) if crate::siteaccess::refused(&e) => return Err(e),
             _ => {}
         }
     }

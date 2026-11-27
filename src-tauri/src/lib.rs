@@ -9,6 +9,7 @@ pub mod attachments;
 pub mod briefing;
 pub mod browser;
 pub mod bugs;
+pub mod agent_notes;
 /// The Smart Vision Developer Observer — owner-only, compiled in only via
 /// `--features devvision` so release builds never carry it (milestone §5).
 #[cfg(feature = "devvision")]
@@ -80,6 +81,10 @@ pub mod money;
 pub mod coach;
 pub mod cite;
 pub mod lessons;
+pub mod hardware;
+pub mod rescue;
+pub mod rescue_core;
+pub mod rescue_native;
 pub mod budget;
 pub mod selfknow;
 pub mod shop;
@@ -124,6 +129,9 @@ pub mod planner;
 pub mod recipes;
 pub mod reminders;
 pub mod settings;
+pub mod siteaccess;
+pub mod practical;
+pub mod logins;
 pub mod state;
 pub mod store;
 pub mod suggest;
@@ -344,8 +352,10 @@ pub fn run() {
             commands::close_overlay,
             commands::set_overlay_interactive,
             commands::set_overlay_hit,
+            commands::task_status,
             commands::set_overlay_wheel,
             commands::frontend_log,
+            commands::mic_windows_advice,
             commands::list_memories,
             commands::add_memory,
             commands::delete_memory,
@@ -369,6 +379,11 @@ pub fn run() {
             commands::chat_cancel,
             commands::android_connect,
             commands::android_do,
+            commands::android_screen,
+            commands::android_tap,
+            commands::android_swipe,
+            commands::android_key,
+            commands::android_type,
             commands::show_caption_overlay,
             commands::screen_backdrop,
             commands::show_config,
@@ -482,6 +497,10 @@ pub fn run() {
             commands::air_grip_3d,
             commands::air_keys,
             commands::air_target,
+            commands::eye_target,
+            commands::sites_change,
+            commands::practical_say,
+            commands::practical_turn,
             commands::air_key,
             commands::air_draw,
             commands::window_spot,
@@ -584,6 +603,7 @@ pub fn run() {
             commands::cancel_task,
             commands::pause_task,
             commands::resume_task,
+            commands::rerun_task,
             commands::quit_app,
             commands::selftest_enabled,
             commands::open_app,

@@ -139,19 +139,90 @@ async function run(op, args) {
     const w = await chrome.windows.get(t.windowId);
     return { open: true, tab: t.id, windowId: t.windowId, focused: !!w.focused, visible: !!t.active && w.state !== "minimized", url: t.url, title: t.title || "" };
   }
+  // Izuki's own window for a task: pages open there, never taking your focus,
+  // and Izuki works in them through the page itself (no mouse, no keys on
+  // your screen). One window, reused; it comes forward when the task is done.
+  if (op === "workspace") {
+    const url = String(args.url || "");
+    if (!/^https?:\/\//.test(url)) throw new Error("not a web address");
+    const { izukiWorkspace } = await chrome.storage.session.get("izukiWorkspace");
+    let win = null;
+    if (izukiWorkspace) win = await chrome.windows.get(izukiWorkspace.windowId, { populate: true }).catch(() => null);
+    let tab;
+    if (win && win.tabs && win.tabs.length) {
+      tab = await chrome.tabs.update(win.tabs.find((t) => t.active)?.id ?? win.tabs[0].id, { url });
+    } else {
+      win = await chrome.windows.create({ url, focused: false, width: 1100, height: 760, type: "normal" });
+      tab = win.tabs[0];
+      await chrome.storage.session.set({ izukiWorkspace: { windowId: win.id, tab: tab.id } });
+    }
+    // Wait for the page (up to 15 s), so the first look reads the real thing.
+    for (let i = 0; i < 60; i++) {
+      const t = await chrome.tabs.get(tab.id).catch(() => null);
+      if (!t || t.status === "complete") break;
+      await new Promise((r) => setTimeout(r, 250));
+    }
+    const t = await chrome.tabs.get(tab.id);
+    return { tab: t.id, windowId: t.windowId, url: t.url, title: t.title || "" };
+  }
+  // A picture of Izuki's window as it is now, for the live view in Izuki.
+  if (op === "workspace_shot") {
+    const { izukiWorkspace } = await chrome.storage.session.get("izukiWorkspace");
+    if (!izukiWorkspace) return { shot: "" };
+    const win = await chrome.windows.get(izukiWorkspace.windowId).catch(() => null);
+    if (!win || win.state === "minimized") return { shot: "" };
+    const shot = await chrome.tabs.captureVisibleTab(win.id, { format: "jpeg", quality: 55 }).catch(() => "");
+    return { shot };
+  }
+  // The task is done: show its window.
+  if (op === "workspace_show") {
+    const { izukiWorkspace } = await chrome.storage.session.get("izukiWorkspace");
+    if (izukiWorkspace) await chrome.windows.update(izukiWorkspace.windowId, { focused: true, state: "normal" }).catch(() => null);
+    return { shown: !!izukiWorkspace };
+  }
   const tab = await targetTab(args);
   switch (op) {
     case "snapshot":
       return { ...(await inPage(tab.id, snapshot)), url: tab.url, title: tab.title };
     case "click": {
-      const clicked = await inPage(tab.id, clickEl, [args.id]);
+      if (args.host) {
+        const now = await chrome.tabs.get(tab.id).catch(() => null);
+        const host = (() => { try { return new URL(now?.url || "").hostname.toLowerCase().replace(/^www\./, ""); } catch { return ""; } })();
+        if (host !== String(args.host)) throw new Error("page_changed: the page moved on since I looked, so I didn't act. Taking a fresh look.");
+      }
+      const clicked = await inPage(tab.id, clickEl, [args.id, String(args.host || ""), String(args.name || "")]);
+      if (clicked === "moved") throw new Error("page_changed: the page moved on since I looked, so I didn't act. Taking a fresh look.");
       if (!clicked) throw new Error("that element is gone");
-      // A click still to come tells the app how long to wait before looking.
-      return clicked === true ? true : { deferred: clicked.deferred };
+      if (clicked === true) return true;
+      // A click still to come: wait for it, then ask the page how it went. A
+      // page that's gone (it navigated) or doesn't answer took the click; one
+      // that says "cancelled" changed in the gap and wasn't clicked.
+      await new Promise((r) => setTimeout(r, clicked.deferred + 80));
+      const outcome = await Promise.race([
+        inPage(tab.id, (id) => (globalThis.__izukiDeferred && globalThis.__izukiDeferred.id === id ? globalThis.__izukiDeferred.state : "gone"), [args.id]).catch(() => "gone"),
+        new Promise((r) => setTimeout(() => r("gone"), 400)),
+      ]);
+      if (outcome === "cancelled") throw new Error("page_changed: the page moved on just before the click, so I didn't click. Taking a fresh look.");
+      // Still "pending" after its moment: whether it happened isn't known.
+      if (outcome === "pending") throw new Error("unconfirmed: the click didn't confirm — it may have gone through; take a fresh look before doing it again");
+      // It tells the app how long to wait before looking.
+      return { deferred: clicked.deferred };
     }
-    case "type":
-      if (!(await inPage(tab.id, typeEl, [args.id, String(args.text || "")]))) throw new Error("that box is gone");
+    case "type": {
+      if (args.host) {
+        const now = await chrome.tabs.get(tab.id).catch(() => null);
+        const host = (() => { try { return new URL(now?.url || "").hostname.toLowerCase().replace(/^www\./, ""); } catch { return ""; } })();
+        if (host !== String(args.host)) throw new Error("page_changed: the page moved on since I looked, so I didn't act. Taking a fresh look.");
+      }
+      const typed = await inPage(tab.id, typeEl, [args.id, String(args.text || ""), String(args.host || ""), String(args.name || "")]);
+      if (typed === "moved") throw new Error("page_changed: the page moved on since I looked, so I didn't type. Taking a fresh look.");
+      if (typed === "secret") throw new Error("secret: I never type passwords, card numbers or security codes. You type that part, then tell me to carry on.");
+      if (!typed) throw new Error("that box is gone");
       return true;
+    }
+    // The address the tab shows right now (the site rule for screen clicks).
+    case "where":
+      return { url: tab.url || "" };
     case "scroll":
       await inPage(tab.id, (dy) => window.scrollBy({ top: dy, behavior: "smooth" }), [Number(args.dy) || 600]);
       return true;
@@ -243,6 +314,14 @@ async function readLinked(url) {
 
 function snapshot() {
   const SEL = 'a[href],button,input:not([type=hidden]),select,textarea,summary,[role=button],[role=link],[role=tab],[role=menuitem],[role=checkbox],[role=radio],[role=option],[role=switch],[contenteditable="true"],[onclick]';
+  // Passwords, card numbers, security and one-time codes: never typed by
+  // Izuki, on any site. (Repeated in typeEl: each runs alone in the page.)
+  const secret = (el) => {
+    const type = (el.getAttribute("type") || "").toLowerCase();
+    const ac = (el.getAttribute("autocomplete") || "").toLowerCase();
+    const label = `${el.getAttribute("name") || ""} ${el.id || ""} ${el.getAttribute("aria-label") || ""} ${el.getAttribute("placeholder") || ""} ${[...(el.labels || [])].map((l) => l.textContent || "").join(" ")}`.toLowerCase();
+    return type === "password" || /(^|\s)(current-password|new-password|one-time-code|cc-number|cc-csc|cc-exp)/.test(ac) || /\b(password|passcode|cvv|cvc|card ?number|security code|one.?time code|otp)\b/.test(label);
+  };
   const kindOf = (el) => {
     const tag = el.tagName.toLowerCase();
     const role = (el.getAttribute("role") || "").toLowerCase();
@@ -250,6 +329,7 @@ function snapshot() {
     if (type === "checkbox" || role === "checkbox" || role === "switch") return "CheckBox";
     if (type === "radio" || role === "radio") return "RadioButton";
     if (tag === "select") return "ComboBox";
+    if (tag === "input" && secret(el)) return "Secret";
     if (tag === "textarea" || el.isContentEditable || (tag === "input" && !["button", "submit", "reset", "image"].includes(type))) return "Edit";
     if (role === "tab") return "TabItem";
     if (role === "menuitem" || role === "option") return "MenuItem";
@@ -261,6 +341,19 @@ function snapshot() {
     const text = (el.innerText || el.value || el.getAttribute("placeholder") || el.getAttribute("title") || "").trim();
     const img = el.querySelector && el.querySelector("img[alt]");
     return (label || text || (img && img.alt) || "").replace(/\s+/g, " ").trim().slice(0, 100);
+  };
+  // An element's identity as a person would know it: the page it's on, the
+  // labelled group it sits in (a question's choices), its form name and its
+  // own name. Never the text around it, which can tick (timers, counters).
+  const seenOf = (el) => {
+    const g = el.closest('fieldset,[role="radiogroup"],[role="group"]');
+    const byId = (ids) => (ids || "").split(/\s+/).map((i) => (i && document.getElementById(i)?.innerText) || "").join(" ");
+    const group = g ? g.getAttribute("aria-label") || byId(g.getAttribute("aria-labelledby")) || g.querySelector("legend")?.innerText || "" : "";
+    const described = `${byId(el.getAttribute("aria-describedby"))} ${g ? byId(g.getAttribute("aria-describedby")) : ""}`.replace(/\s+/g, " ").trim().slice(0, 200);
+    const words = `${location.origin}${location.pathname}${location.search}${location.hash}|${group.replace(/\s+/g, " ").trim().slice(0, 200)}|${described}|${el.getAttribute("name") || ""}|${nameOf(el)}`;
+    let h = 5381;
+    for (let i = 0; i < words.length; i++) h = ((h * 33) ^ words.charCodeAt(i)) >>> 0;
+    return h.toString(36);
   };
   const out = [];
   let n = Number(document.documentElement.getAttribute("data-izuki-next") || 1);
@@ -274,6 +367,9 @@ function snapshot() {
       id = `i${n++}`;
       el.setAttribute("data-izuki-id", id);
     }
+    // What it was when listed (seenOf, the same in clickEl and typeEl): an
+    // action on it later checks it still is.
+    el.setAttribute("data-izuki-seen", seenOf(el));
     const href = el.tagName === "A" ? el.href : null;
     out.push({ id, kind: kindOf(el), name: nameOf(el), href, rect: { x: r.left, y: r.top, w: r.width, h: r.height } });
     if (out.length >= 150) break;
@@ -286,14 +382,44 @@ function snapshot() {
   };
 }
 
-function clickEl(id) {
+function clickEl(id, host, name) {
+  // Still the element that was listed: the same site, the same name a person
+  // sees on it, and the same page, question group and form name as when it
+  // was listed (a page can reuse an element for something else, or move to
+  // the next question without a new address). Worked out exactly as the
+  // snapshot did.
+  const named = (el) => {
+    const label = el.getAttribute("aria-label") || (el.labels && el.labels[0] && el.labels[0].innerText) || "";
+    const text = (el.innerText || el.value || el.getAttribute("placeholder") || el.getAttribute("title") || "").trim();
+    const img = el.querySelector && el.querySelector("img[alt]");
+    return (label || text || (img && img.alt) || "").replace(/\s+/g, " ").trim().slice(0, 100);
+  };
+  const seenOf = (el) => {
+    const g = el.closest('fieldset,[role="radiogroup"],[role="group"]');
+    const byId = (ids) => (ids || "").split(/\s+/).map((i) => (i && document.getElementById(i)?.innerText) || "").join(" ");
+    const group = g ? g.getAttribute("aria-label") || byId(g.getAttribute("aria-labelledby")) || g.querySelector("legend")?.innerText || "" : "";
+    const described = `${byId(el.getAttribute("aria-describedby"))} ${g ? byId(g.getAttribute("aria-describedby")) : ""}`.replace(/\s+/g, " ").trim().slice(0, 200);
+    const words = `${location.origin}${location.pathname}${location.search}${location.hash}|${group.replace(/\s+/g, " ").trim().slice(0, 200)}|${described}|${el.getAttribute("name") || ""}|${named(el)}`;
+    let h = 5381;
+    for (let i = 0; i < words.length; i++) h = ((h * 33) ^ words.charCodeAt(i)) >>> 0;
+    return h.toString(36);
+  };
+  const same = (el) => (!host || location.hostname.toLowerCase().replace(/^www\./, "") === host)
+    && (!name || named(el) === name)
+    && (!el.hasAttribute("data-izuki-seen") || el.getAttribute("data-izuki-seen") === seenOf(el));
   const el = document.querySelector(`[data-izuki-id="${CSS.escape(id)}"]`);
   if (!el) return false;
+  // Checked inside the page at the moment of acting: the tab may have moved
+  // on between the background's check and this call.
+  if (!same(el)) return "moved";
   el.scrollIntoView({ block: "center", inline: "center" });
   if (el.focus) el.focus({ preventScroll: true });
   // The answer card must not sit over the control being pressed.
   try { globalThis.__izukiBubbleDodge?.(el.getBoundingClientRect()); } catch {}
   if (!el.isConnected) return false;
+  // Scrolling, focus and the card moving run the page's own code: the same
+  // element still, right before the click.
+  if (!same(el)) return "moved";
   // A click that leaves the page (a link, a submit) tears down this script
   // before its reply can travel back, and Izuki then waited out its whole
   // timeout to say "unconfirmed" about a click that had worked. So those are
@@ -308,21 +434,61 @@ function clickEl(id) {
     return true;
   }
   const deferred = 90;
+  globalThis.__izukiDeferred = { id, state: "pending" };
   return new Promise((done) => {
     done({ deferred });
     setTimeout(() => {
-      // Re-checked at the last moment: a page that redrew in the gap is not
-      // clicked blindly. The next look sees whatever it became.
-      if (el.isConnected) el.click();
+      // Re-checked at the last moment: a page that redrew or left the site
+      // in the gap is not clicked blindly, and says so (the background asks).
+      const go = el.isConnected && same(el);
+      globalThis.__izukiDeferred = { id, state: go ? "clicked" : "cancelled" };
+      if (go) el.click();
     }, deferred);
   });
 }
-function typeEl(id, text) {
+function typeEl(id, text, host, name) {
+  // Still the element that was listed (as in clickEl, worked out exactly as
+  // the snapshot did).
+  const named = (el) => {
+    const label = el.getAttribute("aria-label") || (el.labels && el.labels[0] && el.labels[0].innerText) || "";
+    const text = (el.innerText || el.value || el.getAttribute("placeholder") || el.getAttribute("title") || "").trim();
+    const img = el.querySelector && el.querySelector("img[alt]");
+    return (label || text || (img && img.alt) || "").replace(/\s+/g, " ").trim().slice(0, 100);
+  };
+  const seenOf = (el) => {
+    const g = el.closest('fieldset,[role="radiogroup"],[role="group"]');
+    const byId = (ids) => (ids || "").split(/\s+/).map((i) => (i && document.getElementById(i)?.innerText) || "").join(" ");
+    const group = g ? g.getAttribute("aria-label") || byId(g.getAttribute("aria-labelledby")) || g.querySelector("legend")?.innerText || "" : "";
+    const described = `${byId(el.getAttribute("aria-describedby"))} ${g ? byId(g.getAttribute("aria-describedby")) : ""}`.replace(/\s+/g, " ").trim().slice(0, 200);
+    const words = `${location.origin}${location.pathname}${location.search}${location.hash}|${group.replace(/\s+/g, " ").trim().slice(0, 200)}|${described}|${el.getAttribute("name") || ""}|${named(el)}`;
+    let h = 5381;
+    for (let i = 0; i < words.length; i++) h = ((h * 33) ^ words.charCodeAt(i)) >>> 0;
+    return h.toString(36);
+  };
+  const same = (el) => (!host || location.hostname.toLowerCase().replace(/^www\./, "") === host)
+    && (!name || named(el) === name)
+    && (!el.hasAttribute("data-izuki-seen") || el.getAttribute("data-izuki-seen") === seenOf(el));
+  // Passwords, card numbers, security and one-time codes: never typed by
+  // Izuki, on any site. (Repeated in typeEl: each runs alone in the page.)
+  const secret = (el) => {
+    const type = (el.getAttribute("type") || "").toLowerCase();
+    const ac = (el.getAttribute("autocomplete") || "").toLowerCase();
+    const label = `${el.getAttribute("name") || ""} ${el.id || ""} ${el.getAttribute("aria-label") || ""} ${el.getAttribute("placeholder") || ""} ${[...(el.labels || [])].map((l) => l.textContent || "").join(" ")}`.toLowerCase();
+    return type === "password" || /(^|\s)(current-password|new-password|one-time-code|cc-number|cc-csc|cc-exp)/.test(ac) || /\b(password|passcode|cvv|cvc|card ?number|security code|one.?time code|otp)\b/.test(label);
+  };
   const el = document.querySelector(`[data-izuki-id="${CSS.escape(id)}"]`);
   if (!el) return false;
+  if (secret(el)) return "secret";
+  // Checked inside the page at the moment of acting: the tab may have moved
+  // on between the background's check and this call.
+  if (!same(el)) return "moved";
   el.scrollIntoView({ block: "center" });
   el.focus();
   try { globalThis.__izukiBubbleDodge?.(el.getBoundingClientRect()); } catch {}
+  // Focusing runs the page's own code: still the same box, and still not a
+  // secret one, right before writing.
+  if (!el.isConnected || !same(el)) return "moved";
+  if (secret(el)) return "secret";
   if (el.isContentEditable) {
     document.execCommand("selectAll", false);
     document.execCommand("insertText", false, text);

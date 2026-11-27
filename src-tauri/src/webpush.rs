@@ -177,7 +177,7 @@ fn send(s: &Sub, payload: &[u8]) -> Result<()> {
 fn vapid_jwt(k: &EcdsaKeyPair, aud: &str) -> Result<String> {
     let header = URL_SAFE_NO_PAD.encode(br#"{"typ":"JWT","alg":"ES256"}"#);
     let exp = chrono::Utc::now().timestamp() + 12 * 3600;
-    let claims = URL_SAFE_NO_PAD.encode(json!({ "aud": aud, "exp": exp, "sub": "https://nova-izuki.github.io/izuki/" }).to_string());
+    let claims = URL_SAFE_NO_PAD.encode(json!({ "aud": aud, "exp": exp, "sub": "https://izukinova.ai/" }).to_string());
     let signing_input = format!("{header}.{claims}");
     let sig = k.sign(&SystemRandom::new(), signing_input.as_bytes()).map_err(|_| anyhow!("couldn't sign"))?;
     Ok(format!("{signing_input}.{}", URL_SAFE_NO_PAD.encode(sig.as_ref())))

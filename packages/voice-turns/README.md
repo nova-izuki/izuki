@@ -1,6 +1,6 @@
 # voice-turns
 
-Two small pieces every voice assistant needs, from [Izuki](https://nova-izuki.github.io/izuki/). TypeScript, zero dependencies, MIT.
+Two small pieces every voice assistant needs, from [Izuki](https://izukinova.ai/). TypeScript, zero dependencies, MIT.
 
 ## EchoGate: did the user talk over the assistant?
 

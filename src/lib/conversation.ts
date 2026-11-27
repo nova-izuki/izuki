@@ -14,6 +14,8 @@ import { api, EV, emit, on } from "./ipc";
 export interface Turn {
   role: "user" | "assistant";
   content: string;
+  /** The saved chat it came from (Chat tab), so deleting that chat removes it. */
+  chat?: string;
 }
 
 const history: Turn[] = [];
@@ -62,23 +64,43 @@ const MAX_TURNS = 16;
  * the orb hears another, and a reply spoken at one of them must never drop what
  * the other just said. Duplicates are skipped, newest wins the order.
  */
-export function shareHistory(turns: Turn[]): void {
+export function shareHistory(turns: Turn[], chat?: string): void {
   const incoming = turns
     .slice(-MAX_TURNS)
-    .map((t) => ({ role: t.role, content: (t.content ?? "").trim() }))
+    .map((t) => ({ role: t.role, content: (t.content ?? "").trim(), chat }))
     .filter((t) => t.content && (t.role === "user" || t.role === "assistant"));
   if (!incoming.length) return;
-  const seen = new Set(history.map((t) => `${t.role}\u0000${t.content}`));
+  // Per chat: the same line in two chats is two lines, so deleting one chat
+  // never takes the other's. A line the orb heard that this chat now holds
+  // (it opened on the shared thread) becomes this chat's, not a second copy.
   for (const t of incoming) {
-    const key = `${t.role}\u0000${t.content}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    history.push(t);
+    const same = history.filter((h) => h.role === t.role && h.content === t.content);
+    if (same.some((h) => (h.chat ?? "") === (t.chat ?? ""))) continue;
+    const untagged = t.chat ? same.find((h) => !h.chat) : undefined;
+    if (untagged) untagged.chat = t.chat;
+    else history.push(t);
   }
   // Shared, so it counts as just now — otherwise the 15-minute reset would wipe
   // a thread the user is still typing into.
   lastAt = Date.now();
   if (history.length > MAX_TURNS) history.splice(0, history.length - MAX_TURNS);
+  publish();
+}
+
+/**
+ * A chat was deleted: every line it shared leaves the shared conversation too
+ * (the partial ones shared while a reply streamed included), so it can't come
+ * back as context for the next request (voice, typed or the phone). `null`:
+ * every line — Clear all.
+ */
+export function forgetHistory(chat: string | null): void {
+  if (chat === null) {
+    history.length = 0;
+  } else {
+    for (let i = history.length - 1; i >= 0; i--) {
+      if (history[i].chat === chat) history.splice(i, 1);
+    }
+  }
   publish();
 }
 
@@ -105,6 +127,12 @@ export function suggestions(): string[] {
     if (out.length < 4 && !out.includes(s)) out.push(s);
   };
 
+  // "Want me to do it, do it with you, or teach you step by step?"
+  // (practical.rs): the three answers, and the way out. Each carries on with
+  // the job just asked about (the conversation goes with it).
+  if (/do it with you, or teach you step by step\?$/i.test(reply)) {
+    return ["Teach me", "Do it with me", "Just do it", "Start over"];
+  }
   // It asked something, or offered to do something: yes is the obvious next word.
   if (/\?\s*$/.test(reply) || /\b(want me to|shall i|should i|would you like|do you want me to|ready to)\b/i.test(reply)) {
     add("Yes, do that");
@@ -165,11 +193,71 @@ const APPS = new RegExp(
  * decided locally and instantly. When unsure it says no: the chat model
  * can still hand over with `[SCREEN]`.
  */
+/** Practical mode (practical.rs): learning a job, or doing it together, happens on the screen. */
+const PRACTICAL =
+  /\b(teach me|walk me through|guide me|help me learn|show me how|do (it|this|that) with me|do it together|take turns|let me try|i'?ll do it myself)\b/i;
+
+/**
+ * "Answer this", "what's the answer to number 3", "give me the answer":
+ * a question about the question on screen, not a request to explain the
+ * Study log. These go to the screen agent so it can actually read the
+ * choices; a plain factual question ("what is a firewall") stays in chat.
+ */
+const ON_SCREEN_ANSWER =
+  /\b(?:answers?|ans|solve)\s+(?:(?:the|this|that|these|those)\s+)?(?:questions?|quiz|test|problem|one|number\s*\d+|q\s*\d+|#\s*\d+|options?|choices?|all(?:\s+of\s+them)?)\b|\b(?:what'?s|what\s+is|give\s+me|tell\s+me|show\s+me)\s+the\s+(?:correct\s+|right\s+)?(?:answer|option|one)\b|\b(?:can|could|would|will)\s+you\s+(?:answer|solve)\s+(?:it|this|that|these|those)\b/i;
+
+/** "Don't answer it", "without giving the answer": respect the refusal. */
+const DECLINES_DIRECT =
+  /(?:^|[^a-z])(?:don['’]?t|do not|never|without)\s+(?:(?:(?:the|an?)\s+)?answers?|(?:giv(?:e|ing)|tell|say|show)(?:\s+me)?\s+(?:(?:the|an?)\s+)?(?:(?!(?:work|steps?|reasoning|explanation|how|why)\b)[a-z]+\s+){0,2}answers?)(?:[^a-z]|$)/i;
+
+/** Shared with voice mode: preserve the command before answer conversion. */
+export const TUTOR_START =
+  /^(?:(?:hey |ok |okay )?(?:nova|izuki|atlas)[,. ]*)?(?:please )?(?:(?:start|turn on|use|go into|switch to) )?(?:teacher|tutor|teaching) mode\b|^(?:please )?teach me (?:this|the|my) (?:questions?|worksheet)\b|^(?:be|act as|act like) my (?:teacher|tutor)\b|^help me (?:through|with) (?:this|the|my) worksheet\b/i;
+
+const COACHES_ANSWER = /\b(?:coach me|explain how to|help me understand how to|(?:just|only) explain)\b/i;
+
+/** A direct answer is wanted, not a refusal or a "just explain it" request. */
+export function wantsDirectAnswer(text: string): boolean {
+  // Declining an explanation is still a request for the answer itself.
+  const coaching = text.replace(/\b(?:don['’]?t|do not|never|without)\s+(?:explain how to|show me how|walk me through|guide me|coach me)\b/gi, "");
+  return answersOnScreenQuestion(text) && !DECLINES_DIRECT.test(text) && !PRACTICAL.test(coaching) && !COACHES_ANSWER.test(coaching) && !TUTOR_START.test(text);
+}
+
+/** "add to my missions: answer question 5" must be saved, not read off-screen. */
+export const MISSION_ADD =
+  /^(?:please\s+)?(?:add|put)\s+(?:this\s+)?(?:to|on)\s+(?:my\s+)?(?:missions?|mission list|rest mode)[:,\s-]+(.{3,})$/i;
+
+export function answersOnScreenQuestion(text: string): boolean {
+  const t = text.trim();
+  const bare = t.replace(/[?.!]+$/, "").trim().toLowerCase();
+  if (/^(?:(?:the|what'?s the|whats the|give me the|tell me the|say the)\s+)?answers?(?:\s+(?:it|this|that|please|pls|now|quick|fast))?$/.test(bare)) {
+    return true;
+  }
+  // "give ans", "tell me the ans" and "ans it" are the same request.
+  if (/^(?:(?:can|could|would|will)\s+you\s+)?(?:(?:give|tell|say|show)\s+(?:me\s+)?(?:the\s+)?|(?:the\s+)?)(?:ans|answer)s?(?:\s+(?:it|this|that|please|pls|now|quick|fast))?$/.test(bare)) {
+    return true;
+  }
+  return ON_SCREEN_ANSWER.test(t);
+}
+
+/** The instruction that makes the screen agent answer (and never submit). */
+export function answerOnScreenPrompt(text: string): string {
+  return (
+    `Answer the question on my screen directly. They said: "${text.trim()}". ` +
+    "Give the answer first (including the option letter and its text when clearly visible), then explain why in one or two sentences. " +
+    "If the question or options are unreadable, say what you need to see. Do not start a walkthrough, offer Notes, or click or submit anything."
+  );
+}
+
 export function needsScreen(text: string): boolean {
-  // The user's say wins: "while I watch" / "on my screen" → the screen;
-  // "in the background" / "don't open anything" → behind the scenes.
-  if (wantsToWatch(text)) return true;
+  // The user's explicit preference wins: "teach me in the background" is
+  // still a background request, not permission to take over the screen.
   if (wantsBackground(text) || answersInBackground(text)) return false;
+  if (PRACTICAL.test(text)) return true;
+  // "Answer this" means the question in front of them, not one to guess at.
+  if (answersOnScreenQuestion(text)) return true;
+  // "While I watch" / "on my screen" means the screen.
+  if (wantsToWatch(text)) return true;
   return (SCREEN.test(text) && !/\b(remind me|set (a |an )?reminder)\b/i.test(text)) || looksLikeDirections(text);
 }
 
@@ -187,6 +275,17 @@ export function wantsBackground(text: string): boolean {
 /** "Do it on my screen", "while I watch", "show me as you do it". */
 export function wantsToWatch(text: string): boolean {
   return /\b(while i watch|so i can (see|watch)|let me (see|watch)|on (my|the) screen|in front of me|show me (how|as|while)|in (the )?frontend|where i can see)\b/i.test(text);
+}
+
+/**
+ * The Island chat's "Do it for me" and the chat's "Do it on my PC" put
+ * [DO IT] first (IslandChat.tsx, ChatTab.tsx): the person pressed a button
+ * that means "do these steps here, on this screen". A device word inside
+ * the steps ("how do I watch Netflix on my TV?") must not send the whole
+ * job to that device instead. Same rule as Rust's forced_do (commands.rs).
+ */
+export function forcedDoIt(text: string): boolean {
+  return text.trimStart().startsWith("[DO IT]");
 }
 
 export function answersInBackground(text: string): boolean {

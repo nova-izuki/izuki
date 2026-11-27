@@ -1,0 +1,6 @@
+# Bubblewrap generates the Android project here (CI only). Only the
+# configuration is kept: twa-manifest.json and this file.
+*
+!.gitignore
+!twa-manifest.json
+!README.md

@@ -137,6 +137,11 @@ pub fn find_app(name: &str) -> Option<String> {
     if let Some((_, target)) = BUILT_IN.iter().find(|(n, _)| *n == asked) {
         return Some((*target).to_string());
     }
+    // The laptop maker's Store app ("Lenovo Commercial Vantage", "MyASUS"):
+    // no Start-menu file to find, so its AppsFolder entry instead.
+    if let Some(target) = crate::hardware::launch_target(&asked) {
+        return Some(target);
+    }
     best.map(|(_, p)| p.to_string_lossy().into_owned())
 }
 
@@ -360,6 +365,80 @@ pub fn open_url(url: &str) -> Result<()> {
     start(&full)
 }
 
+/// "Search for pizza places near me", "google how tall is Everest", "look up
+/// the weather in Lagos", "find a pizza place near me", "where's the nearest
+/// gas station": a plain web search, opened at once with no AI. `None` for
+/// anything about this PC, this page, an account or another app (other skills
+/// and the agent handle those), and for anything with more than one step.
+///
+/// Seen 2026-11-23: "find a pizza place near me" went to the screen agent,
+/// which typed into the search box and pressed Enter over five AI rounds,
+/// about 75 s on rate-limited free brains. This is one step.
+pub fn web_search_request(said: &str) -> Option<String> {
+    let mut s = said.trim().trim_end_matches(['.', '!', '?', ' ']).to_lowercase().replace(['\u{2019}', '\u{2018}'], "'");
+    // Polite and wake words in front, "please"/"for me" behind.
+    loop {
+        let before = s.len();
+        for p in ["hey nova", "hey izuki", "nova", "izuki", "please", "can you", "could you", "would you", "will you", "go ahead and", "just"] {
+            if let Some(r) = s.strip_prefix(p) {
+                if r.is_empty() || r.starts_with([' ', ',']) {
+                    s = r.trim_start_matches([' ', ',']).to_string();
+                }
+            }
+        }
+        for p in [" please", " for me", " now", ","] {
+            if let Some(r) = s.strip_suffix(p) {
+                s = r.trim_end().to_string();
+            }
+        }
+        if s.len() == before {
+            break;
+        }
+    }
+    let padded = format!(" {s} ");
+    // Not a web search: this PC, this page, an account, another app, or more than one step.
+    const NOT: [&str; 31] = [
+        " my pc", " my computer", " my laptop", " my files", " my file ", " my documents", " my downloads", " my desktop", " my email",
+        " my mail", " my inbox", " my gmail", " my drive", " my notes", " my photos", " this page", " this site", " this website", " this tab",
+        " this document", " this pdf", " on screen", " the screen", " youtube", " spotify", " amazon", " file ", " folder", " and ", " then ", " click ",
+    ];
+    if NOT.iter().any(|w| padded.contains(w)) {
+        return None;
+    }
+    let mut q: Option<String> = None;
+    for p in ["search the web for ", "search the internet for ", "search online for ", "search google for ", "search on google for ", "do a google search for ",
+              "google search for ", "google search ", "search for ", "look up ", "google ", "search "] {
+        if let Some(r) = s.strip_prefix(p) {
+            q = Some(r.to_string());
+            break;
+        }
+    }
+    // "Look burna boy up".
+    if q.is_none() {
+        if let Some(r) = s.strip_prefix("look ").and_then(|r| r.strip_suffix(" up")) {
+            q = Some(r.to_string());
+        }
+    }
+    // "Find a pizza place near me", "where's the nearest gas station": things nearby.
+    if q.is_none() && [" near me ", " nearby ", " nearest ", " closest ", " around here "].iter().any(|w| padded.contains(w)) {
+        let mut r = s.as_str();
+        for p in ["find me ", "find ", "where's ", "where is ", "show me ", "get me ", "what's ", "what is ", "i want ", "i need "] {
+            if let Some(x) = r.strip_prefix(p) {
+                r = x;
+                break;
+            }
+        }
+        q = Some(r.to_string());
+    }
+    let q = q?;
+    let q = q.trim().trim_start_matches("a ").trim_start_matches("an ").trim().to_string();
+    // "Look it up", "search for that": nothing to search for yet.
+    if q.chars().count() < 2 || q.chars().count() > 120 || ["it", "that", "this", "them", "something", "stuff"].contains(&q.as_str()) {
+        return None;
+    }
+    Some(q)
+}
+
 /// The address of a web search for `query`.
 pub fn search_url(query: &str) -> String {
     let q: String = query
@@ -400,6 +479,28 @@ mod tests {
         assert_eq!(score("spotify", "spotify"), 100);
         assert!(score("visual studio code", "visual studio code insiders") > 0);
         assert_eq!(score("word", "wordpad"), 0);
+    }
+
+    #[test]
+    fn plain_web_searches_are_found_with_their_words() {
+        let q = |s: &str| web_search_request(s);
+        assert_eq!(q("search for pizza places near me").as_deref(), Some("pizza places near me"));
+        assert_eq!(q("Hey Izuki, find a pizza place near me.").as_deref(), Some("pizza place near me"));
+        assert_eq!(q("google how tall is mount everest").as_deref(), Some("how tall is mount everest"));
+        assert_eq!(q("can you look up the weather in Lagos please").as_deref(), Some("the weather in lagos"));
+        assert_eq!(q("look burna boy up").as_deref(), Some("burna boy"));
+        assert_eq!(q("where's the nearest gas station?").as_deref(), Some("the nearest gas station"));
+        assert_eq!(q("search the web for cheap flights to Abuja").as_deref(), Some("cheap flights to abuja"));
+        assert_eq!(q("best tacos near me").as_deref(), Some("best tacos near me"));
+    }
+
+    #[test]
+    fn anything_else_is_not_a_web_search() {
+        for s in ["search my files for the budget", "find my email from amazon", "search this page for refunds", "search youtube for lofi",
+                  "find downloads", "look up", "look it up", "search for it", "find the settings", "search", "open chrome and search for cats",
+                  "search for cats and click the first one", "what's on my screen", "find the file called notes near me", "play burna boy", ""] {
+            assert_eq!(web_search_request(s), None, "{s}");
+        }
     }
 
     #[test]

@@ -1,6 +1,6 @@
 [package]
 name = "izuki"
-version = "1.0.208"
+version = "1.0.225"
 description = "IZUKI — draw on your screen, Izuki does it."
 authors = ["Izuki"]
 edition = "2021"
@@ -139,3 +139,10 @@ opt-level = 1
 # unresolved `anon.….llvm.…` symbols after a few rebuilds, until a
 # `cargo clean -p izuki`. A full crate rebuild each time is slower but sane.
 incremental = false
+# The build cache filled the owner's drive more than once (40+ GB), mostly
+# debug info. Line tables are what a panic or a backtrace needs for Izuki's
+# own code; the dependencies need none. (Release builds are unaffected.)
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false

@@ -725,13 +725,36 @@ html[data-backdrop="tabbed"] .izk-card {
 /* Near-black glass, like a phone's island: a hair of light on the rim and a
    soft drop shadow so it reads on white pages and dark ones alike. */
 .izk-island {
-  background: rgba(6, 6, 9, 0.94);
+  background: rgba(6, 6, 9, var(--izk-island-alpha, 0.94));
   box-shadow:
     inset 0 0 0 1px rgba(255, 255, 255, 0.07),
     inset 0 1px 0 rgba(255, 255, 255, 0.06),
     0 10px 30px rgba(0, 0, 0, 0.35),
     0 2px 8px rgba(0, 0, 0, 0.25);
   -webkit-font-smoothing: antialiased;
+}
+/* Only opt into backdrop blur when the user asks for it: blur(0) still
+   creates a layer on some integrated GPUs. */
+.izk-island.izk-island-blurred {
+  backdrop-filter: blur(var(--izk-island-blur, 0px)) saturate(1.2);
+  -webkit-backdrop-filter: blur(var(--izk-island-blur, 0px)) saturate(1.2);
+}
+/* Shape Studio: a flatter, cheaper Island without the drop shadow. */
+.izk-island.izk-island-flat {
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08) !important;
+}
+/* The notch's shadow lives on its shell, so the flat switch has to reach it
+   too; otherwise turning Shadow off leaves a floating dark halo behind. */
+.izk-island.izk-island-flat .izk-notch-shell {
+  filter: none !important;
+}
+/* Calm mode: no springy expansion, drifting aurora or decorative motion. */
+.izk-island.izk-island-calm,
+.izk-island.izk-island-calm::before,
+.izk-island.izk-island-calm::after,
+.izk-island.izk-island-calm * {
+  animation: none !important;
+  transition: none !important;
 }
 /* Performance: the overlay covers the whole screen, so any endless animation
    on it makes the graphics card redraw a screen-sized layer ~60 times a
@@ -780,6 +803,293 @@ html[data-backdrop="tabbed"] .izk-card {
   border-radius: 0 0 6px 6px !important;
 }
 
+/* Screen-attached notch, the laptop-notch look: a dark body hanging from the
+   top edge with rounded bottom corners, and two small "ears" where its top
+   corners curve OUT into the screen edge (concave fillets), so it reads as
+   part of the bezel. The glass, rim and shadow are a separate shell so the
+   content is never clipped. At rest it hides above the edge and slides down
+   when the mouse reaches the top middle (Island.tsx). */
+.izk-island.izk-theme-notch {
+  --notch-ear: 14px;
+  --notch-top: rgba(13, 17, 27, var(--izk-island-alpha, 0.96));
+  background: transparent;
+  box-shadow: none;
+  overflow: visible !important;
+  border-radius: 0 !important;
+  translate: 0 0;
+  transition: translate 260ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity 180ms ease-out;
+}
+.izk-island.izk-theme-notch.izk-island-hidden {
+  translate: 0 -112%;
+}
+.izk-island.izk-theme-notch.izk-island-calm { transition: none; }
+/* The parent glow is rectangular; only the masked shell paints the notch. */
+.izk-island.izk-theme-notch.izk-island-open::before { content: none; }
+.izk-island.izk-theme-notch .izk-notch-shell {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  border: 1px solid color-mix(in srgb, var(--izk-island-accent, #22d3ee) 30%, rgba(255, 255, 255, 0.06));
+  border-top: 0;
+  border-radius: 0 0 24px 24px;
+  background:
+    radial-gradient(100% 80% at 50% 0%, color-mix(in srgb, var(--izk-island-accent, #22d3ee) 10%, transparent), transparent 70%),
+    linear-gradient(180deg, rgba(13, 17, 27, var(--izk-island-alpha, 0.96)) 0%, rgba(5, 7, 13, var(--izk-island-alpha, 0.96)) 100%);
+  box-shadow:
+    inset 0 -12px 28px color-mix(in srgb, var(--izk-island-accent, #22d3ee) 15%, transparent),
+    inset 0 -1px 0 color-mix(in srgb, var(--izk-island-accent, #22d3ee) 38%, transparent),
+    inset 1px 0 0 rgba(255, 255, 255, 0.05),
+    inset -1px 0 0 rgba(255, 255, 255, 0.05),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  filter: drop-shadow(0 16px 32px rgba(0, 0, 0, 0.42));
+}
+/* The ears: the top corners flare outward into the screen edge. Each is a
+   small square beside the body's top corner, filled outside a quarter circle. */
+.izk-island.izk-theme-notch .izk-notch-shell::before,
+.izk-island.izk-theme-notch .izk-notch-shell::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  width: var(--notch-ear);
+  height: var(--notch-ear);
+  pointer-events: none;
+}
+.izk-island.izk-theme-notch .izk-notch-shell::before {
+  left: calc(-1 * var(--notch-ear) - 1px);
+  background: radial-gradient(circle at 0 100%, transparent calc(var(--notch-ear) - 0.5px), var(--notch-top) var(--notch-ear));
+}
+.izk-island.izk-theme-notch .izk-notch-shell::after {
+  right: calc(-1 * var(--notch-ear) - 1px);
+  background: radial-gradient(circle at 100% 100%, transparent calc(var(--notch-ear) - 0.5px), var(--notch-top) var(--notch-ear));
+}
+.izk-island.izk-theme-notch.izk-island-light {
+  --notch-top: rgba(101, 124, 153, var(--izk-island-alpha, 0.96));
+}
+/* Light glass: a cooler, frostier slate. Still translucent and readable with
+   white text, but clearly lifted off the smoked-black default. */
+.izk-island.izk-theme-notch.izk-island-light .izk-notch-shell {
+  border-color: color-mix(in srgb, var(--izk-island-accent, #22d3ee) 30%, rgba(255, 255, 255, 0.55));
+  background:
+    radial-gradient(120% 100% at 50% 0%, rgba(255, 255, 255, 0.28), transparent 62%),
+    linear-gradient(180deg, rgba(101, 124, 153, var(--izk-island-alpha, 0.96)) 0%, rgba(62, 82, 109, var(--izk-island-alpha, 0.96)) 58%, rgba(43, 61, 85, var(--izk-island-alpha, 0.96)) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.46),
+    inset 0 -12px 28px color-mix(in srgb, var(--izk-island-accent, #22d3ee) 12%, transparent),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.24),
+    inset 1px 0 0 rgba(255, 255, 255, 0.12),
+    inset -1px 0 0 rgba(255, 255, 255, 0.12),
+    0 16px 32px rgba(8, 20, 36, 0.34);
+}
+.izk-island.izk-island-blurred.izk-theme-notch.izk-island-light .izk-notch-shell {
+  backdrop-filter: blur(var(--izk-island-blur, 0px)) saturate(1.4) brightness(1.08);
+  -webkit-backdrop-filter: blur(var(--izk-island-blur, 0px)) saturate(1.4) brightness(1.08);
+}
+
+/* The click area of the open notch: its body (the ears are decoration, so
+   clicks there reach the desktop). */
+.izk-island.izk-theme-notch .izk-notch-hit {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: none;
+  pointer-events: none;
+}
+.izk-island.izk-theme-notch.izk-island-open .izk-notch-hit {
+  display: block;
+  pointer-events: auto;
+  clip-path: inset(0 round 0 0 24px 24px);
+}
+.izk-island.izk-island-blurred.izk-theme-notch .izk-notch-shell {
+  backdrop-filter: blur(var(--izk-island-blur, 0px)) saturate(1.25);
+  -webkit-backdrop-filter: blur(var(--izk-island-blur, 0px)) saturate(1.25);
+}
+/* The top is flat now (no cut-outs): content starts just under the edge. */
+.izk-island.izk-theme-notch.izk-island-open .izk-notch-content {
+  padding-top: 12px;
+  pointer-events: none;
+}
+/* Tailwind's scanner can miss a class followed by a template expression;
+   keep the notch's own gutters explicit. */
+.izk-island.izk-theme-notch .izk-notch-content {
+  padding-left: 14px;
+  padding-right: 14px;
+  padding-bottom: 14px;
+}
+.izk-island.izk-theme-notch.izk-island-open .izk-notch-content > * { pointer-events: auto; }
+/* The menu is a sibling of the content, not a child, so give it its own
+   pointer events while the transparent notch shell stays click-through. */
+.izk-island.izk-theme-notch.izk-island-open .izk-island-menu { pointer-events: auto; }
+.izk-island.izk-theme-notch:not(.izk-island-open) .izk-notch-content {
+  padding: 8px 22px 0;
+}
+/* Closed: the compact live notch, smaller ears and corners. */
+.izk-island.izk-theme-notch:not(.izk-island-open) {
+  --notch-ear: 10px;
+}
+.izk-island.izk-theme-notch:not(.izk-island-open) .izk-notch-shell {
+  border-radius: 0 0 20px 20px;
+}
+
+/* Level 1: compact live card. It sits inside the masked glass shell, so text
+   stays clear of the curved shoulders. */
+.izk-notch-mini {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 148px;
+  min-height: 92px;
+  padding: 11px 15px 10px;
+  text-align: left;
+}
+.izk-notch-mini-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+}
+.izk-notch-mini-orb {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--izk-island-accent, #22d3ee) 86%, white);
+  box-shadow: 0 0 9px color-mix(in srgb, var(--izk-island-accent, #22d3ee) 68%, transparent);
+}
+.izk-notch-mini-brand {
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.16em;
+  color: rgba(255, 255, 255, 0.64);
+}
+.izk-notch-mini-clock {
+  margin-left: auto;
+  font-size: 9.5px;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  color: rgba(255, 255, 255, 0.5);
+  font-variant-numeric: tabular-nums;
+}
+.izk-notch-mini-line {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.28;
+  letter-spacing: -0.01em;
+  color: rgba(255, 255, 255, 0.94);
+}
+.izk-notch-mini-meta {
+  overflow: hidden;
+  font-size: 9.5px;
+  line-height: 1.2;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: rgba(255, 255, 255, 0.52);
+}
+.izk-notch-mini.is-alert .izk-notch-mini-orb {
+  background: #fbbf24;
+  box-shadow: 0 0 9px rgba(251, 191, 36, 0.6);
+}
+.izk-notch-mini.is-done .izk-notch-mini-orb {
+  background: #34d399;
+  box-shadow: 0 0 9px rgba(52, 211, 153, 0.55);
+}
+.izk-notch-ring {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  margin-left: auto;
+}
+.izk-notch-ring svg {
+  display: block;
+  width: 22px;
+  height: 22px;
+}
+.izk-notch-ring-track,
+.izk-notch-ring-arc {
+  fill: none;
+  stroke-width: 2.4;
+}
+.izk-notch-ring-track {
+  stroke: rgba(255, 255, 255, 0.14);
+}
+.izk-notch-ring-arc {
+  stroke: color-mix(in srgb, var(--izk-island-accent, #22d3ee) 84%, white);
+  stroke-linecap: round;
+}
+/* Light glass is frostier, so give its text local grounding. The scrim gets
+   stronger as the glass gets more transparent: at the 50% floor it is a real
+   contrast layer, while at the default 94% it is almost invisible. */
+.izk-island.izk-island-light .izk-notch-mini,
+.izk-island.izk-island-light .izk-island-content {
+  isolation: isolate;
+  text-shadow: 0 1px 2px rgba(5, 10, 18, 0.5);
+}
+.izk-island.izk-island-light .izk-notch-mini::before,
+.izk-island.izk-island-light .izk-island-content::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  pointer-events: none;
+  background: rgba(7, 11, 19, max(0.66, calc((1 - var(--izk-island-alpha, 0.96)) * 0.82)));
+}
+.izk-island.izk-island-light .izk-notch-mini::before {
+  inset: 6px 8px;
+  border-radius: 16px;
+}
+.izk-island.izk-island-light .izk-island-content::before {
+  inset: 2px 4px 4px;
+  border-radius: 22px;
+}
+
+/* Local readable copy over the light-glass scrim, even with blur disabled. */
+.izk-island-light .izk-island-subtitle,
+.izk-island-light [role="tab"][aria-selected="false"],
+.izk-island-light .izk-notch-mini-brand,
+.izk-island-light .izk-notch-mini-clock,
+.izk-island-light .izk-notch-mini-meta { color: rgba(255, 255, 255, 0.85); }
+.izk-notch-mini:focus-visible { outline: 2px solid #a5f3fc; outline-offset: -4px; }
+
+/* Floating glass pill: detached from the edge, so it can be moved anywhere. */
+.izk-island.izk-theme-float {
+  border-radius: 999px !important;
+  background: linear-gradient(180deg, rgba(24, 30, 46, calc(var(--izk-island-alpha, 0.92) * 0.9)), rgba(9, 12, 22, var(--izk-island-alpha, 0.92)));
+  border: 1px solid color-mix(in srgb, var(--izk-island-accent, #22d3ee) 46%, rgba(255, 255, 255, 0.14));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    0 16px 38px rgba(0, 0, 0, 0.38),
+    0 0 20px color-mix(in srgb, var(--izk-island-accent, #22d3ee) 18%, transparent);
+  backdrop-filter: blur(var(--izk-island-blur, 0px)) saturate(1.3);
+  -webkit-backdrop-filter: blur(var(--izk-island-blur, 0px)) saturate(1.3);
+}
+
+/* Light glass Float: the same frost, with the pill's own refracted edge. */
+.izk-island.izk-theme-float.izk-island-light {
+  background:
+    radial-gradient(120% 100% at 50% 0%, rgba(255, 255, 255, 0.3), transparent 62%),
+    linear-gradient(180deg, rgba(101, 124, 153, calc(var(--izk-island-alpha, 0.92) * 0.94)), rgba(43, 61, 85, var(--izk-island-alpha, 0.92)));
+  border-color: color-mix(in srgb, var(--izk-island-accent, #22d3ee) 30%, rgba(255, 255, 255, 0.55));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.46),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.2),
+    0 16px 38px rgba(8, 20, 36, 0.3),
+    0 0 20px color-mix(in srgb, var(--izk-island-accent, #22d3ee) 18%, transparent);
+}
+
+/* A compact Float is a capsule; an open one must not clip its panel into a
+   capsule, so it uses the same rounded panel as the other shapes. */
+.izk-island.izk-theme-float.izk-island-open {
+  border-radius: 28px !important;
+}
+
 /* Out of the way until something happens. */
 .izk-island.izk-theme-dot {
   background: radial-gradient(circle at 35% 35%, #3b4a6b, #0b0d14);
@@ -789,27 +1099,27 @@ html[data-backdrop="tabbed"] .izk-card {
 /* A thin strip across the top. */
 .izk-island.izk-theme-strip {
   border-radius: 0 0 10px 10px !important;
-  background: linear-gradient(180deg, rgba(10, 12, 20, 0.96), rgba(10, 12, 20, 0.88));
+  background: linear-gradient(180deg, rgba(10, 12, 20, calc(var(--izk-island-alpha, 0.94) * 1.021)), rgba(10, 12, 20, calc(var(--izk-island-alpha, 0.94) * 0.936)));
 }
 
 .izk-island.izk-theme-glass {
-  background: rgba(22, 26, 40, 0.6);
+  background: rgba(22, 26, 40, calc(var(--izk-island-alpha, 0.94) * 0.638));
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.25), 0 8px 24px rgba(0, 0, 0, 0.3);
 }
 .izk-island.izk-theme-bubble {
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0.04) 55%), rgba(20, 22, 34, 0.9);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0.04) 55%), rgba(20, 22, 34, calc(var(--izk-island-alpha, 0.94) * 0.957));
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5), inset 0 -3px 8px rgba(0, 0, 0, 0.4), 0 6px 18px rgba(0, 0, 0, 0.35);
 }
 .izk-island.izk-theme-squircle {
-  background: rgba(14, 14, 20, 0.96);
+  background: rgba(14, 14, 20, calc(var(--izk-island-alpha, 0.94) * 1.021));
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1), 0 6px 18px rgba(0, 0, 0, 0.35);
 }
 .izk-island.izk-theme-outline {
-  background: rgba(6, 6, 9, 0.6);
+  background: rgba(6, 6, 9, calc(var(--izk-island-alpha, 0.94) * 0.638));
   box-shadow: inset 0 0 0 1.5px rgba(94, 231, 255, 0.75), 0 0 12px rgba(94, 231, 255, 0.35);
 }
 .izk-island.izk-theme-aero {
-  background: linear-gradient(180deg, rgba(150, 195, 245, 0.6) 0%, rgba(60, 110, 190, 0.78) 48%, rgba(25, 60, 130, 0.9) 52%, rgba(30, 70, 150, 0.88) 100%);
+  background: linear-gradient(180deg, rgba(150, 195, 245, calc(var(--izk-island-alpha, 0.94) * 0.638)) 0%, rgba(60, 110, 190, calc(var(--izk-island-alpha, 0.94) * 0.83)) 48%, rgba(25, 60, 130, calc(var(--izk-island-alpha, 0.94) * 0.957)) 52%, rgba(30, 70, 150, calc(var(--izk-island-alpha, 0.94) * 0.936)) 100%);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7), inset 0 0 0 1px rgba(255, 255, 255, 0.28), 0 6px 16px rgba(0, 0, 0, 0.4);
 }
 
@@ -818,7 +1128,7 @@ html[data-backdrop="tabbed"] .izk-card {
    listening, thinking or working the rim and glow brighten — a change of
    style, not an animation. */
 .izk-island.izk-theme-nova {
-  background: linear-gradient(180deg, rgba(12, 16, 32, 0.94), rgba(7, 8, 18, 0.96));
+  background: linear-gradient(180deg, rgba(12, 16, 32, var(--izk-island-alpha, 0.94)), rgba(7, 8, 18, calc(var(--izk-island-alpha, 0.94) * 1.021)));
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.07),
     0 0 14px rgba(34, 211, 238, 0.10),
@@ -854,10 +1164,19 @@ html[data-backdrop="tabbed"] .izk-card {
 }
 
 /* Nothing to say: just a faint glowing line showing where it lives. */
-/* "Always show" off: nothing at rest until your mouse goes up there. */
+/* "Always show" off: nothing at rest until your mouse goes up there, then
+   it slides down from the top edge (not a fade in place). */
 .izk-island-hidden {
   opacity: 0;
 }
+.izk-island.izk-island-docked {
+  translate: 0 0;
+  transition: translate 260ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity 180ms ease-out;
+}
+.izk-island.izk-island-docked.izk-island-hidden {
+  translate: 0 -120%;
+}
+.izk-island.izk-island-docked.izk-island-calm { transition: none; }
 
 .izk-island-rest {
   /* Static on purpose: this sits over live video all day, and a moving
@@ -1173,6 +1492,27 @@ html.izuki-config[data-backdrop="tabbed"] body {
   );
   mix-blend-mode: screen;
   opacity: 0.9;
+}
+
+/* The live field: real-time graphics behind the glass, drawn on the GPU by
+   docs/app/live-field.js (the VR room draws the same shader). Under every bit
+   of content, never a pointer target, and masked so it never fights the text
+   at the edges. With reduced motion it holds one still frame. */
+.izk-live {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0.5;
+  mix-blend-mode: screen;
+  mask-image: radial-gradient(130% 96% at 50% 6%, #000 0%, rgba(0, 0, 0, 0.5) 56%, transparent 92%);
+  -webkit-mask-image: radial-gradient(130% 96% at 50% 6%, #000 0%, rgba(0, 0, 0, 0.5) 56%, transparent 92%);
+}
+
+.izk-live canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 
 /* ------------------------------------------------------------ title bar */
@@ -1909,3 +2249,447 @@ html.izuki-config .izk-status-progress[data-paused="true"] > span {
   background: linear-gradient(90deg, #fbbf24, #f0abfc 68%, #67e8f9);
   box-shadow: 0 0 12px rgba(251, 191, 36, 0.30);
 }
+
+/* ============================================================
+   Task Stage (overlay)
+   A contained view of the real screen task: plan, current step and
+   controls, floating just below the Island. It never claims a sandbox.
+   ============================================================ */
+html.izuki-overlay .izk-task-stage {
+  width: min(430px, calc(100vw - 24px));
+  overflow: hidden;
+  border-radius: 20px;
+  border: 1px solid rgba(196, 229, 255, 0.22);
+  background:
+    radial-gradient(120% 120% at 0% 0%, rgba(103, 232, 249, 0.13), transparent 54%),
+    radial-gradient(100% 110% at 100% 100%, rgba(167, 139, 250, 0.13), transparent 58%),
+    rgba(8, 13, 23, 0.93);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    inset 0 0 34px rgba(125, 211, 252, 0.04),
+    0 24px 64px rgba(0, 0, 0, 0.62),
+    0 0 44px rgba(125, 211, 252, 0.08);
+  backdrop-filter: blur(22px) saturate(1.25);
+  -webkit-backdrop-filter: blur(22px) saturate(1.25);
+  color: #edf7ff;
+  animation: izk-task-in 260ms var(--ease-spring) both;
+}
+
+@keyframes izk-task-in {
+  from { opacity: 0; transform: translateY(-8px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+
+html.izuki-overlay .izk-task-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 12px 9px 14px;
+  border-bottom: 1px solid rgba(196, 229, 255, 0.09);
+}
+
+html.izuki-overlay .izk-task-mark {
+  display: flex;
+  flex: none;
+  gap: 3px;
+  align-items: flex-end;
+  height: 16px;
+}
+
+html.izuki-overlay .izk-task-mark i {
+  display: block;
+  width: 3px;
+  border-radius: 2px;
+  background: linear-gradient(180deg, #8ee8ff, #b9a7ff);
+  box-shadow: 0 0 8px rgba(125, 211, 252, 0.4);
+}
+
+html.izuki-overlay .izk-task-mark i:nth-child(1) { height: 8px; }
+html.izuki-overlay .izk-task-mark i:nth-child(2) { height: 14px; }
+html.izuki-overlay .izk-task-mark i:nth-child(3) { height: 11px; }
+
+html.izuki-overlay .izk-task-heading {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1px;
+}
+
+html.izuki-overlay .izk-task-heading b {
+  font-family: var(--font-sans);
+  font-size: 11.5px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  color: #f1f8ff;
+}
+
+html.izuki-overlay .izk-task-heading span {
+  overflow: hidden;
+  font-size: 9.5px;
+  line-height: 1.3;
+  color: #8ea4bc;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+html.izuki-overlay .izk-task-state {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 7px;
+  border: 1px solid rgba(125, 211, 252, 0.22);
+  border-radius: 999px;
+  background: rgba(125, 211, 252, 0.07);
+  font-family: var(--font-mono);
+  font-size: 8px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #bcefff;
+}
+
+html.izuki-overlay .izk-task-state > i {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #8ee8ff;
+  box-shadow: 0 0 8px #8ee8ff;
+  animation: izk-task-breathe 2.4s ease-in-out infinite;
+}
+
+html.izuki-overlay .izk-task-state[data-paused="true"] {
+  border-color: rgba(231, 210, 173, 0.3);
+  background: rgba(231, 210, 173, 0.08);
+  color: #f2dfba;
+}
+
+html.izuki-overlay .izk-task-state[data-paused="true"] > i {
+  background: #e7d2ad;
+  box-shadow: 0 0 8px rgba(231, 210, 173, 0.7);
+  animation: none;
+}
+
+html.izuki-overlay .izk-task-state[data-finished="true"] {
+  border-color: rgba(142, 232, 255, 0.42);
+  background: rgba(142, 232, 255, 0.12);
+  color: #d9f8ff;
+}
+
+html.izuki-overlay .izk-task-state[data-finished="true"] > i {
+  background: #8ee8ff;
+  box-shadow: 0 0 9px #8ee8ff;
+  animation: none;
+}
+
+html.izuki-overlay .izk-task-state[data-ended="true"] {
+  border-color: rgba(255, 142, 162, 0.34);
+  background: rgba(255, 95, 122, 0.09);
+  color: #ffd6de;
+}
+
+html.izuki-overlay .izk-task-state[data-ended="true"] > i {
+  background: #ff9fb0;
+  box-shadow: 0 0 9px rgba(255, 95, 122, 0.65);
+}
+
+html.izuki-overlay .izk-task-stage[data-finished="true"] {
+  border-color: rgba(142, 232, 255, 0.28);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    inset 0 0 38px rgba(125, 211, 252, 0.055),
+    0 24px 64px rgba(0, 0, 0, 0.62),
+    0 0 52px rgba(125, 211, 252, 0.12);
+}
+
+@keyframes izk-task-breathe {
+  50% { opacity: 0.35; transform: scale(0.75); }
+}
+
+html.izuki-overlay .izk-task-collapse {
+  display: grid;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border: 1px solid rgba(196, 229, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  color: #9db3ca;
+  transition: background 160ms, color 160ms, border-color 160ms;
+}
+
+html.izuki-overlay .izk-task-collapse:hover {
+  border-color: rgba(125, 211, 252, 0.34);
+  background: rgba(125, 211, 252, 0.1);
+  color: #e8f9ff;
+}
+
+html.izuki-overlay .izk-task-message {
+  padding: 12px 15px 0;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+  color: #f1f8ff;
+}
+
+html.izuki-overlay .izk-task-detail {
+  display: -webkit-box;
+  margin: 4px 15px 0;
+  overflow: hidden;
+  font-size: 10.5px;
+  line-height: 1.45;
+  color: #93a8bf;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+html.izuki-overlay .izk-task-trail {
+  margin: 10px 15px 0;
+  padding: 8px 9px 7px;
+  border: 1px solid rgba(196, 229, 255, 0.09);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.028);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+html.izuki-overlay .izk-task-trail-label {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 7.5px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #688097;
+}
+
+html.izuki-overlay .izk-task-trail ol {
+  display: grid;
+  gap: 4px;
+  max-height: 82px;
+  margin: 6px 0 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(142, 232, 255, 0.2) transparent;
+}
+
+html.izuki-overlay .izk-task-trail li {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  font-size: 9.5px;
+  line-height: 1.3;
+  color: #9db2c8;
+}
+
+html.izuki-overlay .izk-task-trail .tick {
+  display: grid;
+  width: 14px;
+  height: 14px;
+  place-items: center;
+  border: 1px solid rgba(142, 232, 255, 0.26);
+  border-radius: 50%;
+  background: rgba(142, 232, 255, 0.13);
+  font-size: 7px;
+  color: #c8f4ff;
+  box-shadow: 0 0 8px rgba(142, 232, 255, 0.12);
+}
+
+html.izuki-overlay .izk-task-trail .label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+html.izuki-overlay .izk-task-trail time {
+  font-family: var(--font-mono);
+  font-size: 8px;
+  color: #5d748b;
+}
+
+html.izuki-overlay .izk-task-progress-wrap {
+  margin: 12px 15px 0;
+}
+
+html.izuki-overlay .izk-task-progress-label {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 5px;
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  letter-spacing: 0.04em;
+  color: #8399b2;
+}
+
+html.izuki-overlay .izk-task-progress {
+  height: 3px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.38);
+}
+
+html.izuki-overlay .izk-task-progress > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #8ee8ff, #b9a7ff 58%, #ffc6e5);
+  box-shadow: 0 0 10px rgba(125, 211, 252, 0.4);
+  transition: width 240ms var(--ease-glass);
+}
+
+html.izuki-overlay .izk-task-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 12px 15px 0;
+}
+
+html.izuki-overlay .izk-task-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 27px;
+  padding: 5px 9px;
+  border: 1px solid rgba(196, 229, 255, 0.14);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.045);
+  font-size: 10px;
+  font-weight: 600;
+  color: #c4d7e9;
+  transition: background 160ms, border-color 160ms, color 160ms;
+}
+
+html.izuki-overlay .izk-task-button:hover {
+  border-color: rgba(125, 211, 252, 0.3);
+  background: rgba(125, 211, 252, 0.09);
+  color: #effbff;
+}
+
+html.izuki-overlay .izk-task-button.primary {
+  border-color: rgba(208, 244, 255, 0.5);
+  background: linear-gradient(110deg, #e8fbff, #c9eaff 55%, #ddd0ff);
+  color: #07131d;
+}
+
+html.izuki-overlay .izk-task-button.primary:hover {
+  background: linear-gradient(110deg, #fff, #d7f5ff 55%, #e7ddff);
+  color: #07131d;
+}
+
+html.izuki-overlay .izk-task-button.danger {
+  color: #ffc4ce;
+}
+
+html.izuki-overlay .izk-task-button.danger:hover {
+  border-color: rgba(255, 95, 122, 0.34);
+  background: rgba(255, 95, 122, 0.1);
+  color: #ffd8df;
+}
+
+html.izuki-overlay .izk-task-button:disabled {
+  cursor: default;
+  opacity: 0.48;
+}
+
+html.izuki-overlay .izk-task-foot {
+  padding: 8px 15px 11px;
+  font-size: 8.5px;
+  line-height: 1.4;
+  color: #657b92;
+}
+
+html.izuki-overlay .izk-task-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 8px 7px 11px;
+  border: 1px solid rgba(196, 229, 255, 0.2);
+  border-radius: 999px;
+  background: rgba(8, 14, 24, 0.88);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 14px 34px rgba(0, 0, 0, 0.48);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  color: #dcebfa;
+  animation: izk-task-in 240ms var(--ease-spring) both;
+}
+
+html.izuki-overlay .izk-task-live-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #8ee8ff;
+  box-shadow: 0 0 8px #8ee8ff;
+  animation: izk-task-breathe 2.4s ease-in-out infinite;
+}
+
+html.izuki-overlay .izk-task-pill-text {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  color: #b9d7ea;
+}
+
+html.izuki-overlay .izk-task-pill button {
+  display: grid;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  border: 1px solid rgba(196, 229, 255, 0.13);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.05);
+  color: #b5ccdf;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html.izuki-overlay .izk-task-stage,
+  html.izuki-overlay .izk-task-pill,
+  html.izuki-overlay .izk-task-state > i,
+  html.izuki-overlay .izk-task-live-dot { animation: none; }
+}
+
+/* ---- The ask bar (AskBar.tsx): one box, a living orb, a glowing edge ---- */
+.izk-ask-ring {
+  position: absolute;
+  inset: -1.5px;
+  border-radius: 23.5px;
+  background: conic-gradient(from var(--izk-ask-turn, 0deg), rgba(94, 234, 212, 0.55), rgba(125, 211, 252, 0.15), rgba(196, 181, 253, 0.5), rgba(94, 234, 212, 0.15), rgba(94, 234, 212, 0.55));
+  filter: blur(7px);
+  opacity: 0.75;
+  animation: izk-ask-turn 9s linear infinite;
+}
+.izk-ask-ring-busy { opacity: 0.95; animation-duration: 2.2s; }
+@property --izk-ask-turn { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
+@keyframes izk-ask-turn { to { --izk-ask-turn: 360deg; } }
+.izk-ask-orb {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  background: radial-gradient(circle at 34% 30%, #ffffff 0%, #bfefff 14%, #5eead4 42%, #2563c9 78%, #0b1f4a 100%);
+  box-shadow: 0 0 14px rgba(94, 234, 212, 0.55);
+  animation: izk-ask-breathe 3.2s ease-in-out infinite;
+}
+.izk-ask-orb-busy { animation: izk-ask-think 0.9s ease-in-out infinite; }
+@keyframes izk-ask-breathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.08); } }
+@keyframes izk-ask-think { 0%, 100% { transform: scale(0.9); box-shadow: 0 0 10px rgba(94, 234, 212, 0.4); } 50% { transform: scale(1.12); box-shadow: 0 0 22px rgba(125, 211, 252, 0.8); } }
+.izk-ask-dots span { animation: izk-ask-dot 1.2s infinite; opacity: 0.2; }
+.izk-ask-dots span:nth-child(2) { animation-delay: 0.2s; }
+.izk-ask-dots span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes izk-ask-dot { 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .izk-ask-ring, .izk-ask-orb, .izk-ask-orb-busy, .izk-ask-dots span { animation: none; }
+  .izk-ask-dots span { opacity: 1; }
+}
+
+/* The task panel's live view of Izuki's own window (TaskStage.tsx). */
+.izk-task-live { margin: 8px 0 2px; }
+.izk-task-live img { display: block; width: 100%; max-height: 170px; object-fit: cover; object-position: top; border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.12); }
+.izk-task-live figcaption { display: flex; align-items: center; gap: 6px; margin-top: 5px; font-size: 11px; color: rgba(255, 255, 255, 0.6); }
