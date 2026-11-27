@@ -839,6 +839,12 @@ public class IzukiAccessibilityService extends AccessibilityService {
   private static final Runnable leaseOver = () -> {
     if (orbView == null) return;
     if ("wake".equals(orbOwner) || "paywall".equals(orbOwner)) { orbOwner = null; removeOrbNow(); return; }
+    // Nobody renewed it: the page that asked for the orb closed, or Android
+    // ended it mid-work. "Keep a small orb resting over other apps" is the
+    // switch for an orb that stays without work, and it is off by default, so
+    // an unrenewed orb leaves with the work instead of resting over the
+    // person's apps until they hide it. On, it settles to rest as before.
+    if (!IzukiVoice.keepOrb) { orbOwner = null; removeOrbNow(); return; }
     if (!"rest".equals(orbState)) showState("rest", "");
   };
   private static final Runnable captionOff = () -> { if (caption != null) caption.setVisibility(View.GONE); };
@@ -1100,12 +1106,31 @@ public class IzukiAccessibilityService extends AccessibilityService {
     return orbView != null && "page".equals(orbOwner) && "listen".equals(orbState);
   }
 
-  /** The live voice level for the orb and the glowing edges, 0..1 (any thread). */
+  /**
+   * The live voice level for the orb and the glowing edges, 0..1 (any thread).
+   *
+   * Android reports the microphone's level dozens of times a second and the
+   * voice engine reports every word, so a post per report queued a burst of
+   * them behind the frame that was drawing the orb, which is felt as the orb
+   * stuttering over another app. Only the newest level matters: it is kept
+   * here and one drain is posted at a time.
+   */
+  private static volatile float levelPending = 0f;
+  private static volatile boolean levelQueued = false;
+  private static final Runnable pushLevel = () -> {
+    levelQueued = false;
+    float level = levelPending;
+    if (dot != null) dot.setVoice(level);
+    if (glowView != null) glowView.setVoice(level);
+  };
+
   static void voiceLevel(float level) {
-    ui.post(() -> {
-      if (dot != null) dot.setVoice(level);
-      if (glowView != null) glowView.setVoice(level);
-    });
+    // Nothing on screen to move: no post at all.
+    if (orbView == null && glowView == null) return;
+    levelPending = level;
+    if (levelQueued) return;
+    levelQueued = true;
+    ui.post(pushLevel);
   }
 
   // ---- the glowing screen edges (during a voice turn) -------------------------
@@ -1185,13 +1210,31 @@ public class IzukiAccessibilityService extends AccessibilityService {
     private String state = "listen";
     private SweepGradient sweep;
     private int sweepW, sweepH;
+    /** When it last asked to be redrawn, and the sizes it measured once. */
+    private long drawnAt = 0;
+    private final float[] widths = { 3f, 10f, 22f };
+    private final int[] alphas = { 235, 110, 40 };
+    private final float strokeUnit;
+    private final float radius;
 
     EdgeGlow(Context c) {
       super(c);
       paint.setStyle(Paint.Style.STROKE);
+      // Measured once here, not four times in every frame it draws.
+      strokeUnit = dp(c, 1);
+      radius = dp(c, 34);
       clock.setDuration(100000);
       clock.setRepeatCount(ValueAnimator.INFINITE);
-      clock.addUpdateListener(a -> { t = (float) a.getCurrentPlayTime() / 1000f; invalidate(); });
+      clock.addUpdateListener(a -> {
+        t = (float) a.getCurrentPlayTime() / 1000f;
+        // A soft glow over a whole screen does not need every frame the
+        // display can draw (120 a second on many phones): the same look at
+        // about 30, for a quarter of the work over whatever is underneath.
+        long now = SystemClock.uptimeMillis();
+        if (now - drawnAt < 33) return;
+        drawnAt = now;
+        invalidate();
+      });
       clock.start();
     }
 
@@ -1218,11 +1261,8 @@ public class IzukiAccessibilityService extends AccessibilityService {
       turn.setRotate(t * ("think".equals(state) ? 70f : 35f), w / 2f, h / 2f);
       sweep.setLocalMatrix(turn);
       paint.setShader(sweep);
-      float radius = dp(getContext(), 34);
-      float[] widths = { 3f, 10f, 22f };
-      int[] alphas = { 235, 110, 40 };
       for (int k = 0; k < widths.length; k++) {
-        float sw = dp(getContext(), 1) * widths[k] * (0.6f + level * 0.9f);
+        float sw = strokeUnit * widths[k] * (0.6f + level * 0.9f);
         paint.setStrokeWidth(sw);
         paint.setAlpha(Math.round(alphas[k] * (0.45f + 0.55f * level)));
         box.set(sw / 2f, sw / 2f, w - sw / 2f, h - sw / 2f);
@@ -1318,6 +1358,16 @@ public class IzukiAccessibilityService extends AccessibilityService {
     private final ValueAnimator clock = ValueAnimator.ofFloat(0f, 1f);
     private String state = "listen";
     private float t = 0f;
+    /** Below a twentieth of the loudness the eye sees no difference: the skin is cached by that step. */
+    private static final int STEPS = 20;
+    private static int stepOf(float lvl) { return Math.round(Math.max(0f, Math.min(1f, lvl)) * STEPS); }
+    /** What the cached gradients were built for, and the gradients themselves. */
+    private String skinState = "";
+    private int skinTint = Integer.MIN_VALUE, skinQ = -1;
+    private float skinW = -1f, skinH = -1f;
+    private final SweepGradient[] sweeps = new SweepGradient[3];
+    private final RadialGradient[] clears = new RadialGradient[3];
+    private final Matrix clearAt = new Matrix();
 
     OrbDot(Context c) {
       super(c);
@@ -1392,10 +1442,32 @@ public class IzukiAccessibilityService extends AccessibilityService {
       float r = half * 0.62f * (1 + lvl * 0.16f);
       float flow = t * (think ? 1.6f : 1 + lvl * 2.2f);
       float turn = t * ((think ? 1.3f : talk ? 0.7f : 0.45f) + lvl * 1.2f);
-      glow.setShader(new RadialGradient(cx, cy, half, new int[] { rgba(pal[0], 0.42f + lvl * 0.38f), rgba(pal[0], 0f) }, null, Shader.TileMode.CLAMP));
+      // This used to make six gradients a frame: a lot for the collector to
+      // pick up sixty times a second over someone's app. They only change with
+      // the size, the state, the colour and a step of the loudness, so they
+      // are built then and reused in between.
+      int q = stepOf(lvl);
+      boolean newShape = !state.equals(skinState) || tint != skinTint || w != skinW || h != skinH;
+      if (newShape) {
+        for (int k = 0; k < 3; k++) {
+          for (int j = 0; j < 5; j++) cols[j] = rgba(pal[(j + k) % 4], 0.78f);
+          sweeps[k] = new SweepGradient(cx, cy, cols, null);
+        }
+        skinState = state; skinTint = tint; skinW = w; skinH = h; skinQ = -1;
+      }
+      if (newShape || q != skinQ) {
+        skinQ = q;
+        glow.setShader(new RadialGradient(cx, cy, half, new int[] { rgba(pal[0], 0.42f + lvl * 0.38f), rgba(pal[0], 0f) }, null, Shader.TileMode.CLAMP));
+        body.setShader(new RadialGradient(cx, cy + r * 0.2f, r * 1.05f, new int[] { rgba(pal[1], 0.16f), Color.argb(200, 4, 8, 22) }, null, Shader.TileMode.CLAMP));
+        for (int k = 0; k < 3; k++) {
+          clears[k] = new RadialGradient(0f, 0f, r * (0.86f + k * 0.08f) * 1.1f,
+              new int[] { Color.argb(247, 0, 0, 0), Color.argb(217, 0, 0, 0), Color.argb(77, 0, 0, 0), Color.TRANSPARENT },
+              new float[] { 0f, 0.6f, 0.88f, 1f }, Shader.TileMode.CLAMP);
+        }
+        shine.setShader(new RadialGradient(cx - r * 0.38f, cy - r * 0.42f, r * 0.55f, new int[] { Color.argb(77, 255, 255, 255), Color.TRANSPARENT }, null, Shader.TileMode.CLAMP));
+      }
       c.drawCircle(cx, cy, half, glow);
       // Dark glass for the colour to swim in.
-      body.setShader(new RadialGradient(cx, cy + r * 0.2f, r * 1.05f, new int[] { rgba(pal[1], 0.16f), Color.argb(200, 4, 8, 22) }, null, Shader.TileMode.CLAMP));
       c.drawCircle(cx, cy, r * 0.97f, body);
       edge.setStrokeWidth(Math.max(1f, half / 40f));
       for (int k = 0; k < 3; k++) {
@@ -1411,23 +1483,22 @@ public class IzukiAccessibilityService extends AccessibilityService {
         }
         blob.close();
         float ox = (float) Math.cos(flow * 0.7 + phase) * r * 0.16f, oy = (float) Math.sin(flow * 0.9 + phase) * r * 0.16f;
-        for (int j = 0; j < 5; j++) cols[j] = rgba(pal[(j + k) % 4], 0.78f);
-        SweepGradient sweep = new SweepGradient(cx + ox, cy + oy, cols, null);
-        spin.setRotate((float) Math.toDegrees(turn * (k == 1 ? -1 : 1) * (0.8f + k * 0.25f) + phase), cx + ox, cy + oy);
-        sweep.setLocalMatrix(spin);
+        // The sweeps were built for the middle: move the colour out to the blob.
+        spin.setTranslate(ox, oy);
+        spin.postRotate((float) Math.toDegrees(turn * (k == 1 ? -1 : 1) * (0.8f + k * 0.25f) + phase), cx + ox, cy + oy);
+        sweeps[k].setLocalMatrix(spin);
         int saved = c.saveLayer(0, 0, w, h, layer);
-        fill.setShader(sweep);
+        fill.setShader(sweeps[k]);
         c.drawPath(blob, fill);
         edge.setColor(rgba(pal[(k + 2) % 4], 0.35f + lvl * 0.5f));
         c.drawPath(blob, edge);
         // Clear the middle, so each layer reads as a glowing rim of liquid.
-        clear.setShader(new RadialGradient(cx + ox, cy + oy, r * scale * 1.1f,
-            new int[] { Color.argb(247, 0, 0, 0), Color.argb(217, 0, 0, 0), Color.argb(77, 0, 0, 0), Color.TRANSPARENT },
-            new float[] { 0f, 0.6f, 0.88f, 1f }, Shader.TileMode.CLAMP));
+        clearAt.setTranslate(cx + ox, cy + oy);
+        clears[k].setLocalMatrix(clearAt);
+        clear.setShader(clears[k]);
         c.drawRect(0, 0, w, h, clear);
         c.restoreToCount(saved);
       }
-      shine.setShader(new RadialGradient(cx - r * 0.38f, cy - r * 0.42f, r * 0.55f, new int[] { Color.argb(77, 255, 255, 255), Color.TRANSPARENT }, null, Shader.TileMode.CLAMP));
       c.drawCircle(cx, cy, r * 0.98f, shine);
     }
   }
