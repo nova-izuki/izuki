@@ -922,7 +922,15 @@
   /** Report a problem to Izuki's bug catcher (../shared/bugs.js). */
   const bug = (message, extra) => { try { window.izukiBugs?.report(message, extra); } catch {} };
   /** Note what just happened, to go with a later report. */
-  const note = (message) => { try { window.izukiBugs?.crumb(message, "voice"); } catch {} };
+  /** The last few voice events: the Diagnostics report reads them (they used to live only in the bug log). */
+  const voiceTrail = [];
+  const note = (message) => {
+    try {
+      voiceTrail.push(new Date().toLocaleTimeString() + " " + String(message).slice(0, 90));
+      while (voiceTrail.length > 10) voiceTrail.shift();
+    } catch {}
+    try { window.izukiBugs?.crumb(message, "voice"); } catch {}
+  };
   // A standing fact for the copy ("why didn't it search?"), not a report.
   const fact = (name, value) => { try { window.izukiBugs?.fact(name, value); } catch {} };
 
@@ -4270,9 +4278,16 @@
   /** Gemini's natural voice over other apps too (Settings → Izuki's voice; on unless switched off). */
   const naturalOverApps = () => store.get("naturalVoice", true) !== false;
   /** Tell Android when Izuki's own microphone or voice is in use, so "Hey Nova" steps aside meanwhile. */
-  let pageMicOpen = false, pageTalking = false;
-  const pageVoice = (on) => { pageTalking = !!on; window.IzukiNative?.micBusy?.(pageMicOpen || pageTalking); };
-  const pageMic = (on) => { pageMicOpen = !!on; window.IzukiNative?.micBusy?.(pageMicOpen || pageTalking); };
+  let pageMicOpen = false, pageTalking = 0;
+  // Lines can overlap for a moment while a new one stops the old one. Counted,
+  // so the older line finishing can't tell Android the voice is free while the
+  // newer one is still talking: the wake listener would then listen into
+  // Izuki's own voice and take the microphone from it.
+  const pageVoice = (on) => {
+    pageTalking = Math.max(0, pageTalking + (on ? 1 : -1));
+    window.IzukiNative?.micBusy?.(pageMicOpen || pageTalking > 0);
+  };
+  const pageMic = (on) => { pageMicOpen = !!on; window.IzukiNative?.micBusy?.(pageMicOpen || pageTalking > 0); };
   /**
    * Say a reply. `stream` is a voiceStream already speaking it while it was
    * written (a call); it's finished with the rest of the words.
@@ -4290,6 +4305,10 @@
       offerHear(null, t.replace(/[*_#`]/g, ""), "muted");
       return;
     }
+    // One voice at a time: a new line stops whatever is still playing. An
+    // older line's loop already stopped (speakSeq), but the audio it had
+    // started kept going under the new line, so two voices talked at once.
+    if (!stream) hush();
     const s = stream || voiceStream({ siri });
     const ducked = localStorage.getItem("izuki.duck") === "1" && window.IzukiNative?.installed?.();
     if (ducked) void window.IzukiNative?.audioFocus?.(true);
@@ -4645,6 +4664,31 @@
     try { recog.start(); } catch (e) { note("speech recognition didn't start: " + (e && e.name)); setTimeout(listen, 500); }
   }
 
+  // ---- after a listening session ends (tested by tools/phone-check/ears.test.cjs) ----
+  /**
+   * What to do when Android's ears end a session: "words" (ask what was heard),
+   * "again" (listen once more), "park" (wait for a tap on the orb), "record"
+   * (this phone can't recognise right now, so record and let the AI hear it),
+   * "stop" (nothing can hear it), "permission", or "" (the person stopped it).
+   * `quiet` is how many quiet sessions came before this one.
+   */
+  function earsAfter(error, quiet, canRecord) {
+    const e = String(error || "");
+    const before = Math.max(0, Number(quiet) || 0);
+    if (!e) return "words";
+    if (e === "cancelled") return "";
+    if (e === "permission") return "permission";
+    // Three quiet sessions in a row, then wait for a tap: the recognizer's
+    // start sound every few seconds is worse than a still call.
+    if (e === "silence") return before >= 2 ? "park" : "again";
+    // "Busy" means the microphone is still being handed over (a turn just ended,
+    // or the recognizer that closed a moment ago). That is a moment, not a
+    // broken phone: it used to switch Android's ears off for the whole page.
+    if (e === "busy") return before >= 3 ? "park" : "again";
+    return canRecord ? "record" : "stop";
+  }
+  // ---- end after a listening session ends ----
+
   let useNativeEars = true, earSeq = 0, waitingForTap = false;
   /** One listening session with Android's recognizer; the call goes on after the answer. */
   async function listenNative() {
@@ -4661,25 +4705,26 @@
       IzukiOrb.kick(0.55);
     });
     if (my !== earSeq || !talking || busy || manualPlayback) return;
-    if (r.text) { missed = 0; liveHeard(r.text); return ask(r.text); }
-    if (r.error === "cancelled") return;
-    if (r.error === "permission") return stopTalking("Allow the microphone for Izuki, then tap Call again.");
-    if (r.error === "silence") {
-      // A quiet moment: listen again, but don't keep the recognizer chiming
-      // for ever — after a few, wait for a tap on the orb.
-      if (++missed >= 3) {
-        missed = 0;
-        waitingForTap = true;
-        setOrb("");
-        setStatus("Tap the orb when you want to talk.");
-        return;
-      }
-      return void setTimeout(listen, 250);
+    const what = earsAfter(r.text ? "" : r.error, missed, canHear());
+    if (what === "") return;
+    if (what === "words") { missed = 0; useNativeEars = true; liveHeard(r.text); return ask(r.text); }
+    if (what === "permission") return stopTalking("Allow the microphone for Izuki, then tap Call again.");
+    if (what === "park") {
+      missed = 0;
+      waitingForTap = true;
+      setOrb("");
+      setStatus("Tap the orb when you want to talk.");
+      return;
     }
-    // Busy, unavailable or offline: record and let the AI hear it, as before.
+    if (what === "again") {
+      missed++;
+      return void setTimeout(listen, r.error === "busy" ? 400 : 250);
+    }
+    // This phone's recognizer isn't doing it right now: record this turn and
+    // let the AI hear it. `useNativeEars` is put back when a call starts, so a
+    // bad moment can't leave the phone deaf until the page is reloaded.
     note("android listening: " + r.error);
-    useNativeEars = false;
-    if (canHear()) return record();
+    if (what === "record") { useNativeEars = false; return record(); }
     return stopTalking("Android's speech recognition isn't working right now — type instead, or try the call again in a moment.");
   }
 
@@ -4875,6 +4920,9 @@
   }
   async function openLive() {
     if (!ready()) return render();
+    // A new call gives Android's recognizer another go: last call's fallback to
+    // recording (if any) doesn't carry over into this one.
+    useNativeEars = true;
     $("live-name").textContent = person().name;
     $("live-style").textContent = person().style;
     liveHeard(""); liveSaid("");
@@ -5697,6 +5745,10 @@
         `  room level ${w.level ?? "?"} dB, floor ${w.floor ?? "?"} dB · last wake ${when(w.lastWakeAt)}`,
         w.lastError ? `  last error: ${w.lastError} (${when(w.lastErrorAt)})` : "",
         ...(Array.isArray(w.events) ? w.events.slice(-12).map((e) => "  " + e) : []),
+        "",
+        "",
+        `Voice: ${window.IzukiNative?.canSpeak?.() ? "Android's own voice" : "the page's voice"} · ${window.IzukiNative?.canListen?.() ? (useNativeEars ? "ears: Android's recognizer" : "ears: recording (fallback)") : "ears: none"} · call ${talking ? "on" : "off"}${busy ? " · busy" : ""}${waitingForTap ? " · waiting for a tap" : ""} · orb ${orbState || "hidden"}`,
+        ...voiceTrail.map((line) => "  " + line),
         "",
         `Last phone action: ${a ? `${a.op} → ${a.done ? "done" : "not done"}${a.how ? ` (${a.how})` : ""}${a.reason ? ` · ${a.reason}` : ""} at ${when(a.at)}` : "none yet"}`,
       ].filter((line) => line !== undefined).join("\n");

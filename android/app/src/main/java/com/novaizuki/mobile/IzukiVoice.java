@@ -627,7 +627,22 @@ final class IzukiVoice {
     if (!turn.isEmpty() && "think".equals(phase)) finish("Izuki didn't answer in time. Open Izuki and try again.");
   };
   private static final Runnable afterTalk = () -> { if (!turn.isEmpty() && "talk".equals(phase)) finish(""); };
-  private static final Runnable greetGuard = () -> { if ("greet".equals(phase)) listen(); };
+  /**
+   * "Yes?" is said by the voice engine, which can take a few seconds to start
+   * on a cold phone. This used to start listening at 2.5 s regardless, which
+   * set the phase to "listen" and made speakNow() drop the greeting as stale:
+   * "Hey Nova" then answered with silence and a "Listening…" orb.
+   */
+  private static final Runnable greetGuard = () -> greetStillWaiting(0);
+  private static void greetStillWaiting(int tries) {
+    if (!"greet".equals(phase)) return;
+    // It is being said (or handed to the engine): it listens by itself when it ends.
+    if (speakingId.startsWith("greet:")) return;
+    // The engine hasn't started yet: give it up to six more seconds, then stop
+    // waiting, so a dead engine can't leave the turn deaf.
+    if (tries >= 4) { listen(); return; }
+    ui.postDelayed(() -> greetStillWaiting(tries + 1), 1500);
+  }
   /** After a tap stopped the page's work: the orb rests (kept) or goes, unless the page is busy again. */
   private static final Runnable pageRestLater = () -> {
     if (active() || IzukiAccessibilityService.pageWorking()) return;

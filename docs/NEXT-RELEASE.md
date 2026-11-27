@@ -7,3 +7,7 @@ into the next `docs/RELEASE-x.y.z.md` when it releases, then clears this list.
 - The iPhone build retries the Capacitor package clone, so a network blip no longer leaves a release a draft with no IPA. [Freebuff]
 - The floating orb no longer stays over your other apps after Izuki's work is done: with “Keep a small orb over other apps” off (the default) it leaves with the work instead of resting there until you hide it. [Freebuff]
 - The orb and the glow around the screen stopped doing six times the work on every frame, so the phone stays smoother while Izuki talks and listens over another app. [Freebuff]
+- Izuki can't talk over itself on the phone any more: a new line stops the one already playing instead of both going at once. [Freebuff]
+- When Android's speech service was busy for a second, the phone gave up on its own ears for the rest of the session and asked for a key instead; it now waits and tries again, and a new call always tries them again. [Freebuff]
+- "Hey Nova" no longer answers with silence and a "Listening…" orb when the phone's voice takes a few seconds to start: it waits for the "Yes?" it is about to say. [Freebuff]
+- Diagnostics has a Voice line and the last ten voice events, so a wrong voice or an ear that heard nothing can be read off the phone. [Freebuff]
