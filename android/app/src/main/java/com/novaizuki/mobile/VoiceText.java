@@ -196,6 +196,25 @@ final class VoiceText {
   }
 
   /** A greeting for "Hey Nova" on its own: short, like a person turning round. */
+  /**
+   * The greeting answered: "yes", "yeah", "ok", "mm-hm" — a person saying they
+   * are here, not a question for the AI. Only a short reply counts, so "yes,
+   * open Chrome" is still the command it is.
+   */
+  static boolean readyWord(String text) {
+    String t = text == null ? "" : text.toLowerCase(java.util.Locale.ROOT)
+        .replaceAll("[^a-z0-9' ]+", " ").replaceAll("\s+", " ").trim();
+    if (t.isEmpty() || t.length() > 12) return false;
+    switch (t) {
+      case "yes": case "yeah": case "yep": case "yup": case "ya": case "yes please":
+      case "ok": case "okay": case "sure": case "right": case "go": case "go on":
+      case "hmm": case "hm": case "mm": case "mhm": case "uh huh": case "mm hm":
+      case "i'm here": case "im here": case "here": case "hello": case "hi": case "hey":
+        return true;
+      default: return false;
+    }
+  }
+
   static String greeting(long seed) {
     String[] lines = { "Yes?", "Mm-hm?", "I'm here.", "Yes?" };
     return lines[(int) Math.floorMod(seed, (long) lines.length)];

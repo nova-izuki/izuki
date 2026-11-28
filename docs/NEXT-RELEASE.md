@@ -35,3 +35,4 @@ The developer build's own tests are warning-free now: the owner-only Smart Visio
 - “Hey Nova” stays off once you turn it off: a restart of the app used to switch it back on by itself, which is why the microphone chimed open and shut on its own. [Freebuff]
 - After “Hey Nova” and its “Yes?” hears nothing, the phone now tries once more instead of three times, two seconds apart, so it stops clapping its microphone open and shut while you decide what to say. [Freebuff]
 - Diagnostics now says whether “Hey Nova” answers where you are or opens Izuki, and which of the four things it needs was missing, and a “Hey Nova” that arrives while Izuki is still talking is kept instead of thrown away. [Freebuff]
+- Answering “I’m here.” with “yes” now means “go on”, so the phone stops answering its own greeting and listens for what you actually want. [Freebuff]

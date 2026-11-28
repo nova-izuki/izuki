@@ -115,6 +115,15 @@ public class VoiceTextTest {
     assertFalse(VoiceText.listenAgain("network", false, 8_000, 0));
   }
 
+  @Test public void theGreetingAnsweredIsNotAQuestion() {
+    for (String ack : new String[] { "yes", "Yes", "yeah", "yep", "okay", "mm-hm", "uh huh", "I'm here.", "Hello" })
+      assertTrue(ack, VoiceText.readyWord(ack));
+    // A command that starts with "yes" is still the command.
+    for (String real : new String[] { "yes open chrome", "yes please order pizza", "open chrome and search for food near me", "", "yessir" })
+      assertFalse(real, VoiceText.readyWord(real));
+    assertFalse(VoiceText.readyWord(null));
+  }
+
   @Test public void theGreetingComingBackIsNotThePerson() {
     assertTrue(VoiceText.greetingEcho("Yes?", "Yes?"));
     assertTrue(VoiceText.greetingEcho("yes", "Yes?"));

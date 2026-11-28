@@ -544,6 +544,16 @@ final class IzukiVoice {
           finishEars("", "silence");
           return;
         }
+        // "I'm here." answered with "yes": that is the person saying they are
+        // ready, not a question. Sending it on made the phone answer its own
+        // greeting and then open another session — a reply, a chime, another
+        // reply — while the real question was never heard.
+        if (!t.isEmpty() && readyReply(t)) {
+          IzukiAccessibilityService.orbFor("voice", "listen", "Listening…", 15_000);
+          if (again(7)) return;
+          finishEars("", "silence");
+          return;
+        }
         if (t.isEmpty() && again(7)) return;
         finishEars(t, t.isEmpty() ? (earsSpoke ? "unclear" : "silence") : "");
       }
@@ -798,6 +808,17 @@ final class IzukiVoice {
   /** Is this turn's ear the one being listened to? A greeting may still play underneath it. */
   private static boolean earListening(boolean along) {
     return "listen".equals(phase) || (along && "greet".equals(phase));
+  }
+
+  /**
+   * A short "yes/ok" in the first moments after the greeting: the person is
+   * here, not asking anything. Only a wake turn that greeted, and only before
+   * real words have arrived, so a later "yes" is still an answer.
+   */
+  private static boolean readyReply(String heard) {
+    if (!"wake".equals(source) || greetSay.isEmpty() || greetAt == 0) return false;
+    if (System.currentTimeMillis() - greetAt > 15_000) return false;
+    return VoiceText.readyWord(heard);
   }
 
   /** Is the greeting, or the echo of it, still in the room? */
