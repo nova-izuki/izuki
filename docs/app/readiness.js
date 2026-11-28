@@ -50,9 +50,15 @@
         action: { id: "app-info", label: "Open App info" }, steps: restrictedSteps(st) };
     }
     const maybe = state === "maybe-restricted";
+    // Android switches an accessibility service off whenever a sideloaded app
+    // is replaced. "Off" on its own reads as the person's own doing, so name
+    // what happened and put the fix in the button.
+    const afterUpdate = !!st?.controlOffAfterUpdate;
     return { ...base, state: "action", ok: false,
-      text: "Off. Needed for Home, Back, taps, typing, Autopilot and the floating orb.",
-      action: { id: "control", label: "Turn on" },
+      text: afterUpdate
+        ? "Android switched this off when the app updated — it does that to any app installed from a file, each time the app is replaced. Home, Back, taps, typing, Autopilot and the orb are all off until it is back on."
+        : "Off. Needed for Home, Back, taps, typing, Autopilot and the floating orb.",
+      action: { id: "control", label: afterUpdate ? "Turn it back on" : "Turn on" },
       steps: [accessibilityPath(st)],
       ...(maybe || Number(st?.sdk) >= 33 ? {
         note: "If Android says “App was denied access” or “Restricted setting”, that's Android protecting apps installed from a file:",

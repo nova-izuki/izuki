@@ -46,6 +46,18 @@ assert.match(maybe.note, /App was denied access/);
 assert.ok(maybe.noteSteps.some((s) => /Allow restricted settings/.test(s)));
 assert.ok(maybe.steps.some((s) => /Downloaded apps/.test(s)), "Pixel-style path off Samsung");
 
+// After an app update: Android clears the switch, so say that and offer it back.
+rows = R.rows({ ...good, control: false, running: false, controlState: "off", controlOffAfterUpdate: true });
+const afterUpdate = row(rows, "control");
+assert.equal(afterUpdate.action.id, "control", "the fix opens the accessibility switch");
+assert.equal(afterUpdate.action.label, "Turn it back on", "the button says what happened");
+assert.match(afterUpdate.text, /when the app updated/);
+assert.equal(afterUpdate.ok, false);
+// The same "off" with no update behind it keeps the old wording.
+rows = R.rows({ ...good, control: false, running: false, controlState: "off", controlOffAfterUpdate: false });
+assert.equal(row(rows, "control").action.label, "Turn on");
+assert.doesNotMatch(row(rows, "control").text, /updated/);
+
 // Off on Android 12 (no restricted settings there): no restricted note.
 rows = R.rows({ control: false, running: false, controlState: "off", mic: true, notifications: true, sdk: 31 });
 assert.equal(row(rows, "control").note, undefined);

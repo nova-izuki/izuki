@@ -9,6 +9,7 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.content.pm.ServiceInfo;
@@ -87,9 +88,24 @@ public class IzukiAccessibilityService extends AccessibilityService {
   private static volatile long connectedAt = 0;
   private static volatile long disconnectedAt = 0;
 
+  /**
+   * The build that had Android control switched on. Android turns an
+   * accessibility service off whenever a sideloaded app is replaced, so a
+   * switch that is off right after an update is Android's doing, not the
+   * person's — this is how Izuki can say so instead of just “off”.
+   */
+  static final String KEY_CONTROL_ON_VERSION = "control_on_version";
+
   @Override public void onServiceConnected() {
     active = this;
     connectedAt = System.currentTimeMillis();
+    int code = 0;
+    try {
+      PackageInfo info = getPackageManager().getPackageInfo(getPackageName(), 0);
+      code = (int) (Build.VERSION.SDK_INT >= 28 ? info.getLongVersionCode() : info.versionCode);
+    } catch (Exception ignored) { }
+    if (code > 0) getSharedPreferences("izuki_native", MODE_PRIVATE).edit()
+        .putInt(KEY_CONTROL_ON_VERSION, code).apply();
     watching = getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean("watch", false);
     IzukiControlPlugin.notifyControl(true);
   }

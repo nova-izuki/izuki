@@ -5585,7 +5585,10 @@
       : row.text;
     // Ready means no "Enable" button: the old one stayed up after it was on.
     button.hidden = !!row.ok;
-    button.textContent = row.action?.label === "Open App info" ? "Open App info" : row.state === "starting" ? "Open Accessibility" : "Turn on Android control";
+    const fix = row.action?.label;
+    button.textContent = fix === "Open App info" ? "Open App info"
+      : fix === "Turn it back on" ? "Turn it back on"
+      : row.state === "starting" ? "Open Accessibility" : "Turn on Android control";
     button.onclick = () => void runHealthFix(row.action?.id || "control", button);
   }
 
@@ -5917,7 +5920,7 @@
         `Android ${d.android || "?"} (SDK ${r.sdk || "?"}) · ${r.manufacturer || ""} ${d.model || ""}`,
         `Checked ${when(d.at)}`,
         "",
-        `Android control: ${r.controlState || "?"} (switched on: ${!!r.control}, connected: ${!!r.running}, since ${when(d.controlConnectedAt)}; last dropped ${when(d.controlDroppedAt)})`,
+        `Android control: ${r.controlState || "?"}${r.controlOffAfterUpdate ? " — Android turned it off when the app updated; turn it back on in Settings → Accessibility → Izuki Companion control" : ""} (switched on: ${!!r.control}, connected: ${!!r.running}, since ${when(d.controlConnectedAt)}; last dropped ${when(d.controlDroppedAt)})`,
         `Restricted settings: ${r.restricted || "?"}`,
         `Microphone: ${r.mic ? "allowed" : "not allowed"} · Notifications: ${r.notifications ? "allowed" : "not allowed"}`,
         `Battery: ${r.battery ? "unrestricted" : "optimised"}${r.backgroundRestricted ? " · background restricted" : ""}${r.powerSave ? " · Battery Saver on" : ""}`,

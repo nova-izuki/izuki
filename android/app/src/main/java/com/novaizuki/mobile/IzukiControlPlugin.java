@@ -6,6 +6,7 @@ import android.app.AppOpsManager;
 import android.app.KeyguardManager;
 import android.app.NotificationManager;
 import android.app.UiModeManager;
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageInfo;
@@ -909,8 +910,27 @@ public class IzukiControlPlugin extends Plugin {
 
   @PluginMethod
   public void openAccessibilitySettings(PluginCall call) {
-    getActivity().startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS));
-    call.resolve();
+    Context c = getContext();
+    // Straight to Izuki's own switch where Android has that page, not the top
+    // of a list the person then has to search. Falls back to the list itself.
+    if (Build.VERSION.SDK_INT >= 26) {
+      try {
+        // The constant for this action was never exposed in Settings, only its name.
+        Intent details = new Intent("android.settings.ACCESSIBILITY_DETAILS_SETTINGS");
+        details.putExtra(Intent.EXTRA_COMPONENT_NAME,
+            new ComponentName(c, IzukiAccessibilityService.class));
+        details.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        c.startActivity(details);
+        call.resolve();
+        return;
+      } catch (Exception ignored) { }
+    }
+    try {
+      c.startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+      call.resolve();
+    } catch (Exception e) {
+      call.reject("Android didn't open its accessibility screen: " + e.getMessage());
+    }
   }
 
   /** Send the person to Izuki's own Android settings for mic/notification fixes. */
@@ -978,6 +998,19 @@ public class IzukiControlPlugin extends Plugin {
     result.put("controlState", ControlState.control(enabled, connected, restriction));
     result.put("restricted", restriction);
     result.put("connectedAt", IzukiAccessibilityService.connectedAt());
+    // Android clears an accessibility service when a sideloaded app is
+    // replaced. Remember which build had it on, so "off" right after an update
+    // reads as what it is (Android's doing) and not as the person's choice.
+    long appCode = 0;
+    try {
+      PackageInfo self = c.getPackageManager().getPackageInfo(c.getPackageName(), 0);
+      appCode = Build.VERSION.SDK_INT >= 28 ? self.getLongVersionCode() : self.versionCode;
+    } catch (Exception ignored) { }
+    int controlOnVersion = c.getSharedPreferences("izuki_native", Context.MODE_PRIVATE)
+        .getInt(IzukiAccessibilityService.KEY_CONTROL_ON_VERSION, 0);
+    result.put("appVersionCode", appCode);
+    result.put("controlOnVersion", controlOnVersion);
+    result.put("controlOffAfterUpdate", !enabled && controlOnVersion > 0 && controlOnVersion != appCode);
     result.put("overlay", connected);
     result.put("overlayMechanism", "accessibility");
     result.put("appOverlayAllowed", Settings.canDrawOverlays(c));

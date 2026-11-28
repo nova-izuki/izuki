@@ -199,6 +199,12 @@ public class IzukiWakeService extends Service implements RecognitionListener {
   }
 
   static void start(Context context) {
+    // An explicit start is the person asking (the page's switch, the tile, the
+    // notification, or opening Izuki with the switch already on). This is the
+    // only place the saved switch is written on: an internal restart must never
+    // turn it back on after it was switched off.
+    context.getApplicationContext().getSharedPreferences(PREFS, MODE_PRIVATE)
+        .edit().putBoolean(KEY_WAKE, true).apply();
     IzukiWakeService s = self;
     if (s != null && !s.stopping) {
       Context app = context.getApplicationContext();
@@ -317,6 +323,15 @@ public class IzukiWakeService extends Service implements RecognitionListener {
   }
 
   @Override public int onStartCommand(Intent intent, int flags, int startId) {
+    // Android restarting a killed service hands over an intent with no action
+    // (or none at all). That is not the person switching “Hey Nova” on:
+    // startAgain() writes the switch back to true, so the listener came back
+    // after being turned off and its microphone chimed open and shut again.
+    // Every real start names ACTION_START, so a nameless one honours the switch.
+    if ((intent == null || intent.getAction() == null) && !wanted(this)) {
+      stopSelf();
+      return START_NOT_STICKY;
+    }
     String action = intent == null || intent.getAction() == null ? ACTION_START : intent.getAction();
     if (ACTION_STOP.equals(action)) {
       shutDown(true);
@@ -350,7 +365,8 @@ public class IzukiWakeService extends Service implements RecognitionListener {
 
   /** On (again): idempotent, so a second Start never opens a second microphone. */
   private void startAgain() {
-    getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_WAKE, true).apply();
+    // No switch write here: start() does that for a real start, so a restart
+    // after a kill cannot resurrect a listener the person turned off.
     enabled = true;
     stopping = false;
     if (terminal) { terminal = false; retryAt = 0; gate.reset(); }
