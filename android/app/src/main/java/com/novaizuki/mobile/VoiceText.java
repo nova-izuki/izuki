@@ -144,10 +144,12 @@ final class VoiceText {
    * talk, and a few times at most.
    */
   static boolean listenAgain(String errorWord, boolean spoke, long leftMs, int tries) {
-    // Three quiet tries at most: each one is a new recognizer, and Android
-    // plays its microphone sound on every start — eight in a row, then another
-    // session behind them, was a chime loop in a quiet car.
-    if (spoke || tries >= 3 || leftMs < 1500) return false;
+    // One quiet try at most. Every try is a fresh recognizer and Android plays
+    // its microphone sound on each start and stop, so three tries after a
+    // greeting (with the page's own retry waiting behind them) was the chime
+    // loop on a “Hey Nova” that got no answer. The session already runs 20 s,
+    // so one extra try is what keeps the ear open while someone decides.
+    if (spoke || tries >= 1 || leftMs < 6000) return false;
     return "silence".equals(errorWord) || "busy".equals(errorWord) || "client".equals(errorWord) || "server".equals(errorWord);
   }
 

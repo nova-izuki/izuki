@@ -33,3 +33,4 @@ The developer build's own tests are warning-free now: the owner-only Smart Visio
 - An everyday phrase like “so now” or “hey there” is refused as the phone's wake phrase, because Izuki would have woken on ordinary speech all day; the note says why, a phrase with a real name in it still works, and a phrase already saved that is all everyday words simply stops waking. [Freebuff]
 - When Android switches Izuki's control off because the app was updated, Izuki now says that instead of just “off”, and the button on that row opens the switch itself. [Freebuff]
 - “Hey Nova” stays off once you turn it off: a restart of the app used to switch it back on by itself, which is why the microphone chimed open and shut on its own. [Freebuff]
+- After “Hey Nova” and its “Yes?” hears nothing, the phone now tries once more instead of three times, two seconds apart, so it stops clapping its microphone open and shut while you decide what to say. [Freebuff]

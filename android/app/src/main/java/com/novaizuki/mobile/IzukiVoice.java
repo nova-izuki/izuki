@@ -578,8 +578,9 @@ final class IzukiVoice {
       try { r.destroy(); } catch (Exception ignored) { }
     }
     // A busy service needs a moment to let go of the microphone, and a quiet
-    // room must not get a new microphone sound every fifth of a second.
-    ui.postDelayed(earsAgain, "busy".equals(word) ? 1500 : 900);
+    // room must not get a new microphone sound every fifth of a second: the one
+    // retry waits long enough to read as “still listening”, not as a stutter.
+    ui.postDelayed(earsAgain, "busy".equals(word) ? 2800 : 2200);
     return true;
   }
 

@@ -104,13 +104,13 @@ public class VoiceTextTest {
   @Test public void listensAgainOnlyBeforeAnyoneSpoke() {
     // Samsung-style "no match" a second after the orb opened: listen again.
     assertTrue(VoiceText.listenAgain("silence", false, 8_000, 0));
-    assertTrue(VoiceText.listenAgain("busy", false, 8_000, 2));
+    assertTrue(VoiceText.listenAgain("busy", false, 8_000, 0));
     // Someone spoke: their "no match" is the answer.
     assertFalse(VoiceText.listenAgain("silence", true, 8_000, 0));
     // Out of time or tries, or an error a restart can't fix.
     assertFalse(VoiceText.listenAgain("silence", false, 1_000, 0));
-    assertTrue(VoiceText.listenAgain("silence", false, 8_000, 2));
-    assertFalse("three quiet tries is the cap: every try is a microphone sound", VoiceText.listenAgain("silence", false, 8_000, 3));
+    assertFalse("one quiet retry is the cap: every try is a microphone sound", VoiceText.listenAgain("silence", false, 8_000, 1));
+    assertFalse("a retry with no time left to hear anyone is not worth a chime", VoiceText.listenAgain("silence", false, 5_000, 0));
     assertFalse(VoiceText.listenAgain("permission", false, 8_000, 0));
     assertFalse(VoiceText.listenAgain("network", false, 8_000, 0));
   }
