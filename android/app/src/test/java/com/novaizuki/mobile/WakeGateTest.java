@@ -44,6 +44,16 @@ public class WakeGateTest {
     assertTrue("but not a flood, got " + onsets, onsets <= 3);
   }
 
+  @Test public void theBarItNeedsIsTheLouderOfTheRoomAndTheMinimum() {
+    WakeGate gate = new WakeGate();
+    // A fresh gate guesses a -60 dB room: -48 by the rule, but nothing under -45 counts.
+    assertEquals(-45, gate.barDb(), 0.01);
+    short[] fan = tone(0.02, 320); // about -37 dBFS, a steady hum
+    for (int i = 0; i < 50 * 60; i++) gate.frame(WakeGate.levelDb(fan, fan.length));
+    assertEquals("the bar follows the room up", Math.max(gate.floorDb() + WakeGate.OVER_FLOOR_DB, WakeGate.ABSOLUTE_MIN_DB), gate.barDb(), 0.01);
+    assertTrue("and the room raises it above the minimum", gate.barDb() > -45);
+  }
+
   @Test public void aTurnThatJustEndedIsNotAWake() {
     WakeGate gate = new WakeGate();
     gate.settle(100_000, 4_000);

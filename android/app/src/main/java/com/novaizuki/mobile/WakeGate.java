@@ -88,6 +88,13 @@ final class WakeGate {
 
   double floorDb() { return floorDb; }
 
+  /**
+   * The level a frame has to beat to count as someone talking, in dBFS: louder
+   * of the room plus 12 dB and the absolute minimum. Shown in Diagnostics, so a
+   * person can see what their own room asks for before blaming the gate.
+   */
+  double barDb() { return Math.max(floorDb + OVER_FLOOR_DB, ABSOLUTE_MIN_DB); }
+
   /** One 20 ms frame. True when speech just started (the caller still asks {@link #mayHear}). */
   boolean frame(double db) {
     boolean loud = db > Math.max(floorDb + OVER_FLOOR_DB, ABSOLUTE_MIN_DB);

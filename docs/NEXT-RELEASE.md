@@ -39,3 +39,4 @@ The developer build's own tests are warning-free now: the owner-only Smart Visio
 - Android control being off after a reinstall now says so plainly instead of a bare “Off”, and the turn’s ear waits two seconds for you to start instead of one. [Freebuff]
 - The microphone stops opening for short sounds: a click, a knock or a notification no longer starts a wake check, so the mic-on/mic-off sound stops looping in a quiet room. [Freebuff]
 - After Izuki answers, the wake listener stays quiet for a few seconds instead of checking your last words and sounding the microphone once more. [Freebuff]
+- Diagnostics shows the wake listener's live numbers: the room level, the bar a sound must beat to be checked, and the last time a sound was heard and skipped, with the reason. [Freebuff]

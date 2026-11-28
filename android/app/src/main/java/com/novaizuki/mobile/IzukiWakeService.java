@@ -158,6 +158,9 @@ public class IzukiWakeService extends Service implements RecognitionListener {
   private String partialWake = "";
   /** When the diagnostics last said why speech wasn't checked. */
   private long lastSkipNote = -60_000;
+  /** The last time someone sounded like they were talking and no check ran, and why. */
+  private String skipWhy = "";
+  private long skipAt = 0;
   private String noteText = "";
   private SpeechRecognizer recognizer;
 
@@ -293,6 +296,9 @@ public class IzukiWakeService extends Service implements RecognitionListener {
         out.put("mode", s.state == WakeGate.State.HEARING ? (s.piped ? "audio-source" : "microphone") : "");
         out.put("level", Math.round(s.level));
         out.put("floor", Math.round(s.gate.floorDb()));
+        out.put("bar", Math.round(s.gate.barDb()));
+        out.put("skipWhy", s.skipWhy);
+        out.put("skipAt", s.skipAt);
         out.put("sessions", s.sessionCount);
         out.put("failures", s.gate.failures());
         out.put("retryIn", s.retryAt > now ? s.retryAt - now : 0);
@@ -660,7 +666,10 @@ public class IzukiWakeService extends Service implements RecognitionListener {
     synchronized (gate) {
       String why = gate.whyNot(now);
       if (!why.isEmpty()) {
-        // Someone spoke and it wasn't checked: say why in the diagnostics (at most every 20 s).
+        // Someone spoke and it wasn't checked: keep it for the diagnostics, and
+        // say it in the event list at most every 20 s.
+        skipWhy = why;
+        skipAt = System.currentTimeMillis();
         if (now - lastSkipNote > 20_000) { lastSkipNote = now; log("heard someone but didn't check: " + why); }
         return;
       }
