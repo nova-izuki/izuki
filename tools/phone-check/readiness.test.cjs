@@ -51,7 +51,7 @@ rows = R.rows({ ...good, control: false, running: false, controlState: "off", co
 const afterUpdate = row(rows, "control");
 assert.equal(afterUpdate.action.id, "control", "the fix opens the accessibility switch");
 assert.equal(afterUpdate.action.label, "Turn it back on", "the button says what happened");
-assert.match(afterUpdate.text, /when the app updated/);
+assert.match(afterUpdate.text, /after it had been on/);
 assert.equal(afterUpdate.ok, false);
 // The same "off" with no update behind it keeps the old wording.
 rows = R.rows({ ...good, control: false, running: false, controlState: "off", controlOffAfterUpdate: false });

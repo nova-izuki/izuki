@@ -56,7 +56,7 @@
     const afterUpdate = !!st?.controlOffAfterUpdate;
     return { ...base, state: "action", ok: false,
       text: afterUpdate
-        ? "Android switched this off when the app updated — it does that to any app installed from a file, each time the app is replaced. Home, Back, taps, typing, Autopilot and the orb are all off until it is back on."
+        ? "Android switched this off after it had been on — it does that to apps installed from a file, each time the app is replaced. Home, Back, taps, typing, Autopilot and the orb are all off until it is back on."
         : "Off. Needed for Home, Back, taps, typing, Autopilot and the floating orb.",
       action: { id: "control", label: afterUpdate ? "Turn it back on" : "Turn on" },
       steps: [accessibilityPath(st)],

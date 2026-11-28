@@ -5927,7 +5927,7 @@
         `Android ${d.android || "?"} (SDK ${r.sdk || "?"}) · ${r.manufacturer || ""} ${d.model || ""}`,
         `Checked ${when(d.at)}`,
         "",
-        `Android control: ${r.controlState || "?"}${r.controlOffAfterUpdate ? " — Android turned it off when the app updated; turn it back on in Settings → Accessibility → Izuki Companion control" : ""} (switched on: ${!!r.control}, connected: ${!!r.running}, since ${when(d.controlConnectedAt)}; last dropped ${when(d.controlDroppedAt)})`,
+        `Android control: ${r.controlState || "?"}${r.controlOffAfterUpdate ? " — Android turned it off after it had been on; turn it back on in Settings → Accessibility → Izuki Companion control" : ""} (switched on: ${!!r.control}, connected: ${!!r.running}, since ${when(d.controlConnectedAt)}; last dropped ${when(d.controlDroppedAt)})`,
         `Restricted settings: ${r.restricted || "?"}`,
         `Microphone: ${r.mic ? "allowed" : "not allowed"} · Notifications: ${r.notifications ? "allowed" : "not allowed"}`,
         `Battery: ${r.battery ? "unrestricted" : "optimised"}${r.backgroundRestricted ? " · background restricted" : ""}${r.powerSave ? " · Battery Saver on" : ""}`,

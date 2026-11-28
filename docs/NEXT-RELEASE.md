@@ -36,3 +36,4 @@ The developer build's own tests are warning-free now: the owner-only Smart Visio
 - After “Hey Nova” and its “Yes?” hears nothing, the phone now tries once more instead of three times, two seconds apart, so it stops clapping its microphone open and shut while you decide what to say. [Freebuff]
 - Diagnostics now says whether “Hey Nova” answers where you are or opens Izuki, and which of the four things it needs was missing, and a “Hey Nova” that arrives while Izuki is still talking is kept instead of thrown away. [Freebuff]
 - Answering “I’m here.” with “yes” now means “go on”, so the phone stops answering its own greeting and listens for what you actually want. [Freebuff]
+- Android control being off after a reinstall now says so plainly instead of a bare “Off”, and the turn’s ear waits two seconds for you to start instead of one. [Freebuff]

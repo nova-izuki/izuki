@@ -1010,7 +1010,11 @@ public class IzukiControlPlugin extends Plugin {
         .getInt(IzukiAccessibilityService.KEY_CONTROL_ON_VERSION, 0);
     result.put("appVersionCode", appCode);
     result.put("controlOnVersion", controlOnVersion);
-    result.put("controlOffAfterUpdate", !enabled && controlOnVersion > 0 && controlOnVersion != appCode);
+    // On under some version, off now: Android replaced the app (it clears this
+    // for apps installed from a file — an update *or* a reinstall with the same
+    // version, which is how it silently came off on the A15). Every phone
+    // action is dead until it is back on, so say so instead of "Off".
+    result.put("controlOffAfterUpdate", !enabled && controlOnVersion > 0);
     result.put("overlay", connected);
     result.put("overlayMechanism", "accessibility");
     result.put("appOverlayAllowed", Settings.canDrawOverlays(c));

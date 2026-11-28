@@ -488,10 +488,12 @@ final class IzukiVoice {
         .putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
         .putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
         .putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, app.getPackageName())
-        // How long a pause ends what you said. Shorter (1.0 s) also made some
-        // phones end the session before the person started talking.
-        .putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 1300)
-        .putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 1000);
+        // How long a pause ends what you said. The possibly-complete hint is
+        // what a phone uses when it has heard nothing yet: Samsung's recogniser
+        // took the 1.0 s at face value and closed the microphone 0.9 s in, so
+        // the turn's 20 s window was really two one-second tries.
+        .putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 2000)
+        .putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 8000);
     String want = lang == null ? "" : lang;
     earsIntent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, want.isEmpty() ? Locale.getDefault().toLanguageTag() : want);
     earsOn = true;
