@@ -954,6 +954,10 @@ final class IzukiVoice {
     }
     ui.removeCallbacks(pageTimeout);
     ui.removeCallbacks(afterTalk);
+    // What was just said, and Izuki's own last word, are still in the room. The
+    // listener would open a session on them a moment later: one more microphone
+    // start and stop sound for words that were already answered.
+    IzukiWakeService.settle(4_000);
     IzukiWakeService.hold(IzukiWakeService.HOLD_TURN, false);
     holdScreen(false);
     IzukiAccessibilityService.edgeGlow(false, "");

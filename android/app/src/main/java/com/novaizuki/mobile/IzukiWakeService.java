@@ -91,6 +91,16 @@ public class IzukiWakeService extends Service implements RecognitionListener {
   static final int HOLD_PAGE = 1, HOLD_TURN = 2, HOLD_SPEECH = 4, HOLD_EARS = 8, HOLD_CLIP = 16;
   private static int holds = 0;
 
+  /**
+   * A turn just ended: stay quiet for a moment, so the words it was answering
+   * are not mistaken for a new "Hey Nova" (each check is a microphone sound).
+   */
+  static void settle(long ms) {
+    IzukiWakeService s = self;
+    if (s == null) return;
+    synchronized (IzukiWakeService.class) { s.gate.settle(SystemClock.elapsedRealtime(), ms); }
+  }
+
   static void hold(int bit, boolean on) {
     IzukiWakeService s;
     synchronized (IzukiWakeService.class) {

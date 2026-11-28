@@ -44,6 +44,18 @@ public class WakeGateTest {
     assertTrue("but not a flood, got " + onsets, onsets <= 3);
   }
 
+  @Test public void aTurnThatJustEndedIsNotAWake() {
+    WakeGate gate = new WakeGate();
+    gate.settle(100_000, 4_000);
+    assertEquals("the turn that just ended", gate.whyNot(101_000));
+    assertEquals("the turn that just ended", gate.whyNot(103_900));
+    assertEquals("", gate.whyNot(104_100));
+    // Settling never lengthens an earlier, longer rest.
+    gate.rest(105_000);
+    gate.settle(105_000, 1_000);
+    assertEquals("resting after lots of talk nearby", gate.whyNot(106_500));
+  }
+
   @Test public void aClickIsNotSomeoneTalking() {
     WakeGate gate = new WakeGate();
     short[] room = tone(0.002, 320);

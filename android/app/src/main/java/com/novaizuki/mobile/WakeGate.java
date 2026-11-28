@@ -132,6 +132,16 @@ final class WakeGate {
   private final ArrayDeque<Long> sessions = new ArrayDeque<>();
   private long lastSessionEnd = -MIN_GAP_MS;
   private long quietUntil = 0;
+  /**
+   * No check until then, without calling it "resting": a turn just ended, and
+   * its own words are still in the room. Opening a session on them was one more
+   * microphone start and stop right after Izuki stopped talking.
+   */
+  private long settleUntil = 0;
+
+  void settle(long now, long ms) {
+    settleUntil = Math.max(settleUntil, now + Math.max(0, ms));
+  }
 
   /** True when a session may start now; false while resting or over budget. */
   boolean mayHear(long now) {
@@ -140,6 +150,7 @@ final class WakeGate {
 
   /** Why someone speaking now wouldn't be checked ("" = it would), for the diagnostics. */
   String whyNot(long now) {
+    if (now < settleUntil) return "the turn that just ended";
     if (now < quietUntil) return "resting after lots of talk nearby";
     if (now - lastSessionEnd < MIN_GAP_MS) return "just checked something else";
     while (!sessions.isEmpty() && now - sessions.peekFirst() > BUDGET_WINDOW_MS) sessions.pollFirst();
