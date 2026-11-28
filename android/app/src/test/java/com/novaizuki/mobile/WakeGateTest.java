@@ -172,6 +172,15 @@ public class WakeGateTest {
     assertEquals("too short to be safe", "", WakeGate.cleanPhrase("jarvis"));
     assertEquals("", WakeGate.cleanPhrase("one two three four five"));
     assertEquals("", WakeGate.cleanPhrase(null));
+    assertEquals("every-day words would wake Izuki all day", "", WakeGate.cleanPhrase("so now"));
+    assertEquals("", WakeGate.cleanPhrase("Hey there"));
+    assertEquals("", WakeGate.cleanPhrase("okay so then"));
+    assertEquals("a name among ordinary words is still a name", "hey there jarvis", WakeGate.cleanPhrase("hey there jarvis"));
+    assertTrue(WakeGate.isWake("hey there jarvis what is the time", false, "hey there jarvis"));
+    assertTrue(WakeGate.phraseProblem("so now").contains("everyday words"));
+    assertTrue(WakeGate.phraseProblem("jarvis").contains("2 to 4 words"));
+    assertEquals("", WakeGate.phraseProblem("hey jarvis"));
+    assertEquals("blank clears the phrase, so it is no problem", "", WakeGate.phraseProblem("  "));
     assertTrue(WakeGate.isWake("hey jarvis what's the time", false, "hey jarvis"));
     assertTrue("Hey Nova keeps working", WakeGate.isWake("hey nova", false, "hey jarvis"));
     assertFalse(WakeGate.isWake("jarvis what's the time", false, "hey jarvis"));

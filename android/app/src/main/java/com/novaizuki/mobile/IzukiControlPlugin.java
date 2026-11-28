@@ -623,11 +623,12 @@ public class IzukiControlPlugin extends Plugin {
   @PluginMethod
   public void setWakePhrase(PluginCall call) {
     String raw = call.getString("phrase", "");
-    String clean = WakeGate.cleanPhrase(raw);
-    if (raw != null && !raw.trim().isEmpty() && clean.isEmpty()) {
-      call.reject("Use 2 to 4 words, letters only — for example “hey jarvis”.");
+    String problem = WakeGate.phraseProblem(raw);
+    if (!problem.isEmpty()) {
+      call.reject(problem);
       return;
     }
+    String clean = WakeGate.cleanPhrase(raw);
     getContext().getSharedPreferences("izuki_native", Context.MODE_PRIVATE).edit()
         .putString(IzukiWakeService.KEY_PHRASE, clean).apply();
     call.resolve(wakeInfo());

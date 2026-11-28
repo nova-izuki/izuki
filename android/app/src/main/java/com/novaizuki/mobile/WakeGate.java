@@ -1,7 +1,10 @@
 package com.novaizuki.mobile;
 
 import java.util.ArrayDeque;
+import java.util.Arrays;
+import java.util.HashSet;
 import java.util.Locale;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
@@ -353,13 +356,49 @@ final class WakeGate {
   }
 
   /**
-   * A phrase the person may choose: 2–4 words, letters only, up to 32
-   * characters. "" when it isn't usable (too short to be safe, or odd).
+   * Words too common to be a wake phrase. "So now" or "hey there" as a phrase
+   * would make half of everything said a call, so a phrase made only of these
+   * is refused, exactly as the headset refuses an ordinary name.
    */
-  static String cleanPhrase(String raw) {
+  private static final Set<String> ORDINARY = new HashSet<>(Arrays.asList(
+      ("a an the and or but so if then than now okay ok hey hi hello yo yes yeah no not you your i me my we us they them "
+          + "this that these those what when where who why how is are was were be been do does did done can could will would "
+          + "should may might must just only also very really well good bad go come here there up down out over under again "
+          + "more most some any all one two three please thanks thank").split(" ")));
+
+  /** The phrase in the shape a wake phrase may take: 2–4 words, up to 32 letters. "" otherwise. */
+  private static String shape(String raw) {
     if (raw == null) return "";
-    String p = raw.toLowerCase(Locale.ROOT).replaceAll("[^\\p{L}' ]", " ").replaceAll("\\s+", " ").trim();
+    String lowered = raw.toLowerCase(Locale.ROOT);
+    StringBuilder b = new StringBuilder();
+    for (int i = 0; i < lowered.length(); i++) {
+      char c = lowered.charAt(i);
+      b.append(Character.isLetter(c) || c == 39 || c == 32 ? c : ' ');
+    }
+    String p = b.toString().replaceAll("  +", " ").trim();
     int words = p.isEmpty() ? 0 : p.split(" ").length;
     return words >= 2 && words <= 4 && p.length() <= 32 ? p : "";
+  }
+
+  /**
+   * A phrase the person may choose: 2–4 words, letters only, up to 32
+   * characters, and not every-day words only. "" when it isn't usable (too
+   * short to be safe, or ordinary), so a phrase that is all everyday words
+   * never wakes Izuki.
+   */
+  static String cleanPhrase(String raw) {
+    String p = shape(raw);
+    if (p.isEmpty()) return "";
+    for (String word : p.split(" ")) if (!ORDINARY.contains(word)) return p;
+    return "";
+  }
+
+  /** Why a phrase can't wake Izuki, as the sentence to show — "" when it can. */
+  static String phraseProblem(String raw) {
+    if (raw == null || raw.trim().isEmpty()) return "";
+    if (shape(raw).isEmpty()) return "Use 2 to 4 words, letters only — for example “hey jarvis”.";
+    return cleanPhrase(raw).isEmpty()
+        ? "Those are all everyday words, so Izuki would wake all the time. Pick a name — for example “hey jarvis”."
+        : "";
   }
 }
