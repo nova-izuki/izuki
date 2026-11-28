@@ -17,9 +17,10 @@ const LINES = [
 ];
 
 // A tree shaped like this repository at 1.0.226, with today's pending list.
-const fixture = ({ version = '1.0.226', build = '226', eol = '\n', lock = version, ios = [build, build], pending = LINES } = {}) => {
+const fixture = ({ version = '1.0.226', build = '226', eol = '\n', lock = version, npmLock = version, ios = [build, build], pending = LINES } = {}) => {
   const files = {
     'package.json': `{\n  "name": "izuki",\n  "version": "${version}",\n  "private": true\n}\n`,
+    'package-lock.json': `{\n  "name": "izuki",\n  "version": "${npmLock}",\n  "lockfileVersion": 3,\n  "requires": true,\n  "packages": {\n    "": {\n      "name": "izuki",\n      "version": "${npmLock}",\n      "dependencies": {\n        "serde": "1.0.200"\n      }\n    },\n    "node_modules/serde": {\n      "version": "1.0.200"\n    }\n  }\n}\n`,
     'src-tauri/tauri.conf.json': `{\n  "productName": "Izuki",\n  "version": "${version}",\n  "bundle": {\n    "active": true\n  }\n}\n`,
     'src-tauri/Cargo.toml': `[package]\nname = "izuki"\nversion = "${version}"\nedition = "2021"\n\n[lib]\nname = "izuki_lib"\n\n[dependencies]\nserde = { version = "1.0.200", features = ["derive"] }\n`,
     'src-tauri/Cargo.lock': `version = 4\n\n[[package]]\nname = "izuki"\nversion = "${lock}"\n\n[[package]]\nname = "serde"\nversion = "1.0.200"\n`,
@@ -50,6 +51,10 @@ let cases = 0;
 
   for (const f of VERSION_FILES) assert.ok(result.sources[f], `${f} is still there`);
   assert.equal(JSON.parse(result.sources['package.json']).version, '1.0.227', 'package.json');
+  const lock = JSON.parse(result.sources['package-lock.json']);
+  assert.equal(lock.version, '1.0.227', 'package-lock.json root version');
+  assert.equal(lock.packages[''].version, '1.0.227', 'package-lock.json package entry');
+  assert.equal(lock.packages['node_modules/serde'].version, '1.0.200', 'a dependency in the lock is left alone');
   assert.equal(JSON.parse(result.sources['src-tauri/tauri.conf.json']).version, '1.0.227', 'tauri.conf.json');
   assert.match(result.sources['src-tauri/Cargo.toml'], /\nversion = "1\.0\.227"\n/, 'Cargo.toml [package]');
   assert.match(result.sources['src-tauri/Cargo.toml'], /serde = \{ version = "1\.0\.200"/, 'a dependency version is left alone');
@@ -98,6 +103,19 @@ let cases = 0;
   clean(result, 'stale lock');
   assert.match(result.sources['src-tauri/Cargo.lock'], /name = "izuki"\nversion = "1\.0\.227"/, 'the lock follows the bump');
   assert.match(result.sources['src-tauri/Cargo.lock'], /name = "serde"\nversion = "1\.0\.200"/, 'another package is untouched');
+  cases += 1;
+}
+
+// A package-lock.json left behind by earlier releases is brought along, not
+// skipped. This happened: the lock said 1.0.224 while the tree said 1.0.226,
+// and the next `npm install` would have rewritten it inside a release commit.
+{
+  const result = bumpSources(fixture({ npmLock: '1.0.224' }), { version: '1.0.227' });
+  clean(result, 'stale package-lock');
+  const lock = JSON.parse(result.sources['package-lock.json']);
+  assert.equal(lock.version, '1.0.227', 'the lock root version follows the bump');
+  assert.equal(lock.packages[''].version, '1.0.227', 'and so does its package entry');
+  assert.match(result.sources['package-lock.json'], /"serde": "1\.0\.200"/, 'a dependency stays where it was');
   cases += 1;
 }
 

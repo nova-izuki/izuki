@@ -29,6 +29,7 @@ notes into prose if the release body should read like the earlier ones.
 | File | What changes |
 |---|---|
 | `package.json` | `"version": "1.0.NNN"` |
+| `package-lock.json` | the root `"version"` and `packages[""].version` — no build reads them, so they had drifted two releases behind |
 | `src-tauri/tauri.conf.json` | `"version": "1.0.NNN"` (the updater compares this one) |
 | `src-tauri/Cargo.toml` | `[package]` `version = "1.0.NNN"` |
 | `src-tauri/Cargo.lock` | the `izuki` package's `version = "1.0.NNN"` (by hand, or let `cargo` rewrite it) |

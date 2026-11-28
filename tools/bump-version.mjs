@@ -25,6 +25,7 @@ const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 // Every file a bump writes, in the order the checklist lists them.
 export const VERSION_FILES = [
   'package.json',
+  'package-lock.json',
   'src-tauri/tauri.conf.json',
   'src-tauri/Cargo.toml',
   'src-tauri/Cargo.lock',
@@ -94,6 +95,45 @@ export function bumpSources(sources, options = {}) {
     }
     if (readBack !== version) fail(`${name}: reads ${readBack} after the bump, not ${version}`);
     else out[name] = next;
+  }
+
+  // package-lock.json: the two places npm records the project's own version.
+  // No build reads them, which is exactly why they were missed: the lock said
+  // 1.0.224 while the tree said 1.0.226, and the next `npm install` would have
+  // rewritten the lock inside a release commit. Whatever they hold now, they
+  // end at the new version; no dependency's version is touched, and the file
+  // keeps the line endings it had.
+  {
+    const name = 'package-lock.json';
+    const text = String(out[name] ?? '');
+    if (!text) fail(`${name}: not found`);
+    else {
+      let parsed;
+      try { parsed = JSON.parse(text); } catch { parsed = null; }
+      const own = parsed?.packages?.[''];
+      const eol = text.includes('\r\n') ? '\r\n' : '\n';
+      const quoted = (v) => `"${v}"`;
+      const lines = text.split(eol);
+      const entryAt = lines.indexOf('    "": {');
+      const rootAt = typeof parsed?.version === 'string'
+        ? lines.indexOf(`  "version": ${quoted(parsed.version)},`)
+        : -1;
+      const entryVersionAt = entryAt < 0 || typeof own?.version !== 'string'
+        ? -1
+        : lines.findIndex((l, i) => i > entryAt && i < entryAt + 4 && l === `      "version": ${quoted(own.version)},`);
+      if (rootAt < 0 || entryVersionAt < 0) fail(`${name}: the project's own version lines have moved`);
+      else {
+        const next = lines.slice();
+        next[rootAt] = `  "version": ${quoted(version)},`;
+        next[entryVersionAt] = `      "version": ${quoted(version)},`;
+        const joined = next.join(eol);
+        let readBack;
+        try { readBack = JSON.parse(joined); } catch { readBack = null; }
+        if (readBack?.version !== version) fail(`${name}: reads ${readBack?.version} after the bump, not ${version}`);
+        else if (readBack.packages?.['']?.version !== version) fail(`${name}: the package entry still says ${readBack.packages?.['']?.version}`);
+        else out[name] = joined;
+      }
+    }
   }
 
   // Cargo.toml: the [package] table's own version, never a dependency's.
