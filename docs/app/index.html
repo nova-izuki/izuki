@@ -4707,6 +4707,13 @@
 
   function stopTalking(message) {
     talking = false;
+    // The wake that waited for this moment: a beat after the ear and the voice
+    // are put away, so it starts its own listening cleanly.
+    if (wakeWhileTalking) {
+      const held = wakeWhileTalking;
+      wakeWhileTalking = "";
+      setTimeout(() => { void startWake(held, null); }, 350);
+    }
     earSeq++;
     waitingForTap = false;
     if (window.IzukiNative?.canListen?.()) void window.IzukiNative.stopListening();
@@ -5938,6 +5945,7 @@
         turnLine(turnLast, "Last turn"),
         ...(turnOpen() ? [turnLine(turnNow, "Turn in progress")] : []),
         "",
+        `Voice turn: ${r.turnOn ? "answers where you are" : "opens Izuki"}${r.turnOn ? "" : ` (Android control ${r.turnControl ? "on" : "off"} · page ${r.turnPage ? "ready" : "not loaded"} · mic ${r.turnMic ? "ok" : "not allowed"} · recognizer ${r.turnSpeech ? "ok" : "missing"})`}`,
         `Voice: ${window.IzukiNative?.canSpeak?.() ? "Android's own voice" : "the page's voice"} · ${window.IzukiNative?.canListen?.() ? (useNativeEars ? "ears: Android's recognizer" : "ears: recording (fallback)") : "ears: none"} · call ${talking ? "on" : "off"}${busy ? " · busy" : ""}${waitingForTap ? " · waiting for a tap" : ""} · orb ${orbState || "hidden"}`,
         ...voiceTrail.map((line) => "  " + line),
         "",
@@ -7126,12 +7134,18 @@
   // posts a notification; the page only starts talking after the phone is
   // actually unlocked.
   let pendingWake = "";
+  /** A wake that arrived while the page was still talking: kept, not dropped. */
+  let wakeWhileTalking = "";
   let lastWakeText = "", lastWakeAt = 0;
   // A wake whose own audio wasn't available (the speech service used its
   // own microphone): the first spoken command is checked instead.
   let wakeTurn = false;
   async function startWake(phrase, extra = null) {
-    if (talking) return;
+    // A wake that lands while the page is talking (a call, or the last answer
+    // still speaking) used to be thrown away — and Android's copy of the phrase
+    // was already spent, so the person got silence. Hold it and run it as soon
+    // as the page stops talking.
+    if (talking) { wakeWhileTalking = String(phrase || ""); return; }
     const vm = window.IzukiVoiceMatch?.read?.();
     if (vm?.enabled && extra?.voice) {
       if (extra.audio) {

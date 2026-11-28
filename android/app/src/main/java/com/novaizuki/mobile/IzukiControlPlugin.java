@@ -1023,6 +1023,18 @@ public class IzukiControlPlugin extends Plugin {
     ActivityManager am = (ActivityManager) c.getSystemService(Context.ACTIVITY_SERVICE);
     result.put("backgroundRestricted", Build.VERSION.SDK_INT >= 28 && am != null && am.isBackgroundRestricted());
     result.put("speech", SpeechRecognizer.isRecognitionAvailable(c));
+    // Why "Hey Nova" answers on the spot or falls back to "I'm here — open
+    // Izuki to talk": each of the four things that turn needs, named, so the
+    // Diagnostics line says which one was missing instead of just being slow.
+    boolean turnControl = IzukiAccessibilityService.running();
+    boolean turnPage = alive();
+    boolean turnMic = c.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED;
+    boolean turnSpeech = SpeechRecognizer.isRecognitionAvailable(c);
+    result.put("turnOn", turnControl && turnPage && turnMic && turnSpeech);
+    result.put("turnControl", turnControl);
+    result.put("turnPage", turnPage);
+    result.put("turnMic", turnMic);
+    result.put("turnSpeech", turnSpeech);
     result.put("wakeOn", IzukiWakeService.wanted(c));
     result.put("wakeRunning", IzukiWakeService.isRunning());
     result.put("sdk", Build.VERSION.SDK_INT);
