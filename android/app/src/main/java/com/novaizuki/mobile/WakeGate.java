@@ -43,11 +43,18 @@ final class WakeGate {
 
   // ---- voice activity ----------------------------------------------------
 
-  /** Loud enough over the room, for long enough, to be someone talking. */
-  static final double OVER_FLOOR_DB = 10;
-  static final double ABSOLUTE_MIN_DB = -52;
-  static final int WINDOW = 8;      // frames of 20 ms
-  static final int NEEDED = 5;      // loud frames within the window
+  /**
+   * Loud enough over the room, for long enough, to be someone talking. Every
+   * session sounds Android's microphone start and stop, and this phone's speech
+   * service refuses to be fed our audio, so a sound that is not speech is a
+   * chime: typing clicks, a notification, a knock. Requiring 160 ms of sound
+   * (8 of 10 frames) and a real level (-45 dBFS) instead of 100 ms of anything
+   * over -52 is what keeps the room quiet from opening sessions.
+   */
+  static final double OVER_FLOOR_DB = 12;
+  static final double ABSOLUTE_MIN_DB = -45;
+  static final int WINDOW = 10;     // frames of 20 ms
+  static final int NEEDED = 8;      // loud frames within the window
 
   /** Quiet frames (300 ms) that end one stretch of speech, so it starts one session, not many. */
   static final int RELEASE = 15;
@@ -117,7 +124,7 @@ final class WakeGate {
 
   // A short gap after a session (4 s missed a "Hey Nova" said right after
   // other talk), a bigger budget, and a shorter rest when it runs out.
-  static final long MIN_GAP_MS = 1_500;
+  static final long MIN_GAP_MS = 2_500;
   static final int BUDGET = 30;
   static final long BUDGET_WINDOW_MS = 10 * 60_000;
   static final long QUIET_MS = 60_000;

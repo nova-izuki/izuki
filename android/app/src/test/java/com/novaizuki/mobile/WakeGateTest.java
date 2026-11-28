@@ -29,8 +29,8 @@ public class WakeGateTest {
     short[] voice = tone(0.2, 320); // about -17 dBFS
     for (int i = 0; i < 200; i++) gate.frame(WakeGate.levelDb(room, room.length));
     int onsets = 0;
-    for (int i = 0; i < 6; i++) if (gate.frame(WakeGate.levelDb(voice, voice.length))) onsets++;
-    assertEquals("five loud frames out of eight are speech", 1, onsets);
+    for (int i = 0; i < 10; i++) if (gate.frame(WakeGate.levelDb(voice, voice.length))) onsets++;
+    assertEquals("eight loud frames out of ten are speech", 1, onsets);
   }
 
   @Test public void speechOverContinuingSoundIsCheckedAgain() {
@@ -42,6 +42,28 @@ public class WakeGateTest {
     for (int i = 0; i < 50 * 6; i++) if (gate.frame(WakeGate.levelDb(tv, tv.length))) onsets++;
     assertTrue("six seconds of continuing sound get more than one look, got " + onsets, onsets >= 2);
     assertTrue("but not a flood, got " + onsets, onsets <= 3);
+  }
+
+  @Test public void aClickIsNotSomeoneTalking() {
+    WakeGate gate = new WakeGate();
+    short[] room = tone(0.002, 320);
+    short[] click = tone(0.12, 320); // a key press: loud, but 40 ms
+    for (int i = 0; i < 200; i++) gate.frame(WakeGate.levelDb(room, room.length));
+    int onsets = 0;
+    // Four clicks a second apart, the way typing sounds: never a session.
+    for (int i = 0; i < 4; i++) {
+      for (int f = 0; f < 2; f++) if (gate.frame(WakeGate.levelDb(click, click.length))) onsets++;
+      for (int f = 0; f < 48; f++) if (gate.frame(WakeGate.levelDb(room, room.length))) onsets++;
+    }
+    assertEquals("a click must not open a session: every one is a microphone sound", 0, onsets);
+  }
+
+  @Test public void aSoftKnockIsNotSomeoneTalking() {
+    WakeGate gate = new WakeGate();
+    short[] soft = tone(0.004, 320); // about -48 dBFS: quiet, and not even a level to check
+    int onsets = 0;
+    for (int i = 0; i < 50 * 20; i++) if (gate.frame(WakeGate.levelDb(soft, soft.length))) onsets++;
+    assertEquals("a quiet knock must not open a session", 0, onsets);
   }
 
   @Test public void whyASessionWasSkipped() {
