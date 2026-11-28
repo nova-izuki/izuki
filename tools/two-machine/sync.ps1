@@ -44,6 +44,9 @@ function Say([string]$m) {
 if ($Uninstall) {
   try { Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction Stop }
   catch { & schtasks.exe /Delete /F /TN $TaskName | Out-Null }
+  # The windowless launcher goes with the task; the repo copy stays.
+  $runner = Join-Path (Split-Path -Parent $StableCopy) 'two-machine-sync.vbs'
+  if (Test-Path -LiteralPath $runner) { Remove-Item -LiteralPath $runner -Force -ErrorAction SilentlyContinue }
   Say 'uninstalled: the sync task is gone, the repo is untouched'
   exit 0
 }
@@ -52,10 +55,20 @@ if ($Install) {
   $dir = Split-Path -Parent $StableCopy
   New-Item -ItemType Directory -Force -Path $dir | Out-Null
   Copy-Item -LiteralPath $PSCommandPath -Destination $StableCopy -Force
-  $arg = '-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "{0}" -Repo "{1}" -Quiet' -f $StableCopy, $Repo
+  # A task that launches powershell.exe makes a console window appear for a
+  # moment every time it runs — that is the flash the owner kept seeing. WSH
+  # starts it with no window at all, so the sync is invisible.
+  $runner = Join-Path $dir 'two-machine-sync.vbs'
+  $vbs = @"
+' Izuki two-machine sync: starts the sync with no window at all.
+Set sh = CreateObject("WScript.Shell")
+sh.Run "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ""$StableCopy"" -Repo ""$Repo"" -Quiet", 0, False
+"@
+  Set-Content -LiteralPath $runner -Value $vbs -Encoding Unicode
+  $arg = '//nologo "{0}"' -f $runner
   $ok = $false
   try {
-    $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $arg
+    $action = New-ScheduledTaskAction -Execute 'wscript.exe' -Argument $arg
     $atLogon = New-ScheduledTaskTrigger -AtLogOn -User "$env:USERDOMAIN\$env:USERNAME"
     $repeat = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) `
       -RepetitionInterval (New-TimeSpan -Minutes 10) `
@@ -69,7 +82,7 @@ if ($Install) {
     Say "task API refused ($($_.Exception.Message)); trying schtasks"
   }
   if (-not $ok) {
-    & schtasks.exe /Create /F /TN $TaskName /SC MINUTE /MO 10 /TR "powershell.exe $arg" | Out-Null
+    & schtasks.exe /Create /F /TN $TaskName /SC MINUTE /MO 10 /TR "wscript.exe $arg" | Out-Null
     $ok = ($LASTEXITCODE -eq 0)
   }
   if (-not $ok) { Say 'could not register the task'; exit 1 }

@@ -31,6 +31,16 @@ registers the task **Izuki two-machine sync**: at sign-in, then every 10
 minutes, for the current user only. No administrator needed and nothing is
 installed system-wide.
 
+The task starts a tiny `two-machine-sync.vbs` through `wscript.exe`, not
+`powershell.exe`. That matters: a task that starts PowerShell makes a console
+window appear for a moment every time it runs, which is the flash people
+notice every ten minutes. WSH opens no window at all. A PC that still has the
+old task needs this one line run once on it:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/two-machine/sync.ps1 -Install
+```
+
 Check it is there:
 
 ```powershell
