@@ -602,3 +602,49 @@ rule at its edges (`moreRounds(8, 2)` true, `moreRounds(12, 3)` false). `npm run
 test:panel`, `node --check` on the panel and `git diff --check` pass. Not checked: the loop
 itself has never run — it lives in `sidepanel.js`, which no test drives, so the
 continuation, the stop mid-task and the budget message have only been read, not seen.
+**The hand-off the loop died on.** `ask()` began with
+`if (!question || busy || starting || desktopTask || !current) return false`, so every
+question — including a task's own next round — was refused while the panel was busy. The
+loop schedules that next round 20 ms after it finishes, and `askNext()` (or a Send) can
+make the panel busy inside those 20 ms, so the continuation hit `busy`, returned `false`,
+and the task ended with no divider, no error and nothing in the chat to say why. The guard
+is now `startNow()` in `page-actions.js`, which answers `start`, `refuse` (a question the
+person typed; the panel queues it, exactly as before) or `wait` (a continuation). A waiter
+polls ten times a second for up to six seconds, then says it stood back and could not pick
+the task up again; if the epoch moved it returns at once, so Stop and Clear still end it.
+The task object now carries `epoch` for that (`{ steps, rounds, epoch }`), which is why
+`const task = walk || …` moved above the guard.
+
+**A round that changes nothing.** `actTask()` returned only its sentence, which is non-empty
+even when every step failed ("Couldn't press item 5"), so a page that renumbered the control
+away was asked again until the round budget ran out. It now returns `{ text, count }` and
+`ask()` keeps `landed`; `roundVerdict()` in `page-actions.js` decides `quiet` (no tags),
+`queued` (a question waiting), `unchanged` (tags, but the page took none — the task stops
+with "That's where it stopped — nothing on the page changed"), `budget`, or `again`.
+`moreRounds(steps, rounds, landed)` also requires `landed > 0`. A press the page accepts but
+does nothing with still counts as taken: the panel cannot see intent, only that the element
+was there and the browser ran it.
+
+**Driven for real: `tools/panel-loop-check.mjs`** (added to `npm run test:panel`, eight
+checks). It drives the rules across rounds against a stand-in page: a three-step form takes
+three rounds and stops because the answer asked for nothing, not because it ran out; a round
+the page takes nothing from ends the task; the budget ends it by steps (twelve, in three
+rounds of four) and by rounds (five, of one); a waiting question ends it with no round spent;
+Stop ends it after the round it lands in. Then it checks the guard directly (`startNow()`:
+`wait` for a continuation, `refuse` for a typed question) and reads `sidepanel.js` to prove
+`ask()` calls both rules, keeps `landed`, hands the same task to the next round, and no longer
+calls `moreRounds()` itself. What it does not do is run `ask()`: the panel needs
+`chrome.scripting` and a live tab, so the rules are what is driven here, not the panel. A real
+two-round task in Chrome is still unrun.
+
+**A page to try it on: `tools/fixtures/page-actions.html`** (CRLF, one file, nothing fetched).
+A message box labelled "Message" with a Send button (the panel types, drops the Enter, and
+never presses Send because of its name); a long-form "Message body" with a Send button (there
+Enter is a new line, so the panel may press it); a three-step form whose steps hide each other,
+so the numbers move and each round has to read the page again; a password box that must never
+be numbered; and "Press me once", which removes itself so asking a second time is the step
+that changed nothing. Everything it sees is written into a log at the bottom, so a manual run
+reads as a list rather than a guess. To use it: `chrome://extensions` → Izuki → Details →
+"Allow access to file URLs" (`chrome.scripting` cannot reach a `file://` tab without it), open
+the file, then turn on "Let Izuki use this page" and "Share this tab" in the panel and ask
+"fill in the three-step form" or "write hello into the message box".

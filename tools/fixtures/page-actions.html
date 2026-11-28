@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Izuki — a page to click and type on</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --ink: #1b1d22; --soft: #646878; --line: #e2e1dc; --card: #ffffff;
+    --bg: #f5f4f0; --accent: #3a5bd9; --ok: #1f7a4d; --note: #f0eee6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --ink: #eceef3; --soft: #9ea3b3; --line: #33363f; --card: #1a1c21; --bg: #111318; --accent: #8aa0ff; --ok: #6ede9f; --note: #22252c; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 34px 20px 90px; background: var(--bg); color: var(--ink);
+    font: 16px/1.55 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  main, header, footer { max-width: 800px; margin: 0 auto; }
+  header { margin-bottom: 26px; }
+  h1 { font-size: 25px; line-height: 1.25; margin: 0 0 10px; letter-spacing: -0.01em; }
+  h2 { font-size: 12px; letter-spacing: .09em; text-transform: uppercase; color: var(--soft); margin: 0 0 14px; }
+  p { margin: 0 0 10px; }
+  .lede { color: var(--soft); }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 18px 18px 16px; margin: 0 0 18px; }
+  .row { display: flex; gap: 10px; align-items: flex-end; }
+  .grow { flex: 1 1 auto; min-width: 0; }
+  .box { min-height: 52px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px;
+    background: var(--bg); outline: none; }
+  .box:focus { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+  .box[data-empty="1"]::before { content: attr(data-placeholder); color: var(--soft); }
+  .long { min-height: 96px; }
+  input[type="text"], input[type="email"], textarea { width: 100%; padding: 11px 13px; font: inherit; color: var(--ink);
+    background: var(--bg); border: 1px solid var(--line); border-radius: 11px; outline: none; }
+  input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+  textarea { min-height: 76px; resize: vertical; }
+  label { display: block; font-size: 13px; color: var(--soft); margin: 0 0 6px; }
+  button { font: inherit; padding: 10px 16px; border-radius: 11px; border: 1px solid transparent;
+    background: var(--accent); color: #fff; cursor: pointer; }
+  button.ghost { background: transparent; border-color: var(--line); color: var(--ink); }
+  .hint { font-size: 13px; color: var(--soft); margin: 12px 0 0; }
+  .say { margin: 12px 0 0; padding: 10px 13px; border-radius: 11px; background: var(--note); font-size: 14px; }
+  .say b { color: var(--ok); }
+  .said:not(:empty) { margin-top: 12px; }
+  .said p { margin: 0 0 6px; padding: 8px 12px; border-radius: 11px; background: var(--note); font-size: 14px; }
+  .steps { display: flex; gap: 6px; margin: 0 0 16px; }
+  .steps span { flex: 1; height: 4px; border-radius: 2px; background: var(--line); }
+  .steps span.on { background: var(--accent); }
+  [data-step] { display: none; }
+  [data-step].on { display: block; }
+  .done { display: none; }
+  .done.on { display: block; }
+  #log { max-width: 800px; margin: 26px auto 0; background: var(--card); border: 1px solid var(--line);
+    border-radius: 16px; padding: 16px 18px; }
+  #log ol { margin: 0; padding: 0; list-style: none; font: 13px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace; }
+  #log li { padding: 5px 0; border-bottom: 1px dashed var(--line); color: var(--soft); }
+  #log li:last-child { border-bottom: 0; }
+  #log li b { color: var(--ink); font-weight: 600; }
+  #log .empty { color: var(--soft); font-style: italic; }
+</style>
+</head>
+<body>
+<header>
+  <h1>A page to try Izuki's clicks and typing on</h1>
+  <p class="lede">Nothing on this page posts, sends or buys anything: it prints what happened in the log at the bottom, so you can see exactly what Izuki did and what it left alone.</p>
+  <p class="hint">In the side panel: turn on <b>Let Izuki use this page</b> and <b>Share this tab</b>, then ask something like <em>&ldquo;fill in the three-step form&rdquo;</em> or <em>&ldquo;write hello into the message box&rdquo;</em>.</p>
+</header>
+
+<main>
+  <section class="card">
+    <h2>1. A message box &mdash; Enter here sends</h2>
+    <div class="row">
+      <div class="grow">
+        <div class="box" id="chat" contenteditable="true" role="textbox" aria-label="Message" data-placeholder="Write a message"></div>
+      </div>
+      <button type="button" id="chat-send">Send</button>
+    </div>
+    <p class="hint">Izuki types into this, but never presses Enter and never presses <b>Send</b>: both send a message, and that is yours to do. The words appear here either way.</p>
+    <div class="said" id="chat-said"></div>
+  </section>
+
+  <section class="card">
+    <h2>2. A long-form body &mdash; Enter here is a new line</h2>
+    <div class="row">
+      <div class="grow">
+        <div class="box long" id="body" contenteditable="true" role="textbox" aria-label="Message body" data-placeholder="Message body"></div>
+      </div>
+      <button type="button" id="body-send">Send</button>
+    </div>
+    <p class="hint">This one is called a body, so Enter is a line break rather than a send &mdash; the same rule as Gmail's compose. The panel may press Enter here.</p>
+    <div class="said" id="body-said"></div>
+  </section>
+
+  <section class="card">
+    <h2>3. A three-step form &mdash; one step per round</h2>
+    <div class="steps" id="pips"><span class="on"></span><span></span><span></span></div>
+
+    <div data-step="1" class="on">
+      <label for="name">Step 1 &mdash; your name</label>
+      <input id="name" type="text" aria-label="Your name" placeholder="Ada Lovelace">
+      <p class="hint"><button type="button" class="ghost" data-next="2">Next</button></p>
+    </div>
+
+    <div data-step="2">
+      <label for="email">Step 2 &mdash; your email</label>
+      <input id="email" type="email" aria-label="Your email" placeholder="ada@example.com">
+      <p class="hint"><button type="button" class="ghost" data-next="3">Next</button></p>
+    </div>
+
+    <div data-step="3">
+      <label for="reason">Step 3 &mdash; why are you here?</label>
+      <textarea id="reason" aria-label="Why you are here" placeholder="Trying Izuki out"></textarea>
+      <p class="hint"><button type="button" data-next="done">Done</button></p>
+    </div>
+
+    <div class="done" id="done">
+      <p class="say"><b>All three steps done.</b> This is the point of the loop: each step hid the one before it and changed the numbers, so the panel had to read the page again to find the next field.</p>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>4. A password box &mdash; never read, never numbered</h2>
+    <label for="pw">Password</label>
+    <input id="pw" type="password" aria-label="Password" autocomplete="off">
+    <p class="hint">Izuki should not offer this as a numbered item at all: passwords are skipped when the page is read.</p>
+  </section>
+
+  <section class="card">
+    <h2>5. A control that goes away after one press</h2>
+    <p>Press it once and it removes itself, so the numbers after it move. Ask for it a second time and the panel finds nothing to press: that is the step that changed nothing, and it should stop there and say so instead of trying again.</p>
+    <p class="hint"><button type="button" class="ghost" id="once">Press me once</button></p>
+  </section>
+</main>
+
+<footer>
+  <section id="log">
+    <h2>What this page saw</h2>
+    <ol><li class="empty">Nothing yet.</li></ol>
+  </section>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  var list = document.querySelector("#log ol");
+  function log(what, detail) {
+    var empty = list.querySelector(".empty");
+    if (empty) empty.remove();
+    var li = document.createElement("li");
+    li.innerHTML = "<b>" + what + "</b>" + (detail ? " \u2014 " + detail : "");
+    list.appendChild(li);
+    li.scrollIntoView({ block: "nearest" });
+  }
+  function words(el) {
+    return (el.innerText || el.textContent || "").replace(/\s+/g, " ").trim();
+  }
+
+  // ---- the editable boxes ----
+  ["chat", "body"].forEach(function (id) {
+    var box = document.getElementById(id);
+    var placeholder = box.getAttribute("data-placeholder");
+    function mark() { box.setAttribute("data-empty", words(box) ? "0" : "1"); }
+    mark();
+    box.addEventListener("input", function () {
+      mark();
+      log("Typed into \u201c" + box.getAttribute("aria-label") + "\u201d", words(box).slice(0, 80) || "(empty)");
+    });
+    box.addEventListener("keydown", function (e) {
+      if (e.key !== "Enter") return;
+      if (e.shiftKey) { log("Shift+Enter in \u201c" + box.getAttribute("aria-label") + "\u201d", "a new line, as in any box"); return; }
+      if (id === "body") { log("Enter in \u201c" + box.getAttribute("aria-label") + "\u201d", "a new line \u2014 this is the long-form body"); return; }
+      e.preventDefault();
+      send(id, words(box) || "(nothing)");
+    });
+  });
+
+  function send(id, text) {
+    var said = document.getElementById(id + "-said");
+    var p = document.createElement("p");
+    p.textContent = text;
+    said.appendChild(p);
+    log("Sent from \u201c" + document.getElementById(id).getAttribute("aria-label") + "\u201d", text.slice(0, 80));
+    document.getElementById(id).textContent = "";
+    document.getElementById(id).setAttribute("data-empty", "1");
+  }
+
+  document.getElementById("chat-send").addEventListener("click", function () {
+    if (!words(document.getElementById("chat"))) { log("Send pressed with nothing in the message box"); return; }
+    send("chat", words(document.getElementById("chat")));
+  });
+  document.getElementById("body-send").addEventListener("click", function () {
+    if (!words(document.getElementById("body"))) { log("Send pressed with nothing in the body"); return; }
+    send("body", words(document.getElementById("body")));
+  });
+
+  // ---- the three steps ----
+  function show(step) {
+    var next = document.querySelector('[data-step="' + step + '"]');
+    if (!next) return false;
+    document.querySelectorAll("[data-step]").forEach(function (s) { s.classList.remove("on"); });
+    next.classList.add("on");
+    document.querySelectorAll("#pips span").forEach(function (pip, i) {
+      pip.classList.toggle("on", i <= Number(step) - 1);
+    });
+    log("Now on step " + step);
+    var first = next.querySelector("input, textarea");
+    if (first) first.focus();
+    return true;
+  }
+
+  document.querySelectorAll("[data-next]").forEach(function (button) {
+    button.addEventListener("click", function () {
+      var to = button.getAttribute("data-next");
+      var from = to === "done" ? 3 : Number(to) - 1;
+      log("Pressed \u201c" + button.textContent.trim() + "\u201d on step " + from);
+      if (to === "done") {
+        document.querySelectorAll("[data-step]").forEach(function (s) { s.classList.remove("on"); });
+        document.getElementById("done").classList.add("on");
+        document.querySelectorAll("#pips span").forEach(function (pip) { pip.classList.add("on"); });
+        log("The form is finished");
+        return;
+      }
+      show(to);
+    });
+  });
+
+  // ---- the control that goes away ----
+  document.getElementById("once").addEventListener("click", function () {
+    log("Pressed \u201cPress me once\u201d", "it has gone from the page now");
+    this.remove();
+  });
+})();
+</script>
+</body>
+</html>

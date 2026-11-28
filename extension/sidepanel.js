@@ -6,7 +6,7 @@
 import "./bridge-proof.js";
 import { setUpConnection } from "./connect.js";
 import { RequestGuard, cleanHistory, extractPage } from "./sidepanel-state.js";
-import { actionPrompt, actionTags, stripActions, committal, riskyControl, MAX_STEPS, moreRounds, pageControls, clickControl, typeControl } from "./page-actions.js";
+import { actionPrompt, actionTags, stripActions, committal, riskyControl, roundVerdict, startNow, MAX_STEPS, pageControls, clickControl, typeControl } from "./page-actions.js";
 import { setUpWorkspace } from "./workspace-ui.js";
 
 const BRIDGE = "http://127.0.0.1:47615/izuki";
@@ -165,21 +165,23 @@ async function actOnPage(answerText, source, items = [], limit = 4) {
 
 /**
  * The tags one answer carried, done within what is left of the task's budget.
- * Returns what it did, or "" when there was nothing (or no budget) left.
+ * Returns what it did and how many steps the page actually took (0 when there
+ * was nothing to do, or no budget left) so the loop can tell the difference
+ * between "it didn't ask for anything" and "the page changed nothing".
  */
 async function actTask(answerText, source, items, task) {
-  if (!items) return "";
+  if (!items) return { text: "", count: 0 };
   const left = Math.max(0, Math.min(4, MAX_STEPS - task.steps));
   if (!left) {
     if (actionTags(answerText).length) {
       divider(`That's ${task.steps} steps in one go — say "keep going" and I'll carry on from here.`);
     }
-    return "";
+    return { text: "", count: 0 };
   }
   const did = await actOnPage(answerText, source, items, left);
   task.steps += did.count;
   task.rounds += 1;
-  return did.text;
+  return did;
 }
 
 // ---- the page in front --------------------------------------------------------------
@@ -466,7 +468,27 @@ async function readLinked(link) {
 
 async function ask(question, sourceOverride = null, userInitiated = false, after = "", walk = null) {
   question = String(question || "").trim();
-  if (!question || busy || starting || desktopTask || !current) return false;
+  if (!question || !current) return false;
+  // The task this belongs to: a continuation carries the same one along, budget
+  // and all, with the run it started in, so Stop or Clear can end it.
+  const task = walk || { steps: 0, rounds: 0, epoch };
+  // A continuation waits for the panel; a question the person just typed does
+  // not queue here (the caller queues it). Without the wait, the 20 ms hand-off
+  // to the next round could land on a question that had just started, and the
+  // task stopped there with no word about why.
+  const gate = startNow({ busy: !!busy, starting, desktopTask: !!desktopTask, continuation: !!after });
+  if (gate === "refuse") return false;
+  if (gate === "wait") {
+    for (let waited = 0; waited < 60 && (busy || starting || desktopTask) && task.epoch === epoch; waited++) {
+      await new Promise((next) => setTimeout(next, 100));
+    }
+    // Stopped or cleared while waiting: it doesn't come back.
+    if (task.epoch !== epoch) return false;
+    if (busy || starting || desktopTask) {
+      divider('I stood back for something else and couldn’t pick the task up again. Say "keep going" and I’ll carry on from here.');
+      return false;
+    }
+  }
   const source = { ...(sourceOverride || current) };
   const captured = !!sourceOverride && !after;
   // (Busy from the first moment: a second question sent while this one
@@ -476,7 +498,7 @@ async function ask(question, sourceOverride = null, userInitiated = false, after
   let handled = false, failed = null;
   // What it just did on this page, and how much of the task's budget that spent.
   let acted = "";
-  const task = walk || { steps: 0, rounds: 0 };
+  let landed = 0; // steps the page actually took this round
   try { handled = !!(userInitiated && workspace && await workspace.command(question,source)); }
   catch (error) { failed = error; }
   finally { starting = false; }
@@ -580,7 +602,8 @@ ${page.text.slice(0, 9000)}` : ""}`;
       const words = stripActions(answer.text);
       const card = words ? bubble("assistant", words) : null;
       if (card) followUps(card, source);
-      acted = await actTask(answer.text, source, controls?.items, task);
+      const did = await actTask(answer.text, source, controls?.items, task);
+      acted = did.text; landed = did.count;
       // A later round of the same task is not a new question: it is what was just
       // done on the page, so the question is not written into the history again.
       history = cleanHistory([
@@ -633,7 +656,8 @@ ${page.text.slice(0, 9000)}` : ""}`;
     if (linked.length) divider(`Also read: ${linked.map((l) => l.title).join(", ")}`);
     const words = stripActions(answer.text);
     const card = words ? bubble("assistant", words) : null;
-    acted = await actTask(answer.text, source, controls?.items, task);
+    const did = await actTask(answer.text, source, controls?.items, task);
+    acted = did.text; landed = did.count;
     if (card) followUps(card, source);
     // Never read a tag aloud, and never save one as if it were the answer.
     if ($("read-aloud")?.checked && words) chrome.runtime.sendMessage({ izukiSpeak: words });
@@ -694,10 +718,13 @@ ${page.text.slice(0, 9000)}` : ""}`;
       busy = null;
       // It acted on the page: look at the page as it is now and carry on until the
       // answer asks for nothing, the budget runs out, or the person stops it.
-      if (acted && !queued.length && mine === epoch && moreRounds(task.steps, task.rounds)) {
+      const verdict = roundVerdict({ asked: !!acted, landed, steps: task.steps, rounds: task.rounds, queued: queued.length });
+      if (verdict === "again") {
         const next = acted;
         setTimeout(() => void ask(question, source, false, next, task), 20);
-      } else if (acted && !queued.length && mine === epoch) {
+      } else if (verdict === "unchanged") {
+        divider("That's where it stopped — nothing on the page changed.");
+      } else if (verdict === "budget") {
         divider(`That's ${task.steps} step${task.steps === 1 ? "" : "s"} in one go — say "keep going" and I'll carry on from here.`);
       }
       $("send").disabled = false;

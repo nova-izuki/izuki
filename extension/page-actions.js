@@ -34,9 +34,36 @@ export const MAX_ROUNDS = 5;
 /**
  * May it take another look-then-act round? A page that keeps proposing steps
  * would otherwise loop: the budget is what ends it, not the model saying so.
+ * `landed` is how many steps the round actually did on the page — a round the
+ * page took nothing from is the end of the task, not something to try again.
  */
-export function moreRounds(steps, rounds) {
-  return steps < MAX_STEPS && rounds < MAX_ROUNDS;
+export function moreRounds(steps, rounds, landed = 1) {
+  return landed > 0 && steps < MAX_STEPS && rounds < MAX_ROUNDS;
+}
+
+/**
+ * What to do after a round: carry on, or stop and say why. `asked` is whether
+ * the answer carried any tags at all; `landed` is how many of them the page
+ * took ("couldn't press it" is a step that changed nothing).
+ */
+export function roundVerdict({ asked, landed, steps, rounds, queued = 0 }) {
+  if (!asked) return "quiet"; // the answer was only words: nothing left to do
+  if (queued) return "queued"; // somebody is waiting with a question of their own
+  if (!landed) return "unchanged"; // pressing again would change nothing either
+  return moreRounds(steps, rounds, landed) ? "again" : "budget";
+}
+
+/**
+ * May a question start now? A continuation — the same task carrying on after a
+ * step — waits its turn when the panel is busy instead of being dropped. The
+ * hand-off to the next round is a moment long, and a question that got the
+ * panel first used to end the task with no word about why. A question the
+ * person typed while something is running is refused here and queued by the
+ * panel, as before.
+ */
+export function startNow({ busy = false, starting = false, desktopTask = false, continuation = false } = {}) {
+  if (!busy && !starting && !desktopTask) return "start";
+  return continuation ? "wait" : "refuse";
 }
 
 /** Is pressing this control a commitment rather than a click? */
