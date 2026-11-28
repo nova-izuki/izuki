@@ -73,6 +73,32 @@ test("what goes to the PC (with its screen showing), and calling Izuki by name",
   assert.equal(named("hey novak").called, false);
 });
 
+test("a wake name is built once, and an ordinary word can't be one", () => {
+  const { named, nameRules, wakeNameProblem } = helpers;
+  // The same name gives back the same rules: nothing is rebuilt on every utterance.
+  assert.equal(nameRules("Sophie"), nameRules("Sophie"));
+  assert.notEqual(nameRules("Sophie"), nameRules("Nia"), "a new name gets new rules");
+  // A name that is just an ordinary word would make every sentence a call.
+  assert.equal(wakeNameProblem("Okay"), "an ordinary word");
+  assert.equal(wakeNameProblem("so"), "an ordinary word");
+  assert.equal(wakeNameProblem("Now"), "an ordinary word");
+  assert.equal(wakeNameProblem("Hey"), "an ordinary word");
+  assert.equal(wakeNameProblem("Jo"), "too short");
+  assert.equal(wakeNameProblem("Sophie"), "");
+  assert.equal(wakeNameProblem(""), "", "no name of its own is fine");
+  assert.equal(named("okay can you help me", "Okay").called, false, "\"okay\" is the person talking");
+  assert.equal(named("so what's the weather", "So").called, false);
+  assert.equal(named("now open spotify", "Now").called, false);
+  // A custom name that is also a person's name needs a greeting or a comma.
+  assert.deepEqual(plain(named("Hey Leo, open spotify", "Leo")), { called: true, rest: "open spotify" });
+  assert.deepEqual(plain(named("Leo, open spotify", "Leo")), { called: true, rest: "open spotify" });
+  assert.equal(named("Leo is coming over", "Leo").called, false, "a person's name on its own isn't a call");
+  assert.equal(named("leo said he'd call", "Leo").called, false);
+  // The names Izuki always answers to still work on their own.
+  assert.deepEqual(plain(named("Nova, open spotify")), { called: true, rest: "open spotify" });
+  assert.deepEqual(plain(named("hey nova what's this")), { called: true, rest: "what's this" });
+});
+
 test("everything else goes on to the brain as usual", () => {
   for (const s of ["what is this week's weather", "what's that song called", "open my PC's downloads", "on my PC open Spotify", "show my PC's battery",
     "what is the capital of France", "pin my tabs on the PC", "come here tomorrow at 5", "remind me to look at the oven", "tell me the news",

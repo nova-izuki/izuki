@@ -3,6 +3,7 @@
 Codex and Freebuff: add one line per change you pushed. Write it in plain
 words for the owner, and put your name in brackets. Claude moves these lines
 into the next `docs/RELEASE-x.y.z.md` when it releases, then clears this list.
+- In the headset, the name you call Izuki by is worked out once instead of on every sentence, and a name that is just an ordinary word ("okay", "so", "now", "hey") is refused instead of quietly making every sentence a call. A name that is also a person's name ("Leo", "Nia") now needs "Hey Leo" or "Leo, …", so "Leo is coming over" no longer wakes Izuki. [Freebuff]
 - Notes has a Study coach now: type what you are studying (or tap one you did before) and it explains it in a few steps, says it again more simply when it does not land, shows a worked example, then quizzes you one question at a time. It keeps the topic and how far you got until you change it, and answers show in Chat. [Freebuff]
 - The version bump is one command now (`tools/bump-version.mjs`): it writes every file `docs/BUMP-CHECKLIST.md` names, phone build numbers included, turns the pending lines into that release’s notes, and fails rather than skipping a row. [Freebuff]
 - The iPhone build retries the Capacitor package clone, so a network blip no longer leaves a release a draft with no IPA. [Freebuff]

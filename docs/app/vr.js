@@ -69,19 +69,69 @@
     String.raw`mute|unmute|turn\s+(?:the\s+)?(?:volume\s+)?(?:up|down|on|off)|volume|maximi[sz]e|minimi[sz]e|switch\s+to|select|copy|paste|undo|redo|save`,
     String.raw`find|move|drag|zoom\s+(?:in|out)|refresh|reload|rename|download|upload|send|reply|sign\s+in|log\s+in|install|show\s+me\s+(?!my\s+(?:pc|computer|laptop|photos|pictures|pics|files|folders))`,
   ].join("|") + String.raw`)\b`, "i");
+  /**
+   * Names that can't be a wake name: ordinary words. "Okay", "so" or "now" as
+   * the companion's name would make half of everything said a call, so those
+   * are dropped instead of waking Izuki all day.
+   */
+  const WAKE_STOP = new Set(("a an the and or but so if then than now okay ok hey hi hello yo yes yeah no not you your i me my we us they them " +
+    "this that these those what when where who why how is are was were be been do does did done can could will would should may might must " +
+    "just only also very really well good bad go come here there up down out over under again more most some any all one two three please thanks thank").split(" "));
+
+  /** Why a name can't wake Izuki — "an ordinary word", "too short" — or "" if it can. */
+  function wakeNameProblem(personName) {
+    const clean = String(personName == null ? "" : personName).replace(/[^a-z]/gi, "").toLowerCase();
+    if (!clean) return "";
+    // The word first: "so" is an ordinary word as well as two letters.
+    if (WAKE_STOP.has(clean)) return "an ordinary word";
+    return clean.length < 3 ? "too short" : "";
+  }
+
+  /** Always yours, said on their own: "Izuki, open spotify". */
+  const BUILT_IN = ["nova", "izuki", "izzy"];
+  const GREET = String.raw`(?:hey|hi|hello|ok|okay|yo)[\s,]+`;
+
+  /**
+   * The regexes that spot the name, built once per name. `named()` runs on
+   * every utterance, and four fresh RegExps each time was work for nothing.
+   * The name itself is the cache key, so a change in Settings is picked up by
+   * the next thing said — there is no event to wait for.
+   */
+  let wakeRules = { key: null, value: null };
+  function nameRules(personName) {
+    const key = String(personName == null ? "" : personName);
+    if (wakeRules.key === key && wakeRules.value) return wakeRules.value;
+    const own = key.replace(/[^a-z]/gi, "").toLowerCase();
+    // A name that is an ordinary word is no name at all: every sentence is a call.
+    const custom = own && !wakeNameProblem(key) ? own : "";
+    const alt = BUILT_IN.join("|");
+    const value = {
+      custom,
+      lead: new RegExp(String.raw`^(?:${GREET})?(?:${alt})\b[\s,.!?:-]*`, "i"),
+      // A custom name that is also a person's or a place's name ("Leo", "Nia")
+      // is only a call with a greeting, or with the comma people type: "Leo is
+      // coming over" is the person talking, not a wake.
+      mine: custom ? new RegExp(String.raw`^(?:${GREET}${custom}\b[\s,.!?:-]*|${custom}\s*[,:.!-]\s*)`, "i") : null,
+      inside: new RegExp(String.raw`\b(?:hey|hi|ok|okay)\s+(?:${alt}${custom ? "|" + custom : ""})\b[\s,.!?:-]*`, "i"),
+      // Speech-to-text often mishears the name when it's shouted or said fast
+      // ("Hey Noah", "Hey Nava", "Hey Isuki"). Right after a greeting those count
+      // too; on their own they don't ("Noah is coming" isn't a call).
+      loose: new RegExp(String.raw`^(?:hey|hi|hello|ok|okay|yo)[\s,]+(?:${MISHEARD})\b[\s,.!?:-]*`, "i"),
+    };
+    wakeRules = { key, value };
+    return value;
+  }
+
   /** Was Izuki called by name? { called, rest } (rest: what was said after the name). */
   function named(s, personName) {
-    const names = ["nova", "izuki", "izzy"].concat(personName ? [String(personName).toLowerCase()] : []).map((x) => x.replace(/[^a-z]/g, "")).filter(Boolean);
-    const alt = names.join("|");
-    const lead = new RegExp(String.raw`^(?:(?:hey|hi|hello|ok|okay|yo)[\s,]+)?(?:${alt})\b[\s,.!?:-]*`, "i");
-    const inside = new RegExp(String.raw`\b(?:hey|hi|ok|okay)\s+(?:${alt})\b[\s,.!?:-]*`, "i");
-    if (lead.test(s)) return { called: true, rest: s.replace(lead, "").trim() };
-    if (inside.test(s)) return { called: true, rest: s.replace(inside, " ").replace(/\s+/g, " ").trim() };
-    // Speech-to-text often mishears the name when it's shouted or said fast
-    // ("Hey Noah", "Hey Nava", "Hey Isuki"). Right after a greeting those count
-    // too; on their own they don't ("Noah is coming" isn't a call).
-    const loose = new RegExp(String.raw`^(?:hey|hi|hello|ok|okay|yo)[\s,]+(?:${MISHEARD})\b[\s,.!?:-]*`, "i");
-    if (loose.test(s)) return { called: true, rest: s.replace(loose, "").trim() };
+    const r = nameRules(personName);
+    if (r.lead.test(s)) return { called: true, rest: s.replace(r.lead, "").trim() };
+    if (r.mine) {
+      const m = s.match(r.mine);
+      if (m) return { called: true, rest: s.slice(m[0].length).trim() };
+    }
+    if (r.inside.test(s)) return { called: true, rest: s.replace(r.inside, " ").replace(/\s+/g, " ").trim() };
+    if (r.loose.test(s)) return { called: true, rest: s.replace(r.loose, "").trim() };
     return { called: false, rest: s };
   }
   const MISHEARD = String.raw`no(?:ah|vah|ver|vo|ba|wa)|nava|nover|know\s+va|no\s+va|novas|i[sz](?:u|oo)k(?:i|ee|y)|isaacy|is\s+uki|izzie`;
@@ -764,7 +814,7 @@
   // What a headset hides, and the PC menu names that keep saying "Phone" (see headsetPage).
   const HEADSET_HIDE = ["#go-drive", "#tools-health", "#tools-cockpit", "#tools-pilot", "[data-only]", "#web-install", "#drive-settings", "#screen-allow-row", '#screen-source option[value="phone"]'];
   const KEEP_PHONE = /Settings\s*→\s*Phone\s*→\s*Call Izuki from your phone|Call Izuki from your phone/g;
-  const util = { command, onPc, named, forIzuki, timerWords, parseLook, parseHolo, HOLO_SYSTEM, parseDream, DREAM_SYSTEM, VR_CONTEXT, YES, OFFERS_3D, OFFERS_TRIP, lessonTimes, wrapLines, fitLines, followTarget, pcPoint, angleGap, LOOK_SYSTEM, lookPrompt, ROOM_WORDS, ABOUT_THIS, parseSketch, PLACE_WORDS, photoUrl, BODIES, issWords, HOLO_VIEW, HOLO_SAY, parseSim, simSpec, simFacts, simWords, tweakSim, simParams, SIM_TWEAK, headsetWords, HEADSET_HIDE, ytUrl };
+  const util = { command, onPc, named, nameRules, wakeNameProblem, forIzuki, timerWords, parseLook, parseHolo, HOLO_SYSTEM, parseDream, DREAM_SYSTEM, VR_CONTEXT, YES, OFFERS_3D, OFFERS_TRIP, lessonTimes, wrapLines, fitLines, followTarget, pcPoint, angleGap, LOOK_SYSTEM, lookPrompt, ROOM_WORDS, ABOUT_THIS, parseSketch, PLACE_WORDS, photoUrl, BODIES, issWords, HOLO_VIEW, HOLO_SAY, parseSim, simSpec, simFacts, simWords, tweakSim, simParams, SIM_TWEAK, headsetWords, HEADSET_HIDE, ytUrl };
   if (typeof module !== "undefined" && module.exports) { module.exports = util; return; }
 
   // ===========================================================================
