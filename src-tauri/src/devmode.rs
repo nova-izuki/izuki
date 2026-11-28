@@ -27,14 +27,12 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::time::{Duration, Instant};
 
 use parking_lot::Mutex;
 use serde_json::{json, Value};
 
-/// History kept per toggle: the most notes and most test runs, oldest
-/// dropped past these bounds.
-const MAX_NOTES: usize = 12;
+/// History kept per toggle: the most test runs, oldest dropped past
+/// this bound.
 const MAX_RUNS: usize = 20;
 
 #[derive(Clone, Debug)]
@@ -64,7 +62,6 @@ static TEST_CHILD_BUSY: AtomicBool = AtomicBool::new(false);
 static RUNS: Mutex<VecDeque<TestRun>> = Mutex::new(VecDeque::new());
 static REVIEWED_UP_TO: AtomicU64 = AtomicU64::new(0);
 static DIGEST: Mutex<Option<String>> = Mutex::new(None);
-static BOOTED: AtomicBool = AtomicBool::new(false);
 
 fn now_ms() -> u64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as u64
@@ -290,7 +287,7 @@ pub fn stop_all() -> String {
     let mut happened = Vec::new();
     if VISION.lock().on { let _ = set_vision(false, 0); happened.push("Smart Vision stopped"); }
     if REVIEW.lock().on { set_review(false); happened.push("Auto-Review disarmed"); }
-    if TESTING.lock().on { set_testing(false); happened.push("Testing arm dropped"); }
+    if TESTING.lock().on { let _ = set_testing(false); happened.push("Testing arm dropped"); }
     if TEST_CHILD_BUSY.load(Ordering::SeqCst) { cancel_run(); happened.push("a running scenario was killed"); }
     if happened.is_empty() { happened.push("everything was already off"); }
     format!("Stop All: {}", happened.join(", "))
